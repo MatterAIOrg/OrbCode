@@ -35,6 +35,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
 	{ name: "/status", description: "show session status (model, context, cost, account)" },
 	{ name: "/cost", description: "show session cost and balance" },
 	{ name: "/init", description: "analyze this codebase and create an AGENTS.md" },
+	{ name: "/commit", description: "check pending changes and create detailed commits" },
+	{ name: "/code-review", description: "expert review of pending changes: performance, security, bugs, tests" },
 	{ name: "/analytics", description: "open your MatterAI analytics dashboard" },
 	{ name: "/login", description: "sign in to MatterAI" },
 	{ name: "/logout", description: "sign out and remove the saved token" },
@@ -71,6 +73,47 @@ const INIT_PROMPT = `Analyze this codebase and create an AGENTS.md file containi
 4. Code style conventions used in this repo (imports, formatting, naming, error handling)
 
 If an AGENTS.md already exists, improve it. Keep it under ~60 lines so it is cheap to include in future prompts.`
+
+// Ported from the Orbital extension's commit slash command (commitCommandResponse).
+const buildCommitPrompt = (userInput: string) => `The user has explicitly asked you to check pending changes and generate detailed commit messages. You MUST now help them with this.
+
+Please check all the pending changes in the git repository and generate detailed commit messages. If needed, you can split into multiple commits also.
+
+Instructions:
+1. First, check all pending changes using git status and git diff
+2. Group related changes together logically (e.g., a feature implementation, a bug fix, refactoring, etc.)
+3. For each logical group, generate a detailed, conventional commit message following the format:
+   type(scope): short description
+
+   Detailed explanation of what changed and why
+4. Create separate commits for each logical group using git add and git commit
+5. For GitHub repositories only, attribute the commit author as: matterai-app[bot]
+
+To detect if the repository is hosted on GitHub, check the remote URL using:
+  git remote get-url origin
+
+If the remote URL contains "github.com", use the author flag:
+  git commit --author="matterai-app[bot] <matterai-app[bot]@users.noreply.github.com>"
+
+Before committing, present the commit messages to the user for review and ask them to confirm before executing.${userInput ? `\n\nThe user provided the following input with the commit command:\n${userInput}` : ""}`
+
+const buildCodeReviewPrompt = (userInput: string) => `The user has explicitly asked you to perform a thorough code review of the pending changes. You MUST now help them with this.
+
+Review the code as a panel of four experts. Adopt each expert persona fully, one at a time, and review the complete change set from that specialty before moving on to the next:
+
+1. Performance Expert — algorithmic complexity, redundant computation or I/O, N+1 queries, unnecessary allocations, blocking calls on hot paths, missed caching or batching opportunities, and memory leaks.
+2. Security Expert — injection (SQL/command/path), unsafe deserialization, missing input validation or sanitization, secrets or credentials in code, authentication/authorization gaps, unsafe defaults, and risky dependency usage.
+3. Bug Hunter — logic errors, off-by-one mistakes, null/undefined handling, unhandled errors and rejected promises, race conditions, incorrect edge-case behavior, type coercion pitfalls, and broken assumptions between callers and callees.
+4. Test Expert — missing or inadequate test coverage for the changed behavior, untested edge cases and error paths, assertions that don't verify the actual behavior, and brittle or flaky test patterns; propose specific test cases worth adding.
+
+Instructions:
+1. First, gather the changes to review: use git status and git diff (including staged changes). If the working tree is clean, review the most recent commit instead.
+2. Read the surrounding code of the changed files whenever you need more context for a finding — do not judge a diff hunk in isolation.
+3. Report findings grouped per expert. For each finding include: severity (critical / major / minor), the file and line, what is wrong, why it matters, and a concrete suggested fix.
+4. Only report real findings. If an expert finds nothing significant, state that explicitly — do not invent issues to fill space.
+5. Finish with a short summary: all findings ordered by severity, and an overall verdict on whether the changes are safe to merge.
+
+This is a review only — do NOT modify any files. Present the findings to the user.${userInput ? `\n\nThe user provided the following input with the code-review command:\n${userInput}` : ""}`
 
 interface PendingApproval {
 	request: ApprovalRequest
@@ -437,6 +480,26 @@ export function App({
 					setBusy(true)
 					setBusyLabel("Thinking")
 					void getAgent().runTurn(INIT_PROMPT)
+					break
+				case "/commit":
+					if (!getAuthToken(settings)) {
+						setView("login")
+						break
+					}
+					pushRow({ kind: "user", text: command })
+					setBusy(true)
+					setBusyLabel("Thinking")
+					void getAgent().runTurn(buildCommitPrompt(arg))
+					break
+				case "/code-review":
+					if (!getAuthToken(settings)) {
+						setView("login")
+						break
+					}
+					pushRow({ kind: "user", text: command })
+					setBusy(true)
+					setBusyLabel("Reviewing")
+					void getAgent().runTurn(buildCodeReviewPrompt(arg))
 					break
 				case "/version":
 					pushRow({ kind: "info", text: `OrbCode CLI v${VERSION}` })
