@@ -59,13 +59,25 @@ function getGitSummary(cwd: string): string {
 		const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, stdio: ["ignore", "pipe", "ignore"] })
 			.toString()
 			.trim()
-		const status = execSync("git status --short | head -20", { cwd, stdio: ["ignore", "pipe", "ignore"] })
+		const status = execSync("git status --short", { cwd, stdio: ["ignore", "pipe", "ignore"] })
 			.toString()
 			.trimEnd()
-		return `# Git\nBranch: ${branch}\n${status ? `Working tree changes:\n${status}` : "Working tree clean"}`
+			.split("\n")
+			.slice(0, 20)
+			.join("\n")
+		return `## Git Repository Information\n- Current Branch: ${branch}\n${status ? `\n### Working Tree Changes\n${status}` : "- Working tree clean"}`
 	} catch {
 		return ""
 	}
+}
+
+/**
+ * The user's message is wrapped in <user_query> tags internally so the TUI can
+ * identify user-authored text when replaying a session. The wrapper is only an
+ * internal marker and must be stripped before the message is sent to the model.
+ */
+function stripUserQueryTags(text: string): string {
+	return text.replace(/<user_query>\n?/g, "").replace(/\n?<\/user_query>/g, "")
 }
 
 export class Agent {
@@ -175,16 +187,32 @@ export class Agent {
 	private buildEnvironmentDetails(): string {
 		const files = walkFiles(this.options.cwd, true, 200)
 		const git = getGitSummary(this.options.cwd)
-		return `<environment_details>
-# Current Workspace Directory (${this.options.cwd}) Files
+		const now = new Date()
+		const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+		const timeZoneOffset = -now.getTimezoneOffset() / 60
+		const timeZoneOffsetHours = Math.floor(Math.abs(timeZoneOffset))
+		const timeZoneOffsetMinutes = Math.abs(Math.round((Math.abs(timeZoneOffset) - timeZoneOffsetHours) * 60))
+		const timeZoneOffsetStr = `${timeZoneOffset >= 0 ? "+" : "-"}${timeZoneOffsetHours}:${timeZoneOffsetMinutes.toString().padStart(2, "0")}`
+		return `# Environment Details
+
+## Current Workspace Directory (${this.options.cwd}) Files
 ${files.join("\n") || "(empty directory)"}
 ${files.length >= 200 ? "\n(File list truncated.)" : ""}
 
 ${git}
 
-# Current Time
-${new Date().toString()}
-</environment_details>`
+## Current Time
+Current time in ISO 8601 UTC format: ${now.toISOString()}
+User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
+	}
+
+	/** Conversation history with internal markers stripped, ready for the model. */
+	private outgoingMessages(): OpenAI.Chat.ChatCompletionMessageParam[] {
+		return this.messages.map((message) =>
+			message.role === "user" && typeof message.content === "string"
+				? { ...message, content: stripUserQueryTags(message.content) }
+				: message,
+		)
 	}
 
 	private toolContext(): ToolContext {
@@ -224,7 +252,7 @@ ${new Date().toString()}
 				// Keep the conversation consistent: note the interruption for the model.
 				this.messages.push({
 					role: "user",
-					content: "<system_reminder>The user interrupted this response before it finished.</system_reminder>",
+					content: "System reminder: The user interrupted this response before it finished.",
 				})
 			} else {
 				onEvent({ type: "error", message: (error as Error).message })
@@ -248,7 +276,7 @@ ${new Date().toString()}
 		const signal = this.abortController.signal
 		try {
 			const request: OpenAI.Chat.ChatCompletionMessageParam[] = [
-				...this.messages,
+				...this.outgoingMessages(),
 				{
 					role: "user",
 					content:
@@ -277,7 +305,7 @@ ${new Date().toString()}
 				this.messages = [
 					{
 						role: "user",
-						content: `<conversation_summary>\nThe conversation history was compacted. Summary of everything so far:\n\n${summary}\n</conversation_summary>`,
+						content: `# Conversation Summary\n\nThe conversation history was compacted. Summary of everything so far:\n\n${summary}`,
 					},
 				]
 			} else {
@@ -307,7 +335,7 @@ ${new Date().toString()}
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
 
-		const stream = this.client.createMessage(this.systemPrompt, this.messages, getActiveTools(), signal)
+		const stream = this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(), signal)
 
 		for await (const chunk of stream) {
 			if (signal.aborted) throw new DOMException("aborted", "AbortError")
