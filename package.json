@@ -1,5 +1,5 @@
 {
-  "name": "orbcode",
+  "name": "@matterailab/orbcode",
   "version": "0.1.3",
   "description": "OrbCode CLI — agentic coding in your terminal, powered by Axon models by MatterAI",
   "type": "module",
@@ -10,8 +10,18 @@
   "files": [
     "bin",
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MatterAIOrg/OrbCode.git"
+  },
+  "homepage": "https://github.com/MatterAIOrg/OrbCode#readme",
+  "bugs": {
+    "url": "https://github.com/MatterAIOrg/OrbCode/issues"
+  },
+  "author": "MatterAI",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -48,5 +58,5 @@
     "ai",
     "coding-agent"
   ],
-  "license": "UNLICENSED"
+  "license": "MIT"
 }
