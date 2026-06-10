@@ -11,6 +11,7 @@ path (release branches + GitHub Actions) and the manual fallback.
 bin/orbcode.js     the executable stub (#!/usr/bin/env node → dist/index.js)
 dist/              compiled output (built by prepublishOnly)
 README.md          user-facing docs shown on npmjs.com
+LICENSE            MIT license text
 package.json
 ```
 
@@ -21,31 +22,15 @@ bumping the version is all that's needed; no source change required.
 
 ## One-time setup
 
-1. **Push this repo to GitHub** (it must be a git repo for the action to run):
-
-   ```bash
-   git init && git add -A && git commit -m "init"
-   git remote add origin git@github.com:<org>/orbcode.git
-   git push -u origin main
-   ```
-
-2. **Add the `repository` field** to package.json (needed for npm provenance):
-
-   ```json
-   "repository": { "type": "git", "url": "git+https://github.com/<org>/orbcode.git" }
-   ```
-
-3. **Create an npm Automation token** (npmjs.com → Access Tokens →
+1. **Create an npm Automation token** (npmjs.com → Access Tokens →
    *Automation*) with publish rights for `orbcode`, and save it as the
    `NPM_TOKEN` repository secret on GitHub (Settings → Secrets and variables →
    Actions).
 
-4. If the GitHub repo is **private**, remove `--provenance` from
+2. If the GitHub repo is **private**, remove `--provenance` from
    `.github/workflows/release.yml` (provenance attestation requires a public
-   repo).
-
-5. `"license": "UNLICENSED"` is currently set — fine for a proprietary
-   package, but decide deliberately before the first public publish.
+   repo and the `repository` field in package.json — already set to
+   `MatterAIOrg/OrbCode`).
 
 ## Automated release (recommended)
 
@@ -65,7 +50,7 @@ git push -u origin release/0.2.0
 The workflow then:
 
 1. installs (`npm ci`), typechecks, and builds;
-2. checks npm — if `orbcode@<version>` **already exists, it skips publishing**
+2. checks npm — if `@matterailab/orbcode@<version>` **already exists, it skips publishing**
    (so repeated pushes to the branch are safe no-ops);
 3. publishes to npm with provenance;
 4. tags the commit `v<version>` and creates a **GitHub Release** with
@@ -100,14 +85,14 @@ before a first-time or unusual release.
 - [ ] smoke-test the TUI: launch, send a message, `/model`, `/resume`
 - [ ] README.md is current (it's the npm landing page)
 - [ ] version bumped in package.json and not already on npm
-      (`npm view orbcode versions`)
+      (`npm view @matterailab/orbcode versions`)
 
 ## After the release
 
 Users install/update with:
 
 ```bash
-npm install -g orbcode
+npm install -g @matterailab/orbcode
 orbcode --version
 ```
 

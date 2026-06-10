@@ -28,6 +28,8 @@ activity rows, edit/command approvals, and todo tracking.
 - [Development](#development)
 - [Tests](#tests)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -36,15 +38,25 @@ activity rows, edit/command approvals, and todo tracking.
 Requires **Node.js >= 20**.
 
 ```bash
-npm install
-npm run build
-npm link        # exposes the global `orbcode` command
+npm install -g @matterailab/orbcode
 ```
 
 Then, from any project directory:
 
 ```bash
 orbcode
+```
+
+To update later: `npm update -g @matterailab/orbcode` (or re-run the install command).
+
+### From source (development)
+
+```bash
+git clone https://github.com/MatterAIOrg/OrbCode.git
+cd OrbCode
+npm install
+npm run build
+npm link        # exposes the global `orbcode` command
 ```
 
 ## Updating / relinking
@@ -439,3 +451,21 @@ node test-device-auth.mjs  # device-auth polling flow against a local mock
 - **401 on chat** — token expired: `/logout` then `/login`.
 - **Keyboard input does nothing** — OrbCode needs a real TTY (raw mode); it
   won't accept piped stdin. Use `-p` for non-interactive runs.
+- **`EPERM: operation not permitted` opening `bin/orbcode.js` on macOS** —
+  the repo lives in a protected folder (Documents, Desktop, Downloads) and the
+  terminal app hasn't been granted access to it. Allow it in System Settings →
+  Privacy & Security → Files and Folders (or Full Disk Access) for that
+  terminal, then restart it. Terminals that already prompted for access (e.g.
+  iTerm) keep working. A normal global install (`npm install -g @matterailab/orbcode`) is
+  unaffected because it lives outside protected folders.
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for how to
+set up a development environment, run the tests, and submit a pull request.
+Bug reports and feature requests go to
+[GitHub Issues](https://github.com/MatterAIOrg/OrbCode/issues).
+
+## License
+
+[MIT](LICENSE) © MatterAI
