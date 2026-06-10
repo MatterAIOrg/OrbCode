@@ -1,3 +1,5 @@
+import * as path from "node:path"
+
 export interface ToolContext {
 	cwd: string
 	token: string
@@ -17,5 +19,5 @@ export type ToolExecutor = (args: Record<string, unknown>, context: ToolContext)
 /** Resolve a possibly-relative path against the workspace. */
 export function resolveWorkspacePath(cwd: string, p: string): string {
 	if (!p) return cwd
-	return p.startsWith("/") ? p : `${cwd}/${p}`.replace(/\/+/g, "/")
+	return path.isAbsolute(p) ? p : path.resolve(cwd, p)
 }

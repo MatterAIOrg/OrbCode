@@ -60,7 +60,8 @@ export async function searchFiles(args: Record<string, unknown>, context: ToolCo
 				if (!IGNORED_DIRS.has(dirent.name) && !dirent.name.startsWith(".")) walk(full)
 				continue
 			}
-			const rel = path.relative(dirPath, full)
+			// picomatch only understands forward slashes, so normalize Windows paths.
+			const rel = path.relative(dirPath, full).split(path.sep).join("/")
 			if (!isMatch(rel)) continue
 			let stat: fs.Stats
 			try {

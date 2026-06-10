@@ -54,11 +54,17 @@ interface EditSpec {
 	file_path: string
 	old_string: string
 	new_string: string
-	replace_all?: boolean
+	replace_all?: boolean | string
+}
+
+/** The model may send replace_all as a boolean or a string ("true"/"1"). */
+function parseReplaceAll(value: unknown): boolean {
+	return value === true || value === "true" || value === "1"
 }
 
 function applyEdit(content: string, edit: EditSpec): { content: string; error?: string } {
-	const { old_string, new_string, replace_all } = edit
+	const { old_string, new_string } = edit
+	const replace_all = parseReplaceAll(edit.replace_all)
 	if (old_string === new_string) {
 		return { content, error: "old_string and new_string are identical" }
 	}
@@ -120,7 +126,7 @@ export async function fileEdit(args: Record<string, unknown>, context: ToolConte
 		file_path: String(args.file_path ?? ""),
 		old_string: String(args.old_string ?? ""),
 		new_string: String(args.new_string ?? ""),
-		replace_all: Boolean(args.replace_all),
+		replace_all: parseReplaceAll(args.replace_all),
 	}
 	const [result] = editOneFile(context.cwd, [edit])
 	return { text: result, isError: result.startsWith("FAILED") }
@@ -157,7 +163,7 @@ export function previewFileChange(
 							file_path: String(args.file_path ?? ""),
 							old_string: String(args.old_string ?? ""),
 							new_string: String(args.new_string ?? ""),
-							replace_all: Boolean(args.replace_all),
+							replace_all: parseReplaceAll(args.replace_all),
 						},
 					]
 				: ((Array.isArray(args.edits) ? args.edits : []) as EditSpec[])

@@ -34,7 +34,9 @@ export function walkFiles(root: string, recursive: boolean, maxEntries: number =
 		for (const dirent of dirents) {
 			if (entries.length >= maxEntries) break
 			const full = path.join(dir, dirent.name)
-			const rel = path.relative(root, full)
+			// Always report forward-slash paths: the UI (@-mention filtering) and
+			// the model both treat "/" as the separator, even on Windows.
+			const rel = path.relative(root, full).split(path.sep).join("/")
 			if (dirent.isDirectory()) {
 				entries.push(rel + "/")
 				if (recursive && !IGNORED_DIRS.has(dirent.name) && !dirent.name.startsWith(".")) {

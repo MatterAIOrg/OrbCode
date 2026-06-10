@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 
+import { getShell, getShellRunArgs } from "../../utils/shell.js"
 import { type ToolContext, type ToolResult, resolveWorkspacePath } from "../types.js"
 
 const COMMAND_TIMEOUT_MS = 120_000
@@ -13,11 +14,12 @@ export async function executeCommand(args: Record<string, unknown>, context: Too
 	const cwd = args.cwd ? resolveWorkspacePath(context.cwd, String(args.cwd)) : context.cwd
 
 	return new Promise<ToolResult>((resolve) => {
-		const shell = process.env.SHELL || "/bin/sh"
-		const child = spawn(shell, ["-c", command], {
+		const child = spawn(getShell(), getShellRunArgs(command), {
 			cwd,
 			env: { ...process.env, TERM: "dumb" },
 			stdio: ["ignore", "pipe", "pipe"],
+			// cmd.exe parses the command string itself; pre-quoting would corrupt it.
+			windowsVerbatimArguments: process.platform === "win32",
 		})
 
 		let output = ""
