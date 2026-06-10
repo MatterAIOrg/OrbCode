@@ -1,0 +1,83 @@
+# Auto-release to npm from release branches.
+#
+# Push to `release` or any `release/*` branch (e.g. release/0.2.0) and, if the
+# version in package.json isn't on npm yet, this workflow publishes it, tags
+# the commit `v<version>`, and creates a GitHub Release with generated notes.
+# Pushing again with the same version is a safe no-op.
+#
+# Required repo secret: NPM_TOKEN (npm "Automation" access token with publish
+# rights for the `orbcode` package).
+
+name: Release
+
+on:
+  push:
+    branches:
+      - release
+      - "release/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the version tag + create the GitHub Release
+  id-token: write # npm --provenance (requires a public GitHub repo)
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck & build
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Check whether this version is already on npm
+        id: version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "Version $VERSION already published — skipping."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.version.outputs.publish == 'true'
+        # Drop --provenance if the repository is private (provenance needs a
+        # public repo and a `repository` field in package.json).
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag and create GitHub Release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v$VERSION" || true
+          git push origin "v$VERSION" || true
+          gh release create "v$VERSION" \
+            --title "orbcode v$VERSION" \
+            --generate-notes \
+            --target "$GITHUB_SHA" || echo "Release v$VERSION already exists."

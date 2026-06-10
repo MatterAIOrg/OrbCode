@@ -1,0 +1,61 @@
+import * as fs from "node:fs"
+import * as path from "node:path"
+import type OpenAI from "openai"
+
+import { getConfigDir } from "../config/settings.js"
+
+export interface SessionData {
+	id: string
+	cwd: string
+	model: string
+	/** first user prompt, used as the list label */
+	title: string
+	createdAt: string
+	updatedAt: string
+	totalCost: number
+	todos: string
+	messages: OpenAI.Chat.ChatCompletionMessageParam[]
+}
+
+const MAX_SESSIONS_LISTED = 25
+
+function getSessionsDir(): string {
+	return path.join(getConfigDir(), "sessions")
+}
+
+export function saveSession(data: SessionData): void {
+	const dir = getSessionsDir()
+	fs.mkdirSync(dir, { recursive: true })
+	fs.writeFileSync(path.join(dir, `${data.id}.json`), JSON.stringify(data), { mode: 0o600 })
+}
+
+export function loadSessionById(id: string): SessionData | undefined {
+	try {
+		return JSON.parse(fs.readFileSync(path.join(getSessionsDir(), `${id}.json`), "utf8")) as SessionData
+	} catch {
+		return undefined
+	}
+}
+
+/** Sessions for a workspace, most recently updated first. */
+export function listSessions(cwd: string): SessionData[] {
+	let files: string[]
+	try {
+		files = fs.readdirSync(getSessionsDir()).filter((f) => f.endsWith(".json"))
+	} catch {
+		return []
+	}
+	const sessions: SessionData[] = []
+	for (const file of files) {
+		try {
+			const data = JSON.parse(fs.readFileSync(path.join(getSessionsDir(), file), "utf8")) as SessionData
+			if (data.cwd === cwd && Array.isArray(data.messages) && data.messages.length > 0) {
+				sessions.push(data)
+			}
+		} catch {
+			// skip unreadable session files
+		}
+	}
+	sessions.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+	return sessions.slice(0, MAX_SESSIONS_LISTED)
+}
