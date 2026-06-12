@@ -8,6 +8,7 @@ import { LoginView } from "./LoginView.js"
 import { APP_URL, fetchBalance, fetchProfile, fetchTaskTitle, type ProfileData } from "../auth/auth.js"
 import { getAuthToken, loadSettings, saveSettings, type OrbCodeSettings } from "../config/settings.js"
 import { Agent } from "../core/agent.js"
+import type { UpdateInfo } from "../utils/updateCheck.js"
 import type {
 	AgentEvent,
 	ApprovalDecision,
@@ -176,14 +177,18 @@ export function App({
 	initialView,
 	initialPrompt,
 	initialSession,
+	updateCheck,
 }: {
 	initialView?: "login" | "chat"
 	initialPrompt?: string
 	initialSession?: SessionData
+	/** Promise resolving to the latest-npm-version comparison; resolved after first paint. */
+	updateCheck?: Promise<UpdateInfo>
 }) {
 	const { exit } = useApp()
 	const [settings, setSettings] = useState<OrbCodeSettings>(() => loadSettings())
 	const [view, setView] = useState<"login" | "chat">(initialView ?? (getAuthToken(settings) ? "chat" : "login"))
+	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
 
 	const [rows, setRows] = useState<Row[]>(() => [
 		{ kind: "header", id: "header", cwd: process.cwd(), modelName: getModel(loadSettings().model).name },
@@ -195,6 +200,10 @@ export function App({
 	const [runningTool, setRunningTool] = useState<RunningTool | null>(null)
 	const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 	const [pendingFollowup, setPendingFollowup] = useState<PendingFollowup | null>(null)
+	// FIFO queue of messages the user typed while the LLM was still streaming.
+	// Drained one-per-turn on each `turn-end` event so multi-step work can
+	// keep flowing without making the user wait for the previous response.
+	const [queuedMessages, setQueuedMessages] = useState<string[]>([])
 	const [modelPickerOpen, setModelPickerOpen] = useState(false)
 	const [resumableSessions, setResumableSessions] = useState<SessionData[] | null>(null)
 	const [staticKey, setStaticKey] = useState(0)
@@ -229,6 +238,28 @@ export function App({
 	const textBufferRef = useRef("")
 	// taskId for which a title fetch has already been started (once per task).
 	const titleTaskRef = useRef<string | null>(null)
+	// Mirror of `queuedMessages` for the agent event handler (kept on a ref so
+	// we can drain it inside `handleEvent` without re-creating that callback
+	// on every keystroke).
+	const queueRef = useRef<string[]>([])
+
+	const enqueueMessage = useCallback((text: string) => {
+		queueRef.current = [...queueRef.current, text]
+		setQueuedMessages(queueRef.current)
+	}, [])
+
+	const drainQueue = useCallback((): string | null => {
+		if (queueRef.current.length === 0) return null
+		const [next, ...rest] = queueRef.current
+		queueRef.current = rest
+		setQueuedMessages(rest)
+		return next
+	}, [])
+
+	const clearQueue = useCallback(() => {
+		queueRef.current = []
+		setQueuedMessages([])
+	}, [])
 
 	const maybeFetchTitle = useCallback(() => {
 		const agent = agentRef.current
@@ -337,10 +368,26 @@ export function App({
 					setBusy(false)
 					maybeFetchTitle()
 					refreshUsage()
+					// Pop the next queued message and immediately start a new
+					// turn on top of the one that just ended. The agent's
+					// `runTurn` is fully resolved at this point (its
+					// `finally` emitted this event), so the new turn picks
+					// up the up-to-date conversation history. We use
+					// `agentRef` directly here to avoid a circular
+					// `handleEvent` ↔ `getAgent` reference; the ref is
+					// guaranteed populated because `runTurn` set it
+					// synchronously before emitting this event.
+					const nextQueued = drainQueue()
+					if (nextQueued !== null && agentRef.current) {
+						pushRow({ kind: "user", text: nextQueued })
+						setBusy(true)
+						setBusyLabel("Thinking")
+						void agentRef.current.runTurn(nextQueued)
+					}
 					break
 			}
 		},
-		[pushRow, maybeFetchTitle, refreshUsage],
+		[pushRow, maybeFetchTitle, refreshUsage, drainQueue],
 	)
 
 	const createAgent = useCallback(
@@ -453,6 +500,7 @@ export function App({
 					break
 				case "/new":
 					// Drop the agent entirely so the next message starts a fresh session.
+					clearQueue()
 					agentRef.current = null
 					titleTaskRef.current = null
 					setSessionTitle("")
@@ -574,6 +622,7 @@ export function App({
 					setView("login")
 					break
 				case "/logout": {
+					clearQueue()
 					const updated = { ...settings, token: undefined }
 					setSettings(updated)
 					saveSettings(updated)
@@ -588,7 +637,7 @@ export function App({
 					pushRow({ kind: "error", text: `Unknown command: ${name}. Try /help.` })
 			}
 		},
-		[settings, tasks, contextTokens, totalCost, sessionTitle, exit, pushRow, getAgent, switchModel, resetTranscript],
+		[settings, tasks, contextTokens, totalCost, sessionTitle, exit, pushRow, getAgent, switchModel, resetTranscript, clearQueue],
 	)
 
 	const handleSubmit = useCallback(
@@ -601,12 +650,19 @@ export function App({
 				setView("login")
 				return
 			}
+			// While the LLM is still streaming, hold the message in a FIFO
+			// queue instead of dropping it on the floor. `handleEvent`'s
+			// `turn-end` case drains the queue and starts the next turn.
+			if (busy) {
+				enqueueMessage(value)
+				return
+			}
 			pushRow({ kind: "user", text: value })
 			setBusy(true)
 			setBusyLabel("Thinking")
 			void getAgent().runTurn(value)
 		},
-		[settings.token, handleCommand, getAgent, pushRow],
+		[settings, busy, handleCommand, enqueueMessage, getAgent, pushRow],
 	)
 
 	// Apply --resume and an initial prompt (`orbcode "do something"`) on startup.
@@ -619,7 +675,28 @@ export function App({
 		refreshUsage()
 	}, [initialSession, initialPrompt, handleResume, handleSubmit, refreshUsage])
 
+	// Resolve the npm version check after first paint so the TUI shows up
+	// immediately and the upgrade banner fades in once we know the answer.
+	useEffect(() => {
+		if (!updateCheck) return
+		let cancelled = false
+		updateCheck.then((info) => {
+			if (!cancelled) setUpdateInfo(info)
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [updateCheck])
+
 	useInput((input, key) => {
+		// Ctrl+D quits from any view (chat, login, busy, picker, approval,
+		// followup). InputBox swallows other Ctrl-combos, but this hook is a
+		// sibling of InputBox's hook, so it still sees the key.
+		if (key.ctrl && input === "d") {
+			agentRef.current?.abort()
+			exit()
+			return
+		}
 		if (key.escape && busy && !pendingApproval && !pendingFollowup) {
 			agentRef.current?.abort()
 		}
@@ -668,7 +745,7 @@ export function App({
 	)
 
 	const inputActive =
-		view === "chat" && !busy && !pendingApproval && !pendingFollowup && !modelPickerOpen && !resumableSessions
+		view === "chat" && !pendingApproval && !pendingFollowup && !modelPickerOpen && !resumableSessions
 
 	return (
 		<Box flexDirection="column">
@@ -680,6 +757,23 @@ export function App({
 				<LoginSection onLogin={handleLogin} />
 			) : (
 				<Box flexDirection="column">
+					{updateInfo?.updateAvailable && updateInfo.latest && (
+						<Box
+							marginTop={1}
+							flexDirection="column"
+							borderStyle="round"
+							borderColor={COLORS.warning}
+							paddingX={2}
+							alignSelf="flex-start"
+						>
+							<Text color={COLORS.warning} bold>
+								↑ Update available: v{updateInfo.current} → v{updateInfo.latest}
+							</Text>
+							<Text>
+								Run <Text color={COLORS.accent}>orbcode update</Text> to install the latest version, then relaunch.
+							</Text>
+						</Box>
+					)}
 					{streamingReasoning && (
 						<Box flexDirection="column" marginTop={1}>
 							<Text color={COLORS.thinking} italic>
@@ -774,6 +868,21 @@ export function App({
 						</Box>
 					)}
 					<Box marginTop={1} flexDirection="column">
+						{queuedMessages.length > 0 && (
+							<Box flexDirection="column" paddingLeft={1} marginBottom={1}>
+								<Text dimColor bold>
+									Queue ({queuedMessages.length})
+								</Text>
+								{queuedMessages.slice(0, 5).map((msg, i) => (
+									<Text key={i} dimColor>
+										{i + 1}. {truncateForQueue(msg).replace(/\n/g, "↵")}
+									</Text>
+								))}
+								{queuedMessages.length > 5 && (
+									<Text dimColor> … {queuedMessages.length - 5} more</Text>
+								)}
+							</Box>
+						)}
 						<InputBox active={inputActive} slashCommands={SLASH_COMMANDS} onSubmit={handleSubmit} />
 						<StatusBar
 							modelId={settings.model}
@@ -797,6 +906,12 @@ export function App({
 function tail(text: string, lines: number): string {
 	const all = text.split("\n").filter((l) => l.trim())
 	return all.slice(-lines).join("\n")
+}
+
+const QUEUE_PREVIEW_LIMIT = 80
+function truncateForQueue(text: string): string {
+	if (text.length <= QUEUE_PREVIEW_LIMIT) return text
+	return text.slice(0, QUEUE_PREVIEW_LIMIT - 1) + "…"
 }
 
 function LoginSection({ onLogin }: { onLogin: (token: string, profile: ProfileData) => void }) {
