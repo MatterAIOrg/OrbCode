@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "description": "OrbCode CLI — agentic coding in your terminal, powered by Axon models by MatterAI",
   "type": "module",
   "bin": {
@@ -58,5 +58,8 @@
     "ai",
     "coding-agent"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "formdata-node": "^6.0.3"
+  }
 }

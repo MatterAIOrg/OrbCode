@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-06-12
+
+### Added
+
+- `orbcode update --force` (`-f`): force a global `npm install -g` even when
+  the running CLI doesn't look like a global install (e.g. local dev checkout
+  pointing at a global prefix). Prints a warning so it's never silent.
+
+### Fixed
+
+- `orbcode update` now correctly detects global installs on systems where the
+  CLI entrypoint is a symlink. `isGlobalInstall` resolves symlinks via
+  `realpathSync` (with `import.meta.url` as a fallback) before matching the
+  `node_modules/@matterailab/orbcode` path, so a perfectly valid
+  `npm i -g` install no longer reports "not installed globally".
+- Suppressed the `node-domexception@1.0.0 deprecated` warning on install
+  by overriding `formdata-node` to `^6.0.3` (the version pulled in via
+  `openai@4.104.0 → formdata-node@4.4.1` was the last remaining user of
+  that polyfill; `formdata-node@6` has zero runtime dependencies).
+
 ## [0.1.5] - 2026-06-12
 
 ### Added
@@ -134,6 +154,7 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.8
 [0.1.5]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.5
 [0.1.4]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.4
