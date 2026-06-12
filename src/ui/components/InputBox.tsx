@@ -164,6 +164,14 @@ export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
 					return
 				}
 			}
+			if (key.shift && key.return) {
+				// Shift+Enter inserts a literal newline without submitting.
+				setHistoryIndex(-1)
+				const next = value.slice(0, cursor) + "\n" + value.slice(cursor)
+				setValue(next)
+				setCursor((c) => c + 1)
+				return
+			}
 			if (key.return) {
 				submit(value)
 				return
@@ -213,15 +221,11 @@ export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
 				return
 			}
 			if (input) {
-				// Multi-char chunks (paste) can carry an embedded trailing newline,
-				// which should submit like pressing Enter.
-				const endsWithNewline = /[\r\n]$/.test(input)
-				const clean = input.replace(/[\r\n]+$/, "").replace(/\r/g, "\n")
+				// Multi-char chunks (paste) are inserted as-is. Newlines inside
+				// the chunk are literal newlines, not a submit signal — press
+				// Enter when you're ready to send.
+				const clean = input.replace(/\r\n?/g, "\n")
 				const next = value.slice(0, cursor) + clean + value.slice(cursor)
-				if (endsWithNewline) {
-					submit(next)
-					return
-				}
 				setHistoryIndex(-1)
 				setValue(next)
 				setCursor((c) => c + clean.length)

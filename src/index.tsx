@@ -5,6 +5,17 @@ import { PRODUCT_NAME, VERSION } from "./branding.js"
 import { App } from "./ui/App.js"
 import { runHeadless } from "./headless.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
+import {
+	clearUpdateCache,
+	compareVersions,
+	fetchLatestNpmVersion,
+	getGlobalInstallRoot,
+	getUpdateInfo,
+	isGlobalInstall,
+	runNpmUpdate,
+} from "./utils/updateCheck.js"
+
+const PACKAGE_NAME = "@matterailab/orbcode"
 
 function printHelp(): void {
 	console.log(`${PRODUCT_NAME} v${VERSION}
@@ -13,6 +24,7 @@ Usage:
   orbcode                 start an interactive session
   orbcode "<prompt>"      start an interactive session with an initial prompt
   orbcode login           sign in to MatterAI
+  orbcode update          install the latest version from npm
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
@@ -20,6 +32,35 @@ Usage:
   orbcode --version       print version
   orbcode --help          show this help
 `)
+}
+
+async function runUpdate(): Promise<number> {
+	const latest = await fetchLatestNpmVersion(PACKAGE_NAME)
+	if (latest === null) {
+		console.error("Could not reach the npm registry. Check your network connection and try again.")
+		return 1
+	}
+	if (compareVersions(VERSION, latest) >= 0) {
+		console.log(`${PRODUCT_NAME} v${VERSION} is already up to date (latest: v${latest}).`)
+		return 0
+	}
+	console.log(`Updating ${PRODUCT_NAME} v${VERSION} → v${latest}…`)
+	const global = isGlobalInstall()
+	if (!global) {
+		const root = await getGlobalInstallRoot()
+		console.error(
+			`This CLI was not installed globally (argv[1] = ${process.argv[1] || "<unknown>"}).\n` +
+				`To update a local/dev install, run \`npm install -g ${PACKAGE_NAME}@latest\` manually, or \`npm install\` inside the source checkout.` +
+				(root ? `\nGlobal install root detected at: ${root}` : ""),
+		)
+		return 1
+	}
+	clearUpdateCache()
+	const code = await runNpmUpdate(PACKAGE_NAME)
+	if (code === 0) {
+		console.log(`Updated to v${latest}. Run \`${PRODUCT_NAME.split(" ")[0].toLowerCase()}\` again to use it.`)
+	}
+	return code
 }
 
 /** Pop `flag <value>` (accepting -flag and --flag) out of args; returns the value. */
@@ -45,6 +86,10 @@ async function main(): Promise<void> {
 	if (args.includes("--help") || args.includes("-h")) {
 		printHelp()
 		return
+	}
+	if (args[0] === "update") {
+		const code = await runUpdate()
+		process.exit(code)
 	}
 
 	const model = takeFlagValue(args, "model") ?? takeFlagValue(args, "m")
@@ -85,7 +130,17 @@ async function main(): Promise<void> {
 		process.stdout.write("\x1b[2J\x1b[H")
 		process.stdout.write("\x1b]0;orbcode\x07")
 	}
-	render(<App initialView={initialView} initialPrompt={initialPrompt} initialSession={initialSession} />)
+	// Fire-and-forget: a stale or no-network state just means the header shows
+	// the "current version" line instead of an upgrade prompt.
+	const updateCheckPromise = getUpdateInfo(PACKAGE_NAME, VERSION)
+	render(
+		<App
+			initialView={initialView}
+			initialPrompt={initialPrompt}
+			initialSession={initialSession}
+			updateCheck={updateCheckPromise}
+		/>,
+	)
 }
 
 main().catch((error) => {
