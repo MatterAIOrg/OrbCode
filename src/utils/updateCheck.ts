@@ -167,10 +167,29 @@ export function runNpmUpdate(pkg: string): Promise<number> {
  * update command can surface a friendlier message for local/dev installs.
  */
 export function isGlobalInstall(): boolean {
-  // When installed via `npm i -g @matterailab/orbcode`, the entrypoint lives
-  // somewhere like <global root>/node_modules/@matterailab/orbcode/...
-  const here = process.argv[1] || "";
+  // argv[1] is whatever the shell handed to node, which is the *symlink* path
+  // (`<prefix>/bin/orbcode`) for a global npm install — not the real file. We
+  // have to resolve symlinks; otherwise the `node_modules/@matterailab/...`
+  // substring never appears and a perfectly valid global install looks local.
+  const here = resolveEntrypoint();
   return /node_modules[\\/]@matterailab[\\/]orbcode/.test(here);
+}
+
+function resolveEntrypoint(): string {
+  const argvPath = process.argv[1];
+  if (argvPath) {
+    try {
+      return fs.realpathSync(argvPath);
+    } catch {
+      // fall through to import.meta.url
+    }
+  }
+  // import.meta.url is the real file:// URL of the running module, which
+  // already points inside node_modules for a global install.
+  if (typeof import.meta.url === "string" && import.meta.url) {
+    return import.meta.url;
+  }
+  return "";
 }
 
 /** Best-effort: run `npm root -g` so we can show the install location. */

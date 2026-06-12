@@ -25,6 +25,7 @@ Usage:
   orbcode "<prompt>"      start an interactive session with an initial prompt
   orbcode login           sign in to MatterAI
   orbcode update          install the latest version from npm
+  orbcode update --force  force a global install even if this CLI doesn't look global
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
@@ -34,7 +35,7 @@ Usage:
 `)
 }
 
-async function runUpdate(): Promise<number> {
+async function runUpdate(force: boolean): Promise<number> {
 	const latest = await fetchLatestNpmVersion(PACKAGE_NAME)
 	if (latest === null) {
 		console.error("Could not reach the npm registry. Check your network connection and try again.")
@@ -46,14 +47,21 @@ async function runUpdate(): Promise<number> {
 	}
 	console.log(`Updating ${PRODUCT_NAME} v${VERSION} → v${latest}…`)
 	const global = isGlobalInstall()
-	if (!global) {
+	if (!global && !force) {
 		const root = await getGlobalInstallRoot()
 		console.error(
-			`This CLI was not installed globally (argv[1] = ${process.argv[1] || "<unknown>"}).\n` +
+			`This CLI was not installed globally (entrypoint = ${process.argv[1] || import.meta.url || "<unknown>"}).\n` +
 				`To update a local/dev install, run \`npm install -g ${PACKAGE_NAME}@latest\` manually, or \`npm install\` inside the source checkout.` +
 				(root ? `\nGlobal install root detected at: ${root}` : ""),
 		)
 		return 1
+	}
+	if (!global && force) {
+		const root = await getGlobalInstallRoot()
+		console.warn(
+			`Warning: forcing global install even though this CLI doesn't look like a global install.` +
+				(root ? ` Detected global root: ${root}.` : ""),
+		)
 	}
 	clearUpdateCache()
 	const code = await runNpmUpdate(PACKAGE_NAME)
@@ -88,7 +96,8 @@ async function main(): Promise<void> {
 		return
 	}
 	if (args[0] === "update") {
-		const code = await runUpdate()
+		const force = args.includes("--force") || args.includes("-f")
+		const code = await runUpdate(force)
 		process.exit(code)
 	}
 
