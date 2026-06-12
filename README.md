@@ -144,12 +144,13 @@ The two Axon models are built in; `/model` opens a scroll-and-select picker
 (`/model <id>` still selects directly). Additional models can be declared via
 `customModels` in settings.json. The choice persists across sessions.
 
-| id                  | context | max output | pricing                  |
-|---------------------|---------|------------|--------------------------|
-| `axon-code-2-5-pro` | 400k    | 64k        | $2/M in · $6/M out       |
-| `axon-code-2-5-mini`| 400k    | 64k        | free                     |
+| id                     | context | max output | pricing            |
+| ---------------------- | ------- | ---------- | ------------------ |
+| `axon-eido-3-code-pro` | 400k    | 64k        | $3/M in · $9/M out |
+| `axon-code-2-5-pro`    | 400k    | 64k        | $2/M in · $6/M out |
+| `axon-code-2-5-mini`   | 400k    | 64k        | free               |
 
-`axon-code-2-5-pro` is the default. Both support native JSON tool calls and
+`axon-code-2-5-pro` is the default. All three support native JSON tool calls and
 image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
 shown in the status bar.
 
@@ -196,35 +197,35 @@ shown in the status bar.
 
 ## Slash commands
 
-| command    | action |
-|------------|--------|
-| `/help`    | list commands |
-| `/model`   | scrollable model picker (`/model pro` / `/model mini` / full id selects directly) |
-| `/clear`   | clear the screen only, like the terminal's `clear` — the conversation and context continue |
-| `/new`     | start a fresh conversation/session with a clean slate |
-| `/resume`  | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
-| `/analytics` | open the MatterAI analytics dashboard (app.matterai.so/orbital) in the browser |
-| `/compact` | summarize the conversation and replace history with the summary |
-| `/tasks`   | print the current task list |
-| `/status`  | version, model, account, gateway, context usage, cost, approval modes |
-| `/cost`    | show session cost and fetch account balance |
-| `/init`    | analyze the codebase and create/improve `AGENTS.md` |
-| `/login`   | start the browser sign-in flow |
-| `/logout`  | remove the saved token |
-| `/version` | print the CLI version |
-| `/exit`    | quit |
+| command      | action                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| `/help`      | list commands                                                                                         |
+| `/model`     | scrollable model picker (`/model pro` / `/model mini` / full id selects directly)                     |
+| `/clear`     | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
+| `/new`       | start a fresh conversation/session with a clean slate                                                 |
+| `/resume`    | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
+| `/analytics` | open the MatterAI analytics dashboard (app.matterai.so/orbital) in the browser                        |
+| `/compact`   | summarize the conversation and replace history with the summary                                       |
+| `/tasks`     | print the current task list                                                                           |
+| `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
+| `/cost`      | show session cost and fetch account balance                                                           |
+| `/init`      | analyze the codebase and create/improve `AGENTS.md`                                                   |
+| `/login`     | start the browser sign-in flow                                                                        |
+| `/logout`    | remove the saved token                                                                                |
+| `/version`   | print the CLI version                                                                                 |
+| `/exit`      | quit                                                                                                  |
 
 ## Keyboard shortcuts
 
-| key | action |
-|-----|--------|
-| `Esc` | interrupt the running turn (or cancel login polling / close a menu) |
-| `Ctrl+C` | quit |
-| `Ctrl+O` | toggle thinking display for the whole transcript (past turns included) |
-| `Shift+Tab` | cycle approval mode: ask → accept edits → auto-approve |
-| `↑` / `↓` | input history, or navigate any open menu |
-| `Ctrl+A` / `Ctrl+E` | start / end of line |
-| `Ctrl+U` | clear the input line |
+| key                 | action                                                                 |
+| ------------------- | ---------------------------------------------------------------------- |
+| `Esc`               | interrupt the running turn (or cancel login polling / close a menu)    |
+| `Ctrl+C`            | quit                                                                   |
+| `Ctrl+O`            | toggle thinking display for the whole transcript (past turns included) |
+| `Shift+Tab`         | cycle approval mode: ask → accept edits → auto-approve                 |
+| `↑` / `↓`           | input history, or navigate any open menu                               |
+| `Ctrl+A` / `Ctrl+E` | start / end of line                                                    |
+| `Ctrl+U`            | clear the input line                                                   |
 
 ## Approvals & safety
 
@@ -267,22 +268,22 @@ Two kinds of files under `~/.orbcode/`:
 
 ```json
 {
-	"apiKey": "<token used instead of logging in>",
-	"baseUrl": "https://my-gateway.example.com/v1",
-	"model": "my-custom-model",
-	"autoApproveEdits": false,
-	"autoApproveSafeCommands": false,
-	"customModels": [
-		{
-			"id": "my-custom-model",
-			"name": "My Custom Model",
-			"contextWindow": 128000,
-			"maxOutputTokens": 32000,
-			"inputPrice": 0.000001,
-			"outputPrice": 0.000002
-		}
-	],
-	"env": { "MY_VAR": "value" }
+  "apiKey": "<token used instead of logging in>",
+  "baseUrl": "https://my-gateway.example.com/v1",
+  "model": "my-custom-model",
+  "autoApproveEdits": false,
+  "autoApproveSafeCommands": false,
+  "customModels": [
+    {
+      "id": "my-custom-model",
+      "name": "My Custom Model",
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPrice": 0.000001,
+      "outputPrice": 0.000002
+    }
+  ],
+  "env": { "MY_VAR": "value" }
 }
 ```
 
@@ -295,15 +296,15 @@ config.json.
 Sessions are stored in `~/.orbcode/sessions/<id>.json` and power `/resume`
 and `--resume <id>`.
 
-| env var | effect |
-|---------|--------|
-| `ORBCODE_TOKEN` | auth token (overrides everything) |
-| `ORBCODE_API_KEY` | same as `apiKey` in settings.json |
-| `ORBCODE_BASE_URL` | same as `baseUrl` in settings.json |
-| `ORBCODE_MODEL` | model override (what `--model` sets internally) |
-| `ORBCODE_CONFIG_DIR` | config directory (default `~/.orbcode`) |
-| `ORBCODE_BACKEND_URL` | device-auth backend (default `https://api.matterai.so`) |
-| `ORBCODE_APP_URL` | webapp for the authorize page (default `https://app.matterai.so`) |
+| env var               | effect                                                            |
+| --------------------- | ----------------------------------------------------------------- |
+| `ORBCODE_TOKEN`       | auth token (overrides everything)                                 |
+| `ORBCODE_API_KEY`     | same as `apiKey` in settings.json                                 |
+| `ORBCODE_BASE_URL`    | same as `baseUrl` in settings.json                                |
+| `ORBCODE_MODEL`       | model override (what `--model` sets internally)                   |
+| `ORBCODE_CONFIG_DIR`  | config directory (default `~/.orbcode`)                           |
+| `ORBCODE_BACKEND_URL` | device-auth backend (default `https://api.matterai.so`)           |
+| `ORBCODE_APP_URL`     | webapp for the authorize page (default `https://app.matterai.so`) |
 
 `autoApproveEdits` / `autoApproveSafeCommands` set the session defaults for the
 approval prompts (dangerous commands still always prompt); shift+tab cycles
@@ -365,19 +366,19 @@ reset date — the same data as the extension's profile view.
 
 Active in the CLI (schemas byte-identical to the extension's `native-tools`):
 
-| tool | executor notes |
-|------|----------------|
-| `read_file` | line-numbered output (`LINE\|content`, 6-char pad), 1000-line cap, offset/limit |
-| `file_edit` | single replacement; unique-match enforcement; `replace_all`; empty `old_string` = whole file |
-| `multi_file_edit` | batched edits grouped per file, per-edit OK/FAILED results |
-| `file_write` | creates parent dirs, full-content writes |
-| `list_files` | optional recursive, ignores node_modules/.git/build dirs, 800-entry cap |
-| `search_files` | JS regex search with glob `file_pattern` (picomatch), 300-match cap, binary skip |
-| `execute_command` | user's shell, 120s timeout, 30k output cap, optional cwd |
-| `web_search` / `web_fetch` | proxied through the MatterAI backend with your token |
-| `update_todo_list` | drives the TUI todo panel |
-| `ask_followup_question` | interactive menu in the TUI |
-| `attempt_completion` | ends the turn with a completion card |
+| tool                       | executor notes                                                                               |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `read_file`                | line-numbered output (`LINE\|content`, 6-char pad), 1000-line cap, offset/limit              |
+| `file_edit`                | single replacement; unique-match enforcement; `replace_all`; empty `old_string` = whole file |
+| `multi_file_edit`          | batched edits grouped per file, per-edit OK/FAILED results                                   |
+| `file_write`               | creates parent dirs, full-content writes                                                     |
+| `list_files`               | optional recursive, ignores node_modules/.git/build dirs, 800-entry cap                      |
+| `search_files`             | JS regex search with glob `file_pattern` (picomatch), 300-match cap, binary skip             |
+| `execute_command`          | user's shell, 120s timeout, 30k output cap, optional cwd                                     |
+| `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
+| `update_todo_list`         | drives the TUI todo panel                                                                    |
+| `ask_followup_question`    | interactive menu in the TUI                                                                  |
+| `attempt_completion`       | ends the turn with a completion card                                                         |
 
 Present in `tools/schemas/` but **inactive** (need IDE services): `codebase_search`,
 `lsp`, `list_code_definition_names`, `use_skill`, `check_past_chat_memories`,
@@ -417,6 +418,7 @@ Source-of-truth rule: behavior is **ported from the Orbital extension repo**
 schemas byte-identical rather than editing them here.
 
 Backend/web pieces of the device-auth flow live in:
+
 - `gravity-console-backend` → `src/controller/orbcodeAuthController.ts`
   (+ OAuth state in `router.ts`, callbacks in `authController.ts`)
 - `gravity-console-webapp` → authorize dialog in `src/App.js`, sign-in q-p

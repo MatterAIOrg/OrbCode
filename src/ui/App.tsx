@@ -50,6 +50,23 @@ function setTerminalTitle(title: string): void {
 	}
 }
 
+function formatRelativeTime(isoStr?: string): string {
+	if (!isoStr) return "???"
+	const now = Date.now()
+	const target = new Date(isoStr).getTime()
+	if (Number.isNaN(target)) return "???"
+	const diff = target - now
+	if (diff <= 0) return "now"
+	const sec = Math.floor(diff / 1000)
+	const min = Math.floor(sec / 60)
+	const hrs = Math.floor(min / 60)
+	const days = Math.floor(hrs / 24)
+	if (days >= 1) return `in ${days} day${days > 1 ? "s" : ""}`
+	if (hrs >= 1) return `in ${hrs}h ${min % 60}m`
+	if (min >= 1) return `in ${min}m`
+	return "soon"
+}
+
 /** Human lines for the /status and /cost usage block (extension profile data). */
 function usageLines(profile: ProfileData): string[] {
 	const lines: string[] = []
@@ -62,7 +79,23 @@ function usageLines(profile: ProfileData): string[] {
 	if (typeof profile.remainingReviews === "number") {
 		lines.push(`Reviews     ${profile.remainingReviews} remaining`)
 	}
-	if (profile.creditsResetDate) lines.push(`Resets      ${profile.creditsResetDate}`)
+	if (profile.tieredUsage) {
+		const ws: [string, string, import("../auth/auth.js").AxonCodeWindowUsage][] = [
+			["5hr", "5-Hour", profile.tieredUsage.fiveHour],
+			["wk",  "Weekly", profile.tieredUsage.weekly],
+			["mo",  "Monthly", profile.tieredUsage.monthly],
+		]
+		for (const [short, label, w] of ws) {
+			const remaining = Math.max(0, w.remaining || 0)
+			const pct = Math.max(0, Math.min(100, w.percentage || 0))
+			const reset = formatRelativeTime(w.resetsAt)
+			lines.push(
+				`${label.padEnd(12)} ${remaining.toFixed(1)}/${w.limit.toFixed(1)} left (${pct}% used) · Resets ${reset}`,
+			)
+		}
+	} else if (profile.creditsResetDate) {
+		lines.push(`Resets      ${profile.creditsResetDate}`)
+	}
 	return lines
 }
 
@@ -177,14 +210,16 @@ export function App({
 	)
 
 	const [sessionTitle, setSessionTitle] = useState("")
-	const [usage, setUsage] = useState<{ plan?: string; usagePercentage?: number } | null>(null)
+	const [usage, setUsage] = useState<{ plan?: string; usagePercentage?: number; tieredUsage?: import("../auth/auth.js").AxonCodeTieredUsage } | null>(null)
 
 	// Refresh plan/usage from /axoncode/profile (shown below the chat box).
 	const refreshUsage = useCallback(() => {
 		const token = getAuthToken(loadSettings())
 		if (!token) return
 		fetchProfile(token)
-			.then((profile) => setUsage({ plan: profile.plan, usagePercentage: profile.usagePercentage }))
+			.then((profile) =>
+				setUsage({ plan: profile.plan, usagePercentage: profile.usagePercentage, tieredUsage: profile.tieredUsage }),
+			)
 			.catch(() => {})
 	}, [])
 
@@ -276,6 +311,10 @@ export function App({
 				case "usage":
 					setContextTokens(event.inputTokens + event.outputTokens)
 					setTotalCost(event.totalCost)
+					// A usage chunk arrives once per LLM response, so the plan/usage
+					// shown below the chat box stays current mid-turn, not only
+					// after the turn finishes.
+					refreshUsage()
 					break
 				case "completion":
 					pushRow({ kind: "completion", text: event.result })
@@ -389,10 +428,19 @@ export function App({
 					const ids = Object.keys(AXON_MODELS)
 					if (arg && isValidAxonModel(arg)) {
 						switchModel(arg)
-					} else if (arg && isValidAxonModel(`axon-code-2-5-${arg}`)) {
-						switchModel(`axon-code-2-5-${arg}`)
 					} else if (arg) {
-						pushRow({ kind: "error", text: `Unknown model "${arg}". Available: ${ids.join(", ")}` })
+						// Allow short suffixes like "pro" or "mini" to resolve to the
+						// latest matching registered id, so /model pro keeps working
+						// as new model generations are added.
+						const matches = ids
+							.filter((id) => id.endsWith(`-${arg}`))
+							.sort()
+							.reverse()
+						if (matches.length > 0) {
+							switchModel(matches[0])
+						} else {
+							pushRow({ kind: "error", text: `Unknown model "${arg}". Available: ${ids.join(", ")}` })
+						}
 					} else {
 						setModelPickerOpen(true)
 					}
@@ -607,7 +655,7 @@ export function App({
 			saveSettings(updated)
 			agentRef.current = null
 			setView("chat")
-			setUsage({ plan: profile.plan, usagePercentage: profile.usagePercentage })
+			setUsage({ plan: profile.plan, usagePercentage: profile.usagePercentage, tieredUsage: profile.tieredUsage })
 			const who = profile.user?.name || profile.user?.email
 			pushRow({ kind: "info", text: `Signed in${who ? ` as ${who}` : ""}. Ready when you are.` })
 		},
@@ -737,6 +785,7 @@ export function App({
 							title={sessionTitle}
 							plan={usage?.plan}
 							usagePercentage={usage?.usagePercentage}
+							tieredUsage={usage?.tieredUsage}
 						/>
 					</Box>
 				</Box>

@@ -1,4 +1,4 @@
-// The two Axon models served by the MatterAI backend. Ported from the
+// The Axon models served by the MatterAI backend. Ported from the
 // Orbital extension's model registry (kilocode-models.ts).
 export interface AxonModel {
   id: string;
@@ -37,6 +37,18 @@ export const AXON_MODELS: Record<string, AxonModel> = {
     supportsImages: true,
     inputPrice: 0.000002,
     outputPrice: 0.000006,
+    free: false,
+  },
+  "axon-eido-3-code-pro": {
+    id: "axon-eido-3-code-pro",
+    name: "Axon Eido 3 Pro",
+    description:
+      "Axon Eido 3 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
+    contextWindow: 400000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000003,
+    outputPrice: 0.000009,
     free: false,
   },
 };
