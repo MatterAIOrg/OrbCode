@@ -1,9 +1,9 @@
-# Auto-release to npm from release branches.
+# Auto-release to npm from version tags on main.
 #
-# Push to `release` or any `release/*` branch (e.g. release/0.2.0) and, if the
-# version in package.json isn't on npm yet, this workflow publishes it, tags
-# the commit `v<version>`, and creates a GitHub Release with generated notes.
-# Pushing again with the same version is a safe no-op.
+# The publish step is gated on a `vX.Y.Z` tag push to `main` — that requires
+# both a merged commit on the protected default branch AND an explicit tag,
+# both of which need write access to main. Release branches, PR pushes, and
+# force-pushes to a release branch do NOT publish, even with valid npm creds.
 #
 # Required repo secret: NPM_TOKEN (npm "Automation" access token with publish
 # rights for the `orbcode` package).
@@ -12,13 +12,17 @@ name: Release
 
 on:
   push:
-    branches:
-      - release
-      - "release/**"
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (must match package.json). Leave empty to read from package.json."
+        required: false
+        type: string
 
 permissions:
-  contents: write # push the version tag + create the GitHub Release
+  contents: write # create the GitHub Release
   id-token: write # npm --provenance (requires a public GitHub repo)
 
 concurrency:
@@ -28,6 +32,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
 
@@ -40,18 +45,45 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Resolve and verify version
+        id: version
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag push: REF is refs/tags/vX.Y.Z
+            TAG_VERSION=${GITHUB_REF#refs/tags/v}
+            if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Tag v$TAG_VERSION does not match package.json version $PKG_VERSION."
+              echo "::error::Update package.json (and this tag) to publish a coherent release."
+              exit 1
+            fi
+            VERSION="$TAG_VERSION"
+          else
+            # Manual dispatch: prefer the input, fall back to package.json.
+            VERSION="${{ inputs.version }}"
+            if [ -z "$VERSION" ]; then
+              VERSION="$PKG_VERSION"
+            fi
+            if [ "$VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Input version $VERSION does not match package.json version $PKG_VERSION."
+              exit 1
+            fi
+          fi
+          echo "name=$NAME"      >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Typecheck & build
         run: |
           npm run typecheck
           npm run build
 
       - name: Check whether this version is already on npm
-        id: version
+        id: check
         run: |
-          NAME=$(node -p "require('./package.json').name")
-          VERSION=$(node -p "require('./package.json').version")
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          NAME="${{ steps.version.outputs.name }}"
+          VERSION="${{ steps.version.outputs.version }}"
           if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
             echo "Version $VERSION already published — skipping."
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -60,24 +92,26 @@ jobs:
           fi
 
       - name: Publish to npm
-        if: steps.version.outputs.publish == 'true'
+        if: steps.check.outputs.publish == 'true'
         # Drop --provenance if the repository is private (provenance needs a
         # public repo and a `repository` field in package.json).
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Tag and create GitHub Release
-        if: steps.version.outputs.publish == 'true'
+      - name: Create GitHub Release
+        if: steps.check.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v$VERSION" || true
-          git push origin "v$VERSION" || true
+          TARGET_SHA="${{ github.sha }}"
+          # For tag pushes, also publish from the tagged commit itself.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TARGET_SHA="$GITHUB_REF"
+          fi
           gh release create "v$VERSION" \
             --title "orbcode v$VERSION" \
             --generate-notes \
-            --target "$GITHUB_SHA" || echo "Release v$VERSION already exists."
+            --target "$TARGET_SHA" \
+            || echo "Release v$VERSION already exists."

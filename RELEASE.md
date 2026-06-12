@@ -34,31 +34,40 @@ bumping the version is all that's needed; no source change required.
 
 ## Automated release (recommended)
 
-Releases are driven by **release branches**; the workflow is
-`.github/workflows/release.yml`.
+Releases are gated on a `vX.Y.Z` tag on `main` — publishing requires the
+release commit to be **merged into `main`** first, then an explicit tag push.
+The workflow is `.github/workflows/release.yml`.
 
 ```bash
-# 1. bump the version on a release branch
+# 1. cut a release branch off main and bump the version
 git checkout -b release/0.2.0
 npm version 0.2.0 --no-git-tag-version
 git commit -am "release: v0.2.0"
 
-# 2. push — this triggers the workflow
+# 2. push, open a PR, get it reviewed and merged into main
 git push -u origin release/0.2.0
+gh pr create --base main --head release/0.2.0 --title "release: v0.2.0"
+
+# 3. AFTER the PR is merged, tag the merge commit on main and push the tag
+git checkout main && git pull
+git tag v0.2.0           # tag the current HEAD (the merge commit)
+git push origin v0.2.0   # ← this is what actually triggers the publish
 ```
 
 The workflow then:
 
-1. installs (`npm ci`), typechecks, and builds;
-2. checks npm — if `@matterailab/orbcode@<version>` **already exists, it skips publishing**
-   (so repeated pushes to the branch are safe no-ops);
-3. publishes to npm with provenance;
-4. tags the commit `v<version>` and creates a **GitHub Release** with
-   auto-generated notes.
+1. checks out the tagged commit, installs (`npm ci`), typechecks, and builds;
+2. **verifies the tag (`vX.Y.Z`) matches `package.json#version`** — a mismatch
+   fails the build instead of publishing a mismatched package;
+3. checks npm — if `@matterailab/orbcode@<version>` **already exists, it skips publishing**
+   (so re-tagging a published version is a safe no-op);
+4. publishes to npm with provenance;
+5. creates a **GitHub Release** with auto-generated notes pointed at the tag.
 
-Branch names `release` and `release/*` both trigger it; it can also be run
-manually from the Actions tab (`workflow_dispatch`). After the release, merge
-the branch back to `main` so the version bump isn't lost.
+Tag pushes to any branch other than `main` are ignored, so a force-push to a
+release branch can't publish anything on its own. `workflow_dispatch` is also
+available as a manual fallback (it reads the version from `package.json` and
+refuses to publish if the input doesn't match).
 
 ### Versioning convention
 
