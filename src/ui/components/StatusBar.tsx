@@ -48,31 +48,25 @@ function truncate(text: string, max: number): string {
 }
 
 /**
- * Picks the most constrained window (highest percentage used) and returns a
- * compact string like "5hr 12% · resets in 3h 15m".
+ * Formats the 5hr window as "5hr limit XX% · resets <relative>".
+ * Returns null when tiered usage is unavailable so the line can be hidden.
  */
-function mostConstrainedSummary(tu: AxonCodeTieredUsage): string {
-  const windows: [string, number, string][] = [
-    ["5hr", tu.fiveHour.percentage, tu.fiveHour.resetsAt],
-    ["wk", tu.weekly.percentage, tu.weekly.resetsAt],
-    ["mo", tu.monthly.percentage, tu.monthly.resetsAt],
-  ];
-  const [label, pct, resetsAt] = windows.reduce((best, cur) =>
-    cur[1] >= best[1] ? cur : best,
-  );
-  return `${label} ${Math.round(pct)}% · resets ${formatRelativeTime(resetsAt)}`;
+function fiveHourSummary(tu: AxonCodeTieredUsage | undefined): string | null {
+  if (!tu?.fiveHour) return null;
+  const { percentage, resetsAt } = tu.fiveHour;
+  return `5hr limit ${Math.round(percentage)}% · resets ${formatRelativeTime(resetsAt)}`;
 }
 
 export function StatusBar({
   modelId,
   contextTokens,
-  totalCost,
+  totalCost: _totalCost,
   state,
   approvalMode,
   busy,
   title,
-  plan,
-  usagePercentage,
+  plan: _plan,
+  usagePercentage: _usagePercentage,
   tieredUsage,
 }: StatusBarProps) {
   const model = getModel(modelId);
@@ -80,11 +74,7 @@ export function StatusBar({
     100,
     Math.round((contextTokens / model.contextWindow) * 100),
   );
-  const constrainedLine = tieredUsage
-    ? mostConstrainedSummary(tieredUsage)
-    : typeof usagePercentage === "number"
-      ? `${Math.round(usagePercentage)}% used`
-      : null;
+  const fiveHourLine = fiveHourSummary(tieredUsage);
   return (
     <Box flexDirection="column">
       <Box justifyContent="space-between">
@@ -99,15 +89,11 @@ export function StatusBar({
         <Text dimColor>
           {title ? `${truncate(title, 32)} · ` : ""}
           {model.name} · ctx {contextTokens.toLocaleString()} ({contextPct}%)
-          {model.free ? " · free" : ` · $${totalCost.toFixed(4)}`}
         </Text>
       </Box>
-      {(plan || constrainedLine) && (
+      {fiveHourLine && (
         <Box justifyContent="flex-end">
-          <Text dimColor>
-            {plan && constrainedLine ? " · " : ""}
-            {constrainedLine}
-          </Text>
+          <Text dimColor>{fiveHourLine}</Text>
         </Box>
       )}
     </Box>

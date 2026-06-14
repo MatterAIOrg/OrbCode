@@ -270,7 +270,7 @@ export function App({
 		void fetchTaskTitle(agent.taskId, token).then((title) => {
 			if (title && agentRef.current?.taskId === agent.taskId) {
 				setSessionTitle(title)
-				setTerminalTitle(`${title} (orbcode)`)
+				setTerminalTitle(title)
 				agent.setTitle(title)
 			}
 		})
@@ -428,12 +428,16 @@ export function App({
 			resetTranscript()
 			setTasks(session.todos ?? "")
 			setTotalCost(session.totalCost ?? 0)
+			// Repopulate the status bar immediately. Without this the context
+			// number only appears once the next streaming `usage` chunk arrives,
+			// which can be after several seconds of "ctx 0".
+			setContextTokens(session.contextTokens ?? 0)
 			if (session.title) {
 				// The stored title is already the backend one (or the prompt
 				// fallback); don't re-fetch for this task.
 				titleTaskRef.current = session.id
 				setSessionTitle(session.title)
-				setTerminalTitle(`${session.title} (orbcode)`)
+				setTerminalTitle(session.title)
 			}
 			// Replay the conversation into the transcript.
 			for (const message of session.messages) {

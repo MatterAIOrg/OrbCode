@@ -91,6 +91,12 @@ export class Agent {
 	private sessionApproveCommands = false
 	private abortController?: AbortController
 	private totalCost = 0
+	/**
+	 * Latest context window usage (input + output tokens from the most recent
+	 * `usage` chunk). Mirrors `totalCost` so the status bar can show it across
+	 * /resume, /clear and process restarts.
+	 */
+	private contextTokens = 0
 	private title = ""
 	private createdAt = new Date().toISOString()
 	readonly taskId: string
@@ -102,6 +108,7 @@ export class Agent {
 			this.messages = options.resume.messages
 			this.todos = options.resume.todos
 			this.totalCost = options.resume.totalCost
+			this.contextTokens = options.resume.contextTokens
 			this.title = options.resume.title
 			this.createdAt = options.resume.createdAt
 			this.firstMessageSent = this.messages.length > 0
@@ -134,6 +141,16 @@ export class Agent {
 		return this.options.modelId
 	}
 
+	/**
+	 * Latest context window usage in tokens. Falls back to 0 for fresh
+	 * sessions; equals the persisted value after a resume so the TUI can
+	 * repopulate its `contextTokens` state without waiting for the next
+	 * streaming chunk.
+	 */
+	get lastContextTokens(): number {
+		return this.contextTokens
+	}
+
 	/** Replace the prompt-derived title with the backend-generated one. */
 	setTitle(title: string): void {
 		this.title = title
@@ -153,6 +170,7 @@ export class Agent {
 		this.todos = ""
 		this.firstMessageSent = false
 		this.totalCost = 0
+		this.contextTokens = 0
 		this.title = ""
 	}
 
@@ -168,6 +186,7 @@ export class Agent {
 				createdAt: this.createdAt,
 				updatedAt: new Date().toISOString(),
 				totalCost: this.totalCost,
+				contextTokens: this.contextTokens,
 				todos: this.todos,
 				messages: this.messages,
 			})
@@ -291,6 +310,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 					onEvent({ type: "text-delta", text: chunk.text })
 				} else if (chunk.type === "usage") {
 					this.totalCost += chunk.totalCost ?? 0
+					this.contextTokens = (chunk.inputTokens ?? 0) + (chunk.outputTokens ?? 0)
 					onEvent({
 						type: "usage",
 						inputTokens: chunk.inputTokens,
@@ -366,6 +386,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 					break
 				case "usage":
 					this.totalCost += chunk.totalCost ?? 0
+					this.contextTokens = (chunk.inputTokens ?? 0) + (chunk.outputTokens ?? 0)
 					onEvent({
 						type: "usage",
 						inputTokens: chunk.inputTokens,

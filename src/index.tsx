@@ -85,6 +85,10 @@ function takeFlagValue(args: string[], name: string): string | undefined {
 }
 
 async function main(): Promise<void> {
+	// Override Node's default process title so terminals (iTerm2 "current job
+	// name", VSCode terminal status, etc.) don't append " (node)" next to our
+	// own title. The bundled bin/orbcode.js also does this for the npm case.
+	process.title = "orbcode"
 	const args = process.argv.slice(2)
 
 	if (args.includes("--version") || args.includes("-v")) {

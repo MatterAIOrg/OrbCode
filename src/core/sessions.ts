@@ -13,6 +13,12 @@ export interface SessionData {
 	createdAt: string
 	updatedAt: string
 	totalCost: number
+	/**
+	 * Last reported context window usage (input + output tokens from the most
+	 * recent `usage` chunk). Restored on resume so the status bar keeps showing
+	 * the correct number after restart.
+	 */
+	contextTokens: number
 	todos: string
 	messages: OpenAI.Chat.ChatCompletionMessageParam[]
 }
