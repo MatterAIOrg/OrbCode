@@ -20,6 +20,8 @@ export type AgentEvent =
 	| { type: "usage"; inputTokens: number; outputTokens: number; cost: number; totalCost: number }
 	| { type: "completion"; result: string }
 	| { type: "error"; message: string }
+	/** a hook's systemMessage / non-blocking error, surfaced to the user */
+	| { type: "system"; message: string; isError: boolean }
 	| { type: "turn-end" }
 
 export interface ApprovalRequest {

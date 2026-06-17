@@ -24,6 +24,7 @@ activity rows, edit/command approvals, and todo tracking.
 - [Approvals & safety](#approvals--safety)
 - [Headless mode](#headless-mode)
 - [Configuration](#configuration)
+- [Hooks](#hooks)
 - [Architecture](#architecture)
 - [Tools](#tools)
 - [Agent loop](#agent-loop)
@@ -291,9 +292,9 @@ Two kinds of files under `~/.orbcode/`:
 
 All keys are optional. `customModels` entries appear in the `/model` picker
 alongside the built-in Axon models; `baseUrl` points the chat client at any
-OpenAI-compatible gateway; `env` is applied to the process at startup.
-Precedence: env vars > project settings.json > user settings.json >
-config.json.
+OpenAI-compatible gateway; `env` is applied to the process at startup; `hooks`
+configures lifecycle hooks (see [Hooks](#hooks)). Precedence: env vars > project
+settings.json > user settings.json > config.json.
 
 Sessions are stored in `~/.orbcode/sessions/<id>.json` and power `/resume`
 and `--resume <id>`.
@@ -311,6 +312,97 @@ and `--resume <id>`.
 `autoApproveEdits` / `autoApproveSafeCommands` set the session defaults for the
 approval prompts (dangerous commands still always prompt); shift+tab cycles
 them at runtime.
+
+## Hooks
+
+Hooks are shell commands OrbCode runs at fixed points in the agent loop — use
+them to **block** dangerous actions, **auto-approve** trusted ones, **rewrite**
+tool inputs, **inject context** into the model, **format code** after edits,
+**notify** you, or **keep the agent working** until a condition is met. They use
+the **same contract as Claude Code's hooks**, so scripts written for it work
+here (just use `$ORBCODE_PROJECT_DIR` and OrbCode's tool names).
+
+> 📖 **This is the overview. The complete, example-driven reference —
+> per-event input/output, a copy-paste cookbook, debugging, and security — is in
+> [docs/HOOKS.md](https://github.com/MatterAIOrg/OrbCode/blob/main/docs/HOOKS.md).**
+
+### Two-minute example
+
+Make OrbCode block `rm -rf` and append the git branch to every prompt.
+
+**1.** Drop a guard script at `~/.orbcode/hooks/guard.sh` (and `chmod +x` it):
+
+```bash
+#!/usr/bin/env bash
+input=$(cat)                                    # OrbCode sends JSON on stdin
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+if printf '%s' "$cmd" | grep -Eq 'rm -rf (/|~|\*)'; then
+  echo "Refusing destructive command: $cmd" >&2 # stderr = the reason
+  exit 2                                         # exit 2 = block the tool
+fi
+exit 0
+```
+
+**2.** Register it in `~/.orbcode/settings.json` (user-level) or a project's
+`.orbcode/settings.json` — both are **merged**, so projects can add hooks
+without clobbering your global ones. (User hooks always run; **project hooks are
+disabled until you approve them** in a one-time trust prompt, since they run
+shell commands from a repo — see [Security](https://github.com/MatterAIOrg/OrbCode/blob/main/docs/HOOKS.md#security).)
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "execute_command",
+        "hooks": [{ "type": "command", "command": "~/.orbcode/hooks/guard.sh", "timeout": 30 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "echo \"Git branch: $(git branch --show-current 2>/dev/null)\"" }] }
+    ]
+  }
+}
+```
+
+Start OrbCode normally — that's all. Each event maps to a list of matchers; a
+matcher has an optional `matcher` regex (omit, or use `"*"`, to match
+everything; the regex is auto-anchored so `"execute_command"` matches exactly
+that tool name) and a list of `command` hooks (`timeout` is per-command
+seconds, default 10).
+
+### Events at a glance
+
+| event              | when it fires                                  | matcher tests |
+| ------------------ | ---------------------------------------------- | ------------- |
+| `SessionStart`     | first turn of a session (or after `--resume`)  | `source`      |
+| `UserPromptSubmit` | before each prompt is sent to the model        | —             |
+| `PreToolUse`       | before a tool runs (and before its approval)   | tool name     |
+| `PostToolUse`      | after a tool returns                           | tool name     |
+| `Notification`     | when OrbCode needs permission or a follow-up   | —             |
+| `Stop`             | when the model is about to finish the turn     | —             |
+| `PreCompact`       | before `/compact` summarizes the conversation  | `trigger`     |
+| `SessionEnd`       | on quit, `/logout`, or end of a `-p` run       | `reason`      |
+| `SubagentStop`     | reserved; OrbCode has no subagents yet         | —             |
+
+### How a hook talks back
+
+A hook receives a JSON payload on **stdin** (`session_id`, `transcript_path`,
+`cwd`, `hook_event_name`, plus event fields like `tool_name`/`tool_input`,
+`prompt`, …) and influences OrbCode via its **exit code** — `0` success
+(stdout becomes context for `UserPromptSubmit`/`SessionStart`), `2` block
+(stderr is the reason), other = non-blocking warning — and/or a **JSON object
+on stdout** for fine control (`decision`, `continue`, `systemMessage`, and a
+`hookSpecificOutput` with `permissionDecision` allow/deny/ask, `updatedInput`,
+`additionalContext`). When several hooks match, they run in parallel, the most
+restrictive permission wins (`deny` > `ask` > `allow`), and a failing/slow hook
+is timed out and never crashes the agent. Hooks run with a **redacted
+environment** (your API token and other credential-like vars are stripped) and
+injected context is wrapped in `<hook_context>` tags the model treats as
+untrusted.
+
+**→ Full reference with worked recipes for every event:
+[docs/HOOKS.md](https://github.com/MatterAIOrg/OrbCode/blob/main/docs/HOOKS.md).**
 
 ## Architecture
 
@@ -336,6 +428,7 @@ src/
   core/
     agent.ts         the agent loop (see below)
     events.ts        AgentEvent model consumed by the UI
+    hooks.ts         lifecycle hooks engine, Claude-Code compatible (see Hooks)
   ui/
     App.tsx          main Ink app: static finalized rows + dynamic streaming area
     LoginView.tsx    device-flow login screen with paste fallback

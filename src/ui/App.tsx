@@ -6,7 +6,14 @@ import { COLORS, VERSION } from "../branding.js"
 import { AXON_MODELS, getModel, isValidAxonModel } from "../api/models.js"
 import { LoginView } from "./LoginView.js"
 import { APP_URL, fetchBalance, fetchProfile, fetchTaskTitle, type ProfileData } from "../auth/auth.js"
-import { getAuthToken, loadSettings, saveSettings, type OrbCodeSettings } from "../config/settings.js"
+import {
+	getAuthToken,
+	getPendingProjectHooks,
+	loadSettings,
+	saveSettings,
+	trustProjectHooks,
+	type OrbCodeSettings,
+} from "../config/settings.js"
 import { Agent } from "../core/agent.js"
 import type { UpdateInfo } from "../utils/updateCheck.js"
 import type {
@@ -19,6 +26,7 @@ import { Spinner } from "./components/Spinner.js"
 import { InputBox, type SlashCommand } from "./components/InputBox.js"
 import { ApprovalPrompt } from "./components/ApprovalPrompt.js"
 import { FollowupPrompt } from "./components/FollowupPrompt.js"
+import { HookTrustPrompt } from "./components/HookTrustPrompt.js"
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js"
 import { ModelPicker } from "./components/ModelPicker.js"
 import { SessionPicker } from "./components/SessionPicker.js"
@@ -200,6 +208,9 @@ export function App({
 	const [runningTool, setRunningTool] = useState<RunningTool | null>(null)
 	const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 	const [pendingFollowup, setPendingFollowup] = useState<PendingFollowup | null>(null)
+	// Set when the current project defines hooks that haven't been trusted yet;
+	// gates input until the user decides (project hooks run shell commands).
+	const [pendingHookTrust, setPendingHookTrust] = useState<{ commands: string[] } | null>(null)
 	// FIFO queue of messages the user typed while the LLM was still streaming.
 	// Drained one-per-turn on each `turn-end` event so multi-step work can
 	// keep flowing without making the user wait for the previous response.
@@ -242,6 +253,10 @@ export function App({
 	// we can drain it inside `handleEvent` without re-creating that callback
 	// on every keystroke).
 	const queueRef = useRef<string[]>([])
+	// Holds the startup prompt while we wait for a project-hook trust decision.
+	const deferredPromptRef = useRef<string | null>(null)
+	// Guards endAndExit against double-invocation (Ctrl+D spam).
+	const exitingRef = useRef(false)
 
 	const enqueueMessage = useCallback((text: string) => {
 		queueRef.current = [...queueRef.current, text]
@@ -270,7 +285,7 @@ export function App({
 		void fetchTaskTitle(agent.taskId, token).then((title) => {
 			if (title && agentRef.current?.taskId === agent.taskId) {
 				setSessionTitle(title)
-				setTerminalTitle(`${title} (orbcode)`)
+				setTerminalTitle(title)
 				agent.setTitle(title)
 			}
 		})
@@ -350,6 +365,9 @@ export function App({
 				case "completion":
 					pushRow({ kind: "completion", text: event.result })
 					break
+				case "system":
+					pushRow({ kind: event.isError ? "error" : "info", text: event.message })
+					break
 				case "error":
 					pushRow({ kind: "error", text: event.message })
 					break
@@ -401,6 +419,7 @@ export function App({
 				baseUrl: current.baseUrl,
 				autoApproveEdits: current.autoApproveEdits,
 				autoApproveSafeCommands: current.autoApproveSafeCommands,
+				hooks: current.hooks,
 				resume,
 				callbacks: {
 					onEvent: handleEvent,
@@ -428,12 +447,16 @@ export function App({
 			resetTranscript()
 			setTasks(session.todos ?? "")
 			setTotalCost(session.totalCost ?? 0)
+			// Repopulate the status bar immediately. Without this the context
+			// number only appears once the next streaming `usage` chunk arrives,
+			// which can be after several seconds of "ctx 0".
+			setContextTokens(session.contextTokens ?? 0)
 			if (session.title) {
 				// The stored title is already the backend one (or the prompt
 				// fallback); don't re-fetch for this task.
 				titleTaskRef.current = session.id
 				setSessionTitle(session.title)
-				setTerminalTitle(`${session.title} (orbcode)`)
+				setTerminalTitle(session.title)
 			}
 			// Replay the conversation into the transcript.
 			for (const message of session.messages) {
@@ -458,6 +481,35 @@ export function App({
 			pushRow({ kind: "info", text: `Model switched to ${getModel(modelId).name}` })
 		},
 		[pushRow],
+	)
+
+	// Fire SessionEnd hooks (best-effort, capped at 3s) before quitting.
+	const endAndExit = useCallback(
+		(reason: string) => {
+			const agent = agentRef.current
+			if (!agent) {
+				exit()
+				return
+			}
+			// Guard against double-invocation (e.g. the user spamming Ctrl+D):
+			// the first call schedules the shutdown; subsequent calls are no-ops.
+			if (exitingRef.current) return
+			exitingRef.current = true
+			// Clear the cap timer when SessionEnd finishes first — Promise.race
+			// leaves the loser pending, and a ref'd setTimeout would otherwise
+			// keep the event loop alive (delaying the actual exit by up to 3s).
+			let capTimer: ReturnType<typeof setTimeout> | undefined
+			const cap = new Promise<void>((resolve) => {
+				capTimer = setTimeout(resolve, 3000)
+				capTimer.unref?.()
+			})
+			void Promise.race([agent.endSession(reason), cap]).finally(() => {
+				if (capTimer) clearTimeout(capTimer)
+				agent.abort()
+				exit()
+			})
+		},
+		[exit],
 	)
 
 	const handleCommand = useCallback(
@@ -623,6 +675,9 @@ export function App({
 					break
 				case "/logout": {
 					clearQueue()
+					void agentRef.current?.endSession("logout")
+					setPendingHookTrust(null)
+					deferredPromptRef.current = null
 					const updated = { ...settings, token: undefined }
 					setSettings(updated)
 					saveSettings(updated)
@@ -631,13 +686,13 @@ export function App({
 					break
 				}
 				case "/exit":
-					exit()
+					endAndExit("prompt_input_exit")
 					break
 				default:
 					pushRow({ kind: "error", text: `Unknown command: ${name}. Try /help.` })
 			}
 		},
-		[settings, tasks, contextTokens, totalCost, sessionTitle, exit, pushRow, getAgent, switchModel, resetTranscript, clearQueue],
+		[settings, tasks, contextTokens, totalCost, sessionTitle, endAndExit, pushRow, getAgent, switchModel, resetTranscript, clearQueue],
 	)
 
 	const handleSubmit = useCallback(
@@ -665,13 +720,45 @@ export function App({
 		[settings, busy, handleCommand, enqueueMessage, getAgent, pushRow],
 	)
 
+	// Resolve the project-hook trust prompt: enable hooks for this workspace (and
+	// the live agent) on approval, then run any prompt we deferred while asking.
+	const resolveHookTrust = useCallback(
+		(trust: boolean) => {
+			setPendingHookTrust(null)
+			if (trust) {
+				trustProjectHooks(process.cwd())
+				const updated = loadSettings()
+				setSettings(updated)
+				agentRef.current?.setHooks(updated.hooks)
+				pushRow({ kind: "info", text: "Project hooks trusted — enabled for this workspace." })
+			} else {
+				pushRow({
+					kind: "info",
+					text: "Project hooks left disabled. Review .orbcode/settings.json and restart to re-decide.",
+				})
+			}
+			const deferred = deferredPromptRef.current
+			deferredPromptRef.current = null
+			if (deferred) handleSubmit(deferred)
+		},
+		[handleSubmit, pushRow],
+	)
+
 	// Apply --resume and an initial prompt (`orbcode "do something"`) on startup.
 	const bootedRef = useRef(false)
 	useEffect(() => {
 		if (bootedRef.current) return
 		bootedRef.current = true
 		if (initialSession) handleResume(initialSession)
-		if (initialPrompt) handleSubmit(initialPrompt)
+		// If this project ships untrusted hooks, ask before running anything; the
+		// startup prompt waits until the user decides.
+		const pending = getPendingProjectHooks(process.cwd())
+		if (pending) {
+			setPendingHookTrust(pending)
+			deferredPromptRef.current = initialPrompt ?? null
+		} else if (initialPrompt) {
+			handleSubmit(initialPrompt)
+		}
 		refreshUsage()
 	}, [initialSession, initialPrompt, handleResume, handleSubmit, refreshUsage])
 
@@ -693,8 +780,7 @@ export function App({
 		// followup). InputBox swallows other Ctrl-combos, but this hook is a
 		// sibling of InputBox's hook, so it still sees the key.
 		if (key.ctrl && input === "d") {
-			agentRef.current?.abort()
-			exit()
+			endAndExit("prompt_input_exit")
 			return
 		}
 		if (key.escape && busy && !pendingApproval && !pendingFollowup) {
@@ -745,7 +831,12 @@ export function App({
 	)
 
 	const inputActive =
-		view === "chat" && !pendingApproval && !pendingFollowup && !modelPickerOpen && !resumableSessions
+		view === "chat" &&
+		!pendingApproval &&
+		!pendingFollowup &&
+		!pendingHookTrust &&
+		!modelPickerOpen &&
+		!resumableSessions
 
 	return (
 		<Box flexDirection="column">
@@ -838,6 +929,15 @@ export function App({
 							/>
 						</Box>
 					)}
+					{pendingHookTrust && (
+						<Box marginTop={1}>
+							<HookTrustPrompt
+								cwd={process.cwd()}
+								commands={pendingHookTrust.commands}
+								onDecision={resolveHookTrust}
+							/>
+						</Box>
+					)}
 					{pendingApproval && (
 						<Box marginTop={1}>
 							<ApprovalPrompt
@@ -862,7 +962,7 @@ export function App({
 							/>
 						</Box>
 					)}
-					{busy && !pendingApproval && !pendingFollowup && !streamingText && (
+					{busy && !pendingApproval && !pendingFollowup && !pendingHookTrust && !streamingText && (
 						<Box marginTop={1}>
 							<Spinner label={busyLabel} />
 						</Box>

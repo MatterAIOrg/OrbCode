@@ -1,8 +1,10 @@
+import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
 import { DEFAULT_MODEL_ID, isValidAxonModel, registerCustomModels, type CustomModelConfig } from "../api/models.js"
+import { isHookEvent, type HookMatcher, type HooksConfig } from "../core/hooks.js"
 
 export interface OrbCodeSettings {
 	/** login token, written by `orbcode login` (config.json only) */
@@ -22,6 +24,8 @@ export interface OrbCodeSettings {
 	customModels?: CustomModelConfig[]
 	/** environment variables applied to this process on startup */
 	env?: Record<string, string>
+	/** lifecycle hooks (Claude-Code style); merged across all settings.json files */
+	hooks?: HooksConfig
 }
 
 const DEFAULTS: OrbCodeSettings = {
@@ -54,12 +58,93 @@ export function getSettingsPaths(cwd = process.cwd()): string[] {
 	return [path.join(getConfigDir(), "settings.json"), path.join(cwd, ".orbcode", "settings.json")]
 }
 
+/** Concatenate a settings file's `hooks` block into the accumulator, keeping
+ *  only known events and well-formed matcher arrays. */
+function mergeHooksInto(target: HooksConfig, raw: unknown): void {
+	if (!raw || typeof raw !== "object") return
+	for (const [event, matchers] of Object.entries(raw as Record<string, unknown>)) {
+		if (!isHookEvent(event)) continue
+		if (!Array.isArray(matchers)) continue
+		;(target[event] ??= []).push(...(matchers as HookMatcher[]))
+	}
+}
+
 function readJson(filePath: string): Record<string, unknown> | undefined {
 	try {
 		return JSON.parse(fs.readFileSync(filePath, "utf8"))
 	} catch {
 		return undefined
 	}
+}
+
+// --- Project-hook trust ---------------------------------------------------
+// User-level hooks (~/.orbcode/settings.json) are written by the user and are
+// always trusted. Project-level hooks (<cwd>/.orbcode/settings.json) ship
+// inside a repo and could come from anyone, so they run arbitrary shell
+// commands only after the user explicitly trusts them. Trust is keyed by
+// project path + a hash of the hooks, so changing the hooks re-prompts.
+
+function getProjectSettingsPath(cwd: string): string {
+	return path.join(cwd, ".orbcode", "settings.json")
+}
+
+function getTrustStorePath(): string {
+	return path.join(getConfigDir(), "hook-trust.json")
+}
+
+/** Normalized project hooks (known events only), or undefined if none. */
+function readProjectHooks(cwd: string): HooksConfig | undefined {
+	const merged: HooksConfig = {}
+	mergeHooksInto(merged, readJson(getProjectSettingsPath(cwd))?.hooks)
+	return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+function hashHooks(hooks: HooksConfig): string {
+	return crypto.createHash("sha256").update(JSON.stringify(hooks)).digest("hex").slice(0, 16)
+}
+
+function isProjectHooksTrusted(cwd: string, hash: string): boolean {
+	// Escape hatch for CI / non-interactive automation. Only honored when
+	// stdin is not a TTY (so a stray export in a shell rc file can't silently
+	// disable the trust gate for interactive sessions). A non-TTY check keeps
+	// the gate meaningful in the TUI while still letting CI opt in.
+	if (process.env.ORBCODE_TRUST_PROJECT_HOOKS === "1" && !process.stdin.isTTY) return true
+	const store = readJson(getTrustStorePath())
+	return Boolean(store && store[cwd] === hash)
+}
+
+/** Persist trust for the current project's hooks (call after the user agrees). */
+export function trustProjectHooks(cwd = process.cwd()): void {
+	const hooks = readProjectHooks(cwd)
+	if (!hooks) return
+	const store = (readJson(getTrustStorePath()) as Record<string, string> | undefined) ?? {}
+	store[cwd] = hashHooks(hooks)
+	try {
+		fs.mkdirSync(getConfigDir(), { recursive: true })
+		fs.writeFileSync(getTrustStorePath(), JSON.stringify(store, null, "\t") + "\n", { mode: 0o600 })
+	} catch {
+		// best-effort; if it can't be persisted the user will simply be re-prompted
+	}
+}
+
+/**
+ * If this project defines hooks that are not yet trusted, return the list of
+ * shell commands awaiting approval; otherwise null (no project hooks, or already
+ * trusted). The TUI uses this to gate project hooks behind a trust prompt.
+ */
+export function getPendingProjectHooks(cwd = process.cwd()): { commands: string[] } | null {
+	const hooks = readProjectHooks(cwd)
+	if (!hooks) return null
+	if (isProjectHooksTrusted(cwd, hashHooks(hooks))) return null
+	const commands: string[] = []
+	for (const matchers of Object.values(hooks)) {
+		for (const matcher of matchers ?? []) {
+			for (const hook of matcher.hooks ?? []) {
+				if (hook?.command) commands.push(hook.command)
+			}
+		}
+	}
+	return { commands }
 }
 
 /** Make sure ~/.orbcode/settings.json exists (empty JSON) so users can find it. */
@@ -80,8 +165,9 @@ export function loadSettings(): OrbCodeSettings {
 	const settings: OrbCodeSettings = { ...DEFAULTS, ...readJson(getConfigPath()) }
 
 	// Layer settings.json files on top (user config dir, then project).
+	const cwd = process.cwd()
 	const customModels: CustomModelConfig[] = []
-	for (const settingsPath of getSettingsPaths()) {
+	for (const settingsPath of getSettingsPaths(cwd)) {
 		const fileSettings = readJson(settingsPath)
 		if (!fileSettings) continue
 		for (const key of SETTINGS_KEYS) {
@@ -96,6 +182,22 @@ export function loadSettings(): OrbCodeSettings {
 	if (customModels.length > 0) {
 		settings.customModels = customModels
 		registerCustomModels(customModels)
+	}
+
+	// Hooks: user-level hooks always apply; project-level hooks run alongside
+	// them but only once trusted (they execute arbitrary shell commands). The
+	// two sets concatenate, so a trusted project adds to — never clobbers — your
+	// global hooks.
+	const mergedHooks: HooksConfig = {}
+	mergeHooksInto(mergedHooks, readJson(path.join(getConfigDir(), "settings.json"))?.hooks)
+	const projectHooks = readProjectHooks(cwd)
+	if (projectHooks && isProjectHooksTrusted(cwd, hashHooks(projectHooks))) {
+		for (const [event, matchers] of Object.entries(projectHooks)) {
+			;(mergedHooks[event as keyof HooksConfig] ??= []).push(...(matchers as HookMatcher[]))
+		}
+	}
+	if (Object.keys(mergedHooks).length > 0) {
+		settings.hooks = mergedHooks
 	}
 
 	// env block from settings.json applies to this process.
