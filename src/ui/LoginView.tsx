@@ -118,7 +118,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
 			{phase === "verifying" && <Text color={COLORS.thinking}>Verifying…</Text>}
 			{error && <Text color={COLORS.error}>✗ {error}</Text>}
 			<Text dimColor>
-				To use a token instead, set apiKey in ~/.orbcode/settings.json or the ORBCODE_TOKEN env var.
+				To use a token instead, set apiKey in ~/.orbcode/settings.json or the MATTERAI_TOKEN env var.
 			</Text>
 		</Box>
 	)

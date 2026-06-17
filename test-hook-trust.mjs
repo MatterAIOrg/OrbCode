@@ -19,8 +19,8 @@ const PROJECT_HOOKS = {
 function fresh() {
 	const cfg = mkdtempSync(join(tmpdir(), "orb-cfg-"))
 	const proj = mkdtempSync(join(tmpdir(), "orb-proj-"))
-	process.env.ORBCODE_CONFIG_DIR = cfg
-	delete process.env.ORBCODE_TRUST_PROJECT_HOOKS
+	process.env.MATTERAI_CONFIG_DIR = cfg
+	delete process.env.MATTERAI_TRUST_PROJECT_HOOKS
 	process.chdir(proj)
 	return { cfg, cwd: process.cwd() }
 }
@@ -71,15 +71,15 @@ function writeProjectHooks(cwd, obj) {
 	ok("editing project hooks re-prompts (trust is content-hashed)")
 }
 
-// 4. ORBCODE_TRUST_PROJECT_HOOKS=1 trusts project hooks without prompting (CI).
+// 4. MATTERAI_TRUST_PROJECT_HOOKS=1 trusts project hooks without prompting (CI).
 {
 	const { cwd } = fresh()
 	writeProjectHooks(cwd, PROJECT_HOOKS)
-	process.env.ORBCODE_TRUST_PROJECT_HOOKS = "1"
+	process.env.MATTERAI_TRUST_PROJECT_HOOKS = "1"
 	assert.strictEqual(getPendingProjectHooks(), null, "env override => nothing pending")
 	assert.ok(loadSettings().hooks?.PreToolUse, "env override => hooks active")
-	delete process.env.ORBCODE_TRUST_PROJECT_HOOKS
-	ok("ORBCODE_TRUST_PROJECT_HOOKS=1 enables project hooks (CI escape hatch)")
+	delete process.env.MATTERAI_TRUST_PROJECT_HOOKS
+	ok("MATTERAI_TRUST_PROJECT_HOOKS=1 enables project hooks (CI escape hatch)")
 }
 
 // 5. User-level hooks are ALWAYS active regardless of project trust.
@@ -111,16 +111,16 @@ function writeProjectHooks(cwd, obj) {
 	ok("trusted project hooks merge with (don't clobber) user hooks")
 }
 
-// 7. ORBCODE_TRUST_PROJECT_HOOKS only honors the exact value "1" (not "true").
+// 7. MATTERAI_TRUST_PROJECT_HOOKS only honors the exact value "1" (not "true").
 {
 	const { cwd } = fresh()
 	writeProjectHooks(cwd, PROJECT_HOOKS)
-	process.env.ORBCODE_TRUST_PROJECT_HOOKS = "true"
+	process.env.MATTERAI_TRUST_PROJECT_HOOKS = "true"
 	const pending = getPendingProjectHooks()
 	assert.ok(pending, '"true" must not be honored — only "1"')
 	assert.strictEqual(loadSettings().hooks, undefined, '"true" must not enable hooks')
-	delete process.env.ORBCODE_TRUST_PROJECT_HOOKS
-	ok('ORBCODE_TRUST_PROJECT_HOOKS="true" is not honored (strict "1" only)')
+	delete process.env.MATTERAI_TRUST_PROJECT_HOOKS
+	ok('MATTERAI_TRUST_PROJECT_HOOKS="true" is not honored (strict "1" only)')
 }
 
 console.log(`\n${passed} checks passed`)

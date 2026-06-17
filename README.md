@@ -130,10 +130,10 @@ Fallbacks & overrides:
 - **settings.json key**: set `apiKey` in `~/.orbcode/settings.json` (or a
   project's `.orbcode/settings.json`) to skip login. The login screen itself is
   browser-redirect only.
-- **Env token**: set `ORBCODE_TOKEN` to skip login entirely (takes precedence
+- **Env token**: set `MATTERAI_TOKEN` to skip login entirely (takes precedence
   over everything).
-- **Dev endpoints**: `ORBCODE_BACKEND_URL` (default `https://api.matterai.so`)
-  and `ORBCODE_APP_URL` (default `https://app.matterai.so`) override where the
+- **Dev endpoints**: `MATTERAI_BACKEND_URL` (default `https://api.matterai.so`)
+  and `MATTERAI_APP_URL` (default `https://app.matterai.so`) override where the
   device flow points — useful against a local backend/webapp.
 - Tokens are MatterAI JWTs. A token whose payload has `env: "development"`
   automatically routes API calls to `http://localhost:3000`, matching the
@@ -346,13 +346,13 @@ and `--resume <id>`.
 
 | env var               | effect                                                            |
 | --------------------- | ----------------------------------------------------------------- |
-| `ORBCODE_TOKEN`       | auth token (overrides everything)                                 |
-| `ORBCODE_API_KEY`     | same as `apiKey` in settings.json                                 |
-| `ORBCODE_BASE_URL`    | same as `baseUrl` in settings.json                                |
-| `ORBCODE_MODEL`       | model override (what `--model` sets internally)                   |
-| `ORBCODE_CONFIG_DIR`  | config directory (default `~/.orbcode`)                           |
-| `ORBCODE_BACKEND_URL` | device-auth backend (default `https://api.matterai.so`)           |
-| `ORBCODE_APP_URL`     | webapp for the authorize page (default `https://app.matterai.so`) |
+| `MATTERAI_TOKEN`       | auth token (overrides everything)                                 |
+| `MATTERAI_API_KEY`     | same as `apiKey` in settings.json                                 |
+| `MATTERAI_BASE_URL`    | same as `baseUrl` in settings.json                                |
+| `MATTERAI_MODEL`       | model override (what `--model` sets internally)                   |
+| `MATTERAI_CONFIG_DIR`  | config directory (default `~/.orbcode`)                           |
+| `MATTERAI_BACKEND_URL` | device-auth backend (default `https://api.matterai.so`)           |
+| `MATTERAI_APP_URL`     | webapp for the authorize page (default `https://app.matterai.so`) |
 
 `autoApproveEdits` / `autoApproveSafeCommands` set the session defaults for the
 approval prompts (dangerous commands still always prompt); shift+tab cycles
@@ -365,7 +365,7 @@ them to **block** dangerous actions, **auto-approve** trusted ones, **rewrite**
 tool inputs, **inject context** into the model, **format code** after edits,
 **notify** you, or **keep the agent working** until a condition is met. They use
 the **same contract as Claude Code's hooks**, so scripts written for it work
-here (just use `$ORBCODE_PROJECT_DIR` and OrbCode's tool names).
+here (just use `$MATTERAI_PROJECT_DIR` and OrbCode's tool names).
 
 > 📖 **This is the overview. The complete, example-driven reference —
 > per-event input/output, a copy-paste cookbook, debugging, and security — is in
@@ -588,8 +588,8 @@ node test-device-auth.mjs  # device-auth polling flow against a local mock
   command runs `dist/`, and the version is read from `package.json` at runtime.
 - **Stale link after the rename** — `npm unlink -g orbitalcode && npm link`.
 - **Login times out** — the device code lives 10 minutes; press Enter to retry,
-  or paste a token manually. Against a local stack, set `ORBCODE_BACKEND_URL`
-  and `ORBCODE_APP_URL`.
+  or paste a token manually. Against a local stack, set `MATTERAI_BACKEND_URL`
+  and `MATTERAI_APP_URL`.
 - **401 on chat** — token expired: `/logout` then `/login`.
 - **Keyboard input does nothing** — OrbCode needs a real TTY (raw mode); it
   won't accept piped stdin. Use `-p` for non-interactive runs.

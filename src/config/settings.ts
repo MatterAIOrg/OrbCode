@@ -46,7 +46,7 @@ const SETTINGS_KEYS = [
 ] as const
 
 export function getConfigDir(): string {
-	return process.env.ORBCODE_CONFIG_DIR || path.join(os.homedir(), ".orbcode")
+	return process.env.MATTERAI_CONFIG_DIR || path.join(os.homedir(), ".orbcode")
 }
 
 function getConfigPath(): string {
@@ -108,7 +108,7 @@ function isProjectHooksTrusted(cwd: string, hash: string): boolean {
 	// stdin is not a TTY (so a stray export in a shell rc file can't silently
 	// disable the trust gate for interactive sessions). A non-TTY check keeps
 	// the gate meaningful in the TUI while still letting CI opt in.
-	if (process.env.ORBCODE_TRUST_PROJECT_HOOKS === "1" && !process.stdin.isTTY) return true
+	if (process.env.MATTERAI_TRUST_PROJECT_HOOKS === "1" && !process.stdin.isTTY) return true
 	const store = readJson(getTrustStorePath())
 	return Boolean(store && store[cwd] === hash)
 }
@@ -208,9 +208,9 @@ export function loadSettings(): OrbCodeSettings {
 	}
 
 	// Environment variables take precedence over all files.
-	if (process.env.ORBCODE_BASE_URL) settings.baseUrl = process.env.ORBCODE_BASE_URL
-	if (process.env.ORBCODE_API_KEY) settings.apiKey = process.env.ORBCODE_API_KEY
-	if (process.env.ORBCODE_MODEL) settings.model = process.env.ORBCODE_MODEL
+	if (process.env.MATTERAI_BASE_URL) settings.baseUrl = process.env.MATTERAI_BASE_URL
+	if (process.env.MATTERAI_API_KEY) settings.apiKey = process.env.MATTERAI_API_KEY
+	if (process.env.MATTERAI_MODEL) settings.model = process.env.MATTERAI_MODEL
 
 	if (!isValidAxonModel(settings.model)) {
 		settings.model = DEFAULT_MODEL_ID
@@ -219,11 +219,11 @@ export function loadSettings(): OrbCodeSettings {
 }
 
 /**
- * Effective credential: ORBCODE_TOKEN env > apiKey (settings.json / env) >
+ * Effective credential: MATTERAI_TOKEN env > apiKey (settings.json / env) >
  * stored login token.
  */
 export function getAuthToken(settings: OrbCodeSettings): string | undefined {
-	return process.env.ORBCODE_TOKEN || settings.apiKey || settings.token
+	return process.env.MATTERAI_TOKEN || settings.apiKey || settings.token
 }
 
 /** Persist app state to config.json. settings.json-only fields are skipped. */

@@ -19,23 +19,23 @@ function makeRunner(config) {
 }
 
 // Set up credential-like env vars that must NEVER reach a hook.
-process.env.ORBCODE_TOKEN = "secret-orbcode-token"
-process.env.ORBCODE_API_KEY = "secret-api-key"
-process.env.ORBCODE_CONFIG_DIR = "/should/not/leak"
+process.env.MATTERAI_TOKEN = "secret-orbcode-token"
+process.env.MATTERAI_API_KEY = "secret-api-key"
+process.env.MATTERAI_CONFIG_DIR = "/should/not/leak"
 process.env.MY_GITHUB_TOKEN = "ghp_secret"
 process.env.AWS_SECRET_ACCESS_KEY = "aws-secret"
 process.env.DATABASE_PASSWORD = "db-pass"
 
-// 1. ORBCODE_TOKEN and ORBCODE_API_KEY are redacted from the hook env.
+// 1. MATTERAI_TOKEN and MATTERAI_API_KEY are redacted from the hook env.
 {
 	const { runner } = makeRunner({
 		SessionStart: [{ hooks: [{ type: "command", command: "env" }] }],
 	})
 	const r = await runner.run("SessionStart", { source: "startup" })
 	const envOutput = r.additionalContext || ""
-	assert.ok(!envOutput.includes("secret-orbcode-token"), "ORBCODE_TOKEN must not leak to hooks")
-	assert.ok(!envOutput.includes("secret-api-key"), "ORBCODE_API_KEY must not leak to hooks")
-	assert.ok(!envOutput.includes("/should/not/leak"), "ORBCODE_CONFIG_DIR must not leak to hooks")
+	assert.ok(!envOutput.includes("secret-orbcode-token"), "MATTERAI_TOKEN must not leak to hooks")
+	assert.ok(!envOutput.includes("secret-api-key"), "MATTERAI_API_KEY must not leak to hooks")
+	assert.ok(!envOutput.includes("/should/not/leak"), "MATTERAI_CONFIG_DIR must not leak to hooks")
 	ok("OrbCode credential env vars are redacted from hooks")
 }
 
@@ -52,22 +52,22 @@ process.env.DATABASE_PASSWORD = "db-pass"
 	ok("credential-pattern env vars (TOKEN/SECRET/PASSWORD) are redacted")
 }
 
-// 3. Non-credential env vars (PATH, HOME, ORBCODE_PROJECT_DIR) are preserved.
+// 3. Non-credential env vars (PATH, HOME, MATTERAI_PROJECT_DIR) are preserved.
 {
 	const { runner } = makeRunner({
 		SessionStart: [{ hooks: [{ type: "command", command: "env" }] }],
 	})
 	const r = await runner.run("SessionStart", { source: "startup" })
 	const envOutput = r.additionalContext || ""
-	assert.ok(envOutput.includes("ORBCODE_PROJECT_DIR"), "ORBCODE_PROJECT_DIR must be present")
+	assert.ok(envOutput.includes("MATTERAI_PROJECT_DIR"), "MATTERAI_PROJECT_DIR must be present")
 	assert.ok(envOutput.includes("PATH="), "PATH must be preserved")
-	ok("non-credential env vars (PATH, ORBCODE_PROJECT_DIR) are preserved")
+	ok("non-credential env vars (PATH, MATTERAI_PROJECT_DIR) are preserved")
 }
 
 // Cleanup
-delete process.env.ORBCODE_TOKEN
-delete process.env.ORBCODE_API_KEY
-delete process.env.ORBCODE_CONFIG_DIR
+delete process.env.MATTERAI_TOKEN
+delete process.env.MATTERAI_API_KEY
+delete process.env.MATTERAI_CONFIG_DIR
 delete process.env.MY_GITHUB_TOKEN
 delete process.env.AWS_SECRET_ACCESS_KEY
 delete process.env.DATABASE_PASSWORD

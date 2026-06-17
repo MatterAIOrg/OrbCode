@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-17
+
+### Changed
+
+- **Breaking: all `ORBCODE_*` environment variables renamed to `MATTERAI_*`.**
+  This aligns the CLI's env-var namespace with the MatterAI brand. Update any
+  scripts, CI configs, or `.env` files that set these variables. The renamed
+  variables are: `ORBCODE_TOKEN` → `MATTERAI_TOKEN`,
+  `ORBCODE_API_KEY` → `MATTERAI_API_KEY`, `ORBCODE_BASE_URL` → `MATTERAI_BASE_URL`,
+  `ORBCODE_MODEL` → `MATTERAI_MODEL`, `ORBCODE_CONFIG_DIR` → `MATTERAI_CONFIG_DIR`,
+  `ORBCODE_BACKEND_URL` → `MATTERAI_BACKEND_URL`, `ORBCODE_APP_URL` → `MATTERAI_APP_URL`,
+  `ORBCODE_PROJECT_DIR` → `MATTERAI_PROJECT_DIR`, and
+  `ORBCODE_TRUST_PROJECT_HOOKS` → `MATTERAI_TRUST_PROJECT_HOOKS`.
+
 ## [0.1.14] - 2026-06-17
 
 ### Added
@@ -29,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `effort`); and Fable 5. Auth is `ANTHROPIC_API_KEY` (or a per-model `apiKey`).
 - **Axon Eido 3 Mini** model added to the Axon registry.
 - Headless mode (`-p`) now warns on stderr when an unknown `--model` /
-  `ORBCODE_MODEL` silently resolves to the default, instead of quietly running
+  `MATTERAI_MODEL` silently resolves to the default, instead of quietly running
   a different model than requested.
 
 ### Changed
@@ -53,13 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Hooks no longer receive OrbCode credentials.** Hook commands now run with a
-  redacted environment: `ORBCODE_TOKEN`, `ORBCODE_API_KEY`,
-  `ORBCODE_CONFIG_DIR`, `ORBCODE_BACKEND_URL`, `ORBCODE_APP_URL`, and any
+  redacted environment: `MATTERAI_TOKEN`, `MATTERAI_API_KEY`,
+  `MATTERAI_CONFIG_DIR`, `MATTERAI_BACKEND_URL`, `MATTERAI_APP_URL`, and any
   variable whose name matches a credential pattern (`*TOKEN*`, `*KEY*`,
   `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*PRIVATE_KEY*`) is stripped. A
   hook can no longer exfiltrate your API token. Non-credential vars (`PATH`,
-  `HOME`, `ORBCODE_PROJECT_DIR`, …) are preserved.
-- **`ORBCODE_TRUST_PROJECT_HOOKS=1` is now only honored when stdin is not a
+  `HOME`, `MATTERAI_PROJECT_DIR`, …) are preserved.
+- **`MATTERAI_TRUST_PROJECT_HOOKS=1` is now only honored when stdin is not a
   TTY.** A stray `export` in a shell rc file can no longer silently disable the
   project-hook trust gate for interactive sessions; the escape hatch still
   works in CI/headless mode. Only the exact value `"1"` is honored (not
@@ -95,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `test-hook-env.mjs`: verifies credential env vars are redacted from hooks.
 - New test cases: matcher auto-anchoring, alternation, SIGKILL escalation,
-  context cap, strict `ORBCODE_TRUST_PROJECT_HOOKS` value, PreToolUse
+  context cap, strict `MATTERAI_TRUST_PROJECT_HOOKS` value, PreToolUse
   `ask`/`allow` + `updatedInput` interactions.
 
 ## [0.1.12] - 2026-06-16
@@ -119,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hooks always run). Trust is content-hashed — editing a project's hooks
   re-prompts — and persisted to `~/.orbcode/hook-trust.json`. Non-interactive
   (`-p`) runs skip untrusted project hooks with a warning;
-  `ORBCODE_TRUST_PROJECT_HOOKS=1` opts in for CI.
+  `MATTERAI_TRUST_PROJECT_HOOKS=1` opts in for CI.
 
 ## [0.1.8] - 2026-06-12
 
@@ -209,11 +223,11 @@ non-interactive mode.
   the choice persists across sessions.
 - Browser-based device-flow authentication with polling (no copy/paste):
   `orbcode login` or `/login` opens the MatterAI authorize dialog, and the
-  token is handed out exactly once. `ORBCODE_TOKEN` and a settings.json
+  token is handed out exactly once. `MATTERAI_TOKEN` and a settings.json
   `apiKey` provide non-interactive overrides.
 - Token-based backend routing: a JWT whose payload has `env: "development"`
   automatically routes API calls to `http://localhost:3000`, matching the
-  extension's behavior. `ORBCODE_BACKEND_URL` / `ORBCODE_APP_URL` override
+  extension's behavior. `MATTERAI_BACKEND_URL` / `MATTERAI_APP_URL` override
   the defaults for local development.
 - Headless non-interactive mode (`-p` / `--prompt`) that prints only the
   final response, with `--yolo` to auto-approve edits and safe commands.

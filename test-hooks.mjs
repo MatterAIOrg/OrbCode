@@ -172,14 +172,14 @@ function makeRunner(config) {
 	ok("hook receives full JSON payload on stdin")
 }
 
-// 11. ORBCODE_PROJECT_DIR is exported to the hook
+// 11. MATTERAI_PROJECT_DIR is exported to the hook
 {
 	const { runner } = makeRunner({
-		SessionStart: [{ hooks: [{ type: "command", command: 'printf "%s" "$ORBCODE_PROJECT_DIR"' }] }],
+		SessionStart: [{ hooks: [{ type: "command", command: 'printf "%s" "$MATTERAI_PROJECT_DIR"' }] }],
 	})
 	const r = await runner.run("SessionStart", { source: "startup" })
 	assert.equal(r.additionalContext, process.cwd())
-	ok("ORBCODE_PROJECT_DIR exported to hook")
+	ok("MATTERAI_PROJECT_DIR exported to hook")
 }
 
 // 12. timeout: a slow hook is killed and surfaces a timeout message

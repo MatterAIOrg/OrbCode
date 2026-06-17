@@ -107,9 +107,9 @@ async function main(): Promise<void> {
 
 	const model = takeFlagValue(args, "model") ?? takeFlagValue(args, "m")
 	if (model) {
-		// loadSettings() treats ORBCODE_MODEL as the highest-precedence override,
+		// loadSettings() treats MATTERAI_MODEL as the highest-precedence override,
 		// so the flag reaches both the TUI and headless mode without plumbing.
-		process.env.ORBCODE_MODEL = model
+		process.env.MATTERAI_MODEL = model
 	}
 
 	let initialSession: SessionData | undefined
