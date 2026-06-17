@@ -2,6 +2,7 @@ import OpenAI from "openai"
 
 import { API_GATEWAY_PATH, getUrlFromToken } from "../auth/auth.js"
 import { DEFAULT_HEADERS, X_AXONCODE_TASKID, X_AXON_REPO, X_ORGANIZATIONID } from "./headers.js"
+import { stripReasoningDetails, type LLMClient } from "./llmClient.js"
 import { getModel } from "./models.js"
 import type { ApiStreamChunk } from "./stream.js"
 
@@ -27,7 +28,7 @@ export interface AxonClientOptions {
 	baseUrl?: string
 }
 
-export class AxonClient {
+export class AxonClient implements LLMClient {
 	private client: OpenAI
 	private options: AxonClientOptions
 
@@ -58,7 +59,7 @@ export class AxonClient {
 		const requestOptions: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 			model: model.id,
 			temperature: 0.2,
-			messages: [{ role: "system", content: systemPrompt }, ...messages],
+			messages: [{ role: "system", content: systemPrompt }, ...stripReasoningDetails(messages)],
 			stream: true,
 			stream_options: { include_usage: true },
 			max_tokens: model.maxOutputTokens,

@@ -1,3 +1,4 @@
+import { getModel, isValidAxonModel, usesAiSdk } from "./api/models.js"
 import { getAuthToken, getPendingProjectHooks, loadSettings } from "./config/settings.js"
 import { Agent } from "./core/agent.js"
 import type { AgentEvent } from "./core/events.js"
@@ -5,8 +6,24 @@ import type { AgentEvent } from "./core/events.js"
 /** Non-interactive `orbcode -p "prompt"` mode: prints the final response to stdout. */
 export async function runHeadless(prompt: string, yolo: boolean): Promise<void> {
 	const settings = loadSettings()
+
+	// An unknown --model (or ORBCODE_MODEL) silently resolves to the default; say
+	// so on stderr instead of quietly running a different model than requested.
+	const requestedModel = process.env.ORBCODE_MODEL
+	if (requestedModel && !isValidAxonModel(requestedModel)) {
+		process.stderr.write(
+			`warning: unknown model "${requestedModel}"; using "${settings.model}". ` +
+				`Add it under "customModels" in settings.json (with a "provider") to use it.\n`,
+		)
+	}
+
 	const token = getAuthToken(settings)
-	if (!token) {
+	// MatterAI/Axon models authenticate with the login token. AI-SDK providers
+	// (Anthropic, etc.) authenticate with their own key — resolved by the
+	// provider from the env (e.g. ANTHROPIC_API_KEY) or the model's `apiKey` —
+	// so they don't need a MatterAI login. Only gate on the token when the
+	// selected model actually goes through the MatterAI gateway.
+	if (!token && !usesAiSdk(getModel(settings.model))) {
 		console.error("Not signed in. Run `orbcode login`, set ORBCODE_TOKEN, or put an apiKey in settings.json.")
 		process.exit(1)
 	}
@@ -30,7 +47,9 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 	let completionResult = ""
 	const agent = new Agent({
 		cwd: process.cwd(),
-		token,
+		// May be empty for AI-SDK providers; AiSdkClient ignores it and uses the
+		// provider's own key. AxonClient only runs when a token is present.
+		token: token ?? "",
 		modelId: settings.model,
 		organizationId: settings.organizationId,
 		baseUrl: settings.baseUrl,

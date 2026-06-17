@@ -1,5 +1,11 @@
 // The Axon models served by the MatterAI backend. Ported from the
 // Orbital extension's model registry (kilocode-models.ts).
+/**
+ * Reasoning-effort hint forwarded to providers that support it (e.g. Anthropic
+ * `output_config.effort`). Ignored by providers that don't.
+ */
+export type ModelEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface AxonModel {
   id: string;
   name: string;
@@ -12,9 +18,116 @@ export interface AxonModel {
   /** USD per token */
   outputPrice: number;
   free: boolean;
+  /**
+   * Which transport serves this model. Absent (or "matterai"/"axon") routes
+   * through the MatterAI gateway (OpenAI `/chat/completions`). Any other value
+   * (e.g. "anthropic", "openai-compatible") routes through the Vercel AI SDK.
+   */
+  provider?: string;
+  /** Base URL for the "openai-compatible" provider (required for that provider). */
+  baseUrl?: string;
+  /** Explicit API key for AI-SDK providers; falls back to the provider's env var. */
+  apiKey?: string;
+  /** Reasoning effort hint for AI-SDK providers that support it. */
+  effort?: ModelEffort;
+  /** Whether to request reasoning/thinking from AI-SDK providers (default true). */
+  reasoning?: boolean;
 }
 
+/** Providers served by the built-in MatterAI gateway rather than the AI SDK. */
+const MATTERAI_PROVIDERS = new Set(["matterai", "axon"]);
+
+/** True when the model should be served via the Vercel AI SDK transport. */
+export function usesAiSdk(model: AxonModel): boolean {
+  return Boolean(model.provider) && !MATTERAI_PROVIDERS.has(model.provider!);
+}
+
+/**
+ * Well-known Claude models, served natively via the Anthropic provider (AI SDK,
+ * `/v1/messages`). Built in so `--model claude-…` works without a settings.json
+ * entry; auth is `ANTHROPIC_API_KEY` (or a per-model `apiKey`), never MatterAI.
+ * Adaptive thinking + effort are on by default (see AiSdkClient); Haiku 4.5 sets
+ * `reasoning: false` because it rejects the `effort` parameter.
+ */
+export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
+  "claude-opus-4-8": {
+    id: "claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    description: "Anthropic's most capable Opus model — long-horizon agentic work, knowledge work, and coding.",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000005,
+    outputPrice: 0.000025,
+    free: false,
+    provider: "anthropic",
+  },
+  "claude-opus-4-7": {
+    id: "claude-opus-4-7",
+    name: "Claude Opus 4.7",
+    description: "Previous-generation Opus — highly autonomous, strong on agentic, vision, and memory tasks.",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000005,
+    outputPrice: 0.000025,
+    free: false,
+    provider: "anthropic",
+  },
+  "claude-opus-4-6": {
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6",
+    description: "Older Opus with adaptive thinking; 1M context.",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000005,
+    outputPrice: 0.000025,
+    free: false,
+    provider: "anthropic",
+  },
+  "claude-sonnet-4-6": {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
+    description: "Anthropic's best balance of speed and intelligence; adaptive thinking, 1M context.",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000003,
+    outputPrice: 0.000015,
+    free: false,
+    provider: "anthropic",
+  },
+  "claude-haiku-4-5": {
+    id: "claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
+    description: "Fastest, most cost-effective Claude model for simple, latency-sensitive tasks.",
+    contextWindow: 200_000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000001,
+    outputPrice: 0.000005,
+    free: false,
+    provider: "anthropic",
+    // Haiku 4.5 rejects the `effort` parameter, so don't send thinking/effort.
+    reasoning: false,
+  },
+  "claude-fable-5": {
+    id: "claude-fable-5",
+    name: "Claude Fable 5",
+    description: "Anthropic's most capable widely released model — most demanding reasoning and long-horizon work.",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.00001,
+    outputPrice: 0.00005,
+    free: false,
+    provider: "anthropic",
+  },
+};
+
 export const AXON_MODELS: Record<string, AxonModel> = {
+  ...ANTHROPIC_MODELS,
   "axon-code-2-5-mini": {
     id: "axon-code-2-5-mini",
     name: "Axon Code 2.5 Mini (free)",
@@ -51,6 +164,18 @@ export const AXON_MODELS: Record<string, AxonModel> = {
     outputPrice: 0.000009,
     free: false,
   },
+  "axon-eido-3-code-mini": {
+    id: "axon-eido-3-code-mini",
+    name: "Axon Eido 3 Mini",
+    description:
+      "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for low-effort day-to-day tasks",
+    contextWindow: 400000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000001,
+    outputPrice: 0.000003,
+    free: false,
+  },
 };
 
 export const DEFAULT_MODEL_ID = "axon-code-2-5-pro";
@@ -67,6 +192,16 @@ export interface CustomModelConfig {
   inputPrice?: number;
   /** USD per token */
   outputPrice?: number;
+  /** Route via the AI SDK: "anthropic", "openai-compatible", etc. */
+  provider?: string;
+  /** Base URL for the "openai-compatible" provider. */
+  baseUrl?: string;
+  /** Explicit API key; falls back to the provider's standard env var. */
+  apiKey?: string;
+  /** Reasoning effort hint for providers that support it. */
+  effort?: ModelEffort;
+  /** Request reasoning/thinking from providers that support it (default true). */
+  reasoning?: boolean;
 }
 
 /** Add user-defined models (from settings.json) to the registry. */
@@ -83,6 +218,11 @@ export function registerCustomModels(models: CustomModelConfig[]): void {
       inputPrice: model.inputPrice ?? 0,
       outputPrice: model.outputPrice ?? 0,
       free: (model.inputPrice ?? 0) === 0 && (model.outputPrice ?? 0) === 0,
+      provider: model.provider,
+      baseUrl: model.baseUrl,
+      apiKey: model.apiKey,
+      effort: model.effort,
+      reasoning: model.reasoning,
     };
   }
 }

@@ -3,7 +3,8 @@ import * as path from "node:path"
 import { randomUUID } from "node:crypto"
 import type OpenAI from "openai"
 
-import { AxonClient } from "../api/client.js"
+import { REASONING_DETAILS_FIELD, type LLMClient } from "../api/llmClient.js"
+import { createLLMClient } from "../api/provider.js"
 import { buildSystemPrompt } from "../prompts/system.js"
 import {
 	describeToolCall,
@@ -91,7 +92,7 @@ function wrapHookContext(source: string, text: string): string {
 
 export class Agent {
 	private options: AgentOptions
-	private client: AxonClient
+	private client: LLMClient
 	private systemPrompt: string
 	private messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
 	private todos = ""
@@ -142,7 +143,7 @@ export class Agent {
 		}
 		this.sessionApproveEdits = options.autoApproveEdits
 		this.systemPrompt = buildSystemPrompt(options.cwd)
-		this.client = new AxonClient({
+		this.client = createLLMClient({
 			token: options.token,
 			modelId: options.modelId,
 			taskId: this.taskId,
@@ -154,7 +155,7 @@ export class Agent {
 
 	setModel(modelId: string): void {
 		this.options.modelId = modelId
-		this.client = new AxonClient({
+		this.client = createLLMClient({
 			token: this.options.token,
 			modelId,
 			taskId: this.taskId,
@@ -490,6 +491,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		let assistantText = ""
 		let hadReasoning = false
 		let reasoningStart = 0
+		let reasoningDetails: unknown
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
 
@@ -508,6 +510,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 						reasoningStart = Date.now()
 					}
 					onEvent({ type: "reasoning-delta", text: chunk.text })
+					break
+				case "reasoning_details":
+					// Opaque thinking blocks (with signatures) for next-turn replay.
+					reasoningDetails = chunk.details
 					break
 				case "native_tool_calls":
 					for (const tc of chunk.toolCalls) {
@@ -555,6 +561,11 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				type: "function" as const,
 				function: { name: tc.name, arguments: tc.arguments || "{}" },
 			}))
+		}
+		// Stash reasoning blocks (opaque) so the next turn can replay them. The
+		// field is persisted with the session and stripped on the OpenAI path.
+		if (reasoningDetails !== undefined) {
+			;(assistantMessage as unknown as Record<string, unknown>)[REASONING_DETAILS_FIELD] = reasoningDetails
 		}
 		this.messages.push(assistantMessage)
 

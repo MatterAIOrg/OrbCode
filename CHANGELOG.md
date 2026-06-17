@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-06-17
+
+### Added
+
+- **Multi-provider support via the Vercel AI SDK.** A `customModels` entry that
+  sets a `provider` is now served through the AI SDK instead of the MatterAI
+  gateway, reusing the same agent loop, tools, and approvals. Auth is the
+  provider's own key (env var or per-model `apiKey`), not the MatterAI login.
+  New model fields: `provider`, `baseUrl`, `apiKey`, `effort`, `reasoning`.
+  - `provider: "anthropic"` → native `/v1/messages` (`@ai-sdk/anthropic`).
+    Adaptive thinking + reasoning streaming are on by default; `effort`
+    (`low`…`max`) tunes depth; prompt-caching breakpoints are set on the system
+    prompt and conversation prefix automatically. Set `"reasoning": false` to
+    disable thinking (e.g. for models that reject `effort`).
+  - `provider: "openai-compatible"` → any OpenAI-compatible endpoint; requires
+    `baseUrl`. Key from `apiKey` on the entry.
+  - Anything without a `provider` (or `provider: "matterai"`/`"axon"`) keeps
+    using the MatterAI gateway untouched.
+- **Built-in Anthropic Claude models**, served natively via the Anthropic
+  provider so `--model claude-…` works without a settings.json entry: Claude
+  Opus 4.8, 4.7, 4.6; Sonnet 4.6; Haiku 4.5 (thinking disabled — it rejects
+  `effort`); and Fable 5. Auth is `ANTHROPIC_API_KEY` (or a per-model `apiKey`).
+- **Axon Eido 3 Mini** model added to the Axon registry.
+- Headless mode (`-p`) now warns on stderr when an unknown `--model` /
+  `ORBCODE_MODEL` silently resolves to the default, instead of quietly running
+  a different model than requested.
+
+### Changed
+
+- The agent now constructs its transport through a `createLLMClient` factory
+  backed by an `LLMClient` interface, so `agent.ts` is agnostic to whether a
+  model is served by the MatterAI gateway or the AI SDK. Both clients implement
+  the same contract; messages and tools stay in the OpenAI shape the rest of
+  the app speaks.
+- Headless auth gate now only requires a MatterAI login token when the selected
+  model actually routes through the MatterAI gateway. AI-SDK providers
+  authenticate with their own key, so `orbcode -p` works without `orbcode login`
+  when using e.g. an Anthropic model.
+- Anthropic thinking blocks are stashed (opaque, with their signatures) on the
+  persisted assistant message and replayed verbatim on the next turn, so
+  interleaved thinking with tool use round-trips correctly. The field is
+  stripped before any OpenAI `/chat/completions` request.
+
 ## [0.1.13] - 2026-06-17
 
 ### Security
@@ -227,7 +270,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.14
 [0.1.13]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.13
 [0.1.8]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.8
 [0.1.5]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.5

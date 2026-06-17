@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "OrbCode CLI — agentic coding in your terminal, powered by Axon models by MatterAI",
   "type": "module",
   "bin": {
@@ -36,6 +36,9 @@
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.85",
+    "@ai-sdk/openai-compatible": "^2.0.51",
+    "ai": "^6.0.207",
     "chalk": "^5.3.0",
     "ink": "^5.2.1",
     "open": "^10.1.0",

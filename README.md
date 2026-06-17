@@ -157,6 +157,51 @@ The two Axon models are built in; `/model` opens a scroll-and-select picker
 image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
 shown in the status bar.
 
+### Other providers (Anthropic, OpenAI-compatible)
+
+The Axon models go through the MatterAI gateway as before. A `customModels`
+entry that sets a `provider` is instead served through the
+[Vercel AI SDK](https://sdk.vercel.ai), reusing the same agent loop, tools, and
+approvals — auth is the provider's own key (env var or `apiKey`), not the
+MatterAI login.
+
+```json
+{
+  "model": "claude-opus-4-8",
+  "customModels": [
+    {
+      "id": "claude-opus-4-8",
+      "name": "Claude Opus 4.8",
+      "provider": "anthropic",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "inputPrice": 0.000005,
+      "outputPrice": 0.000025,
+      "effort": "high"
+    },
+    {
+      "id": "some-model",
+      "provider": "openai-compatible",
+      "baseUrl": "https://api.other-host.com/v1"
+    }
+  ]
+}
+```
+
+- `provider: "anthropic"` → native `/v1/messages` (`@ai-sdk/anthropic`). Key from
+  `ANTHROPIC_API_KEY` (or `apiKey` on the entry). Adaptive thinking + reasoning
+  streaming are on by default; `effort` (`low`…`max`) tunes depth; prompt
+  caching breakpoints are set on the system prompt and conversation prefix
+  automatically. Thinking blocks are preserved across turns (stored with the
+  session and replayed with their signatures), so interleaved thinking with
+  tool use round-trips correctly. Set `"reasoning": false` to disable thinking
+  (e.g. for models that don't support `effort`).
+- `provider: "openai-compatible"` → any OpenAI-compatible endpoint; requires
+  `baseUrl`. Key from `apiKey` on the entry.
+
+Anything without a `provider` (or `provider: "matterai"`) keeps using the
+MatterAI gateway untouched.
+
 ## The TUI
 
 ```
