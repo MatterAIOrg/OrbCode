@@ -6,13 +6,13 @@ import { render } from "ink"
 
 import fs from "node:fs"
 
-process.env.ORBCODE_CONFIG_DIR = "/tmp/orbcode-test-config"
+process.env.MATTERAI_CONFIG_DIR = "/tmp/orbcode-test-config"
 // Self-contained fixture: a syntactically valid but fake JWT, so the app starts
 // in chat view and API calls fail with a clean 401.
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url")
-fs.mkdirSync(process.env.ORBCODE_CONFIG_DIR, { recursive: true })
+fs.mkdirSync(process.env.MATTERAI_CONFIG_DIR, { recursive: true })
 fs.writeFileSync(
-	process.env.ORBCODE_CONFIG_DIR + "/config.json",
+	process.env.MATTERAI_CONFIG_DIR + "/config.json",
 	JSON.stringify({
 		token: `${b64({ alg: "HS256" })}.${b64({ sub: "test", env: "production" })}.sig`,
 		model: "axon-code-2-5-pro",

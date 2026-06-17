@@ -600,7 +600,7 @@ export function App({
 							`Version     ${VERSION}`,
 							`Model       ${model.name} (${model.id})`,
 							`Directory   ${process.cwd()}`,
-							`Account     ${getAuthToken(settings) ? (settings.apiKey || process.env.ORBCODE_TOKEN ? "API key" : "signed in") : "signed out"}${settings.organizationId ? ` · org ${settings.organizationId}` : ""}`,
+							`Account     ${getAuthToken(settings) ? (settings.apiKey || process.env.MATTERAI_TOKEN ? "API key" : "signed in") : "signed out"}${settings.organizationId ? ` · org ${settings.organizationId}` : ""}`,
 							`Gateway     ${settings.baseUrl ?? "MatterAI (default)"}`,
 							`Context     ${contextTokens.toLocaleString()} / ${model.contextWindow.toLocaleString()} tokens (${contextPct}%)`,
 							`Cost        $${totalCost.toFixed(4)} this session`,

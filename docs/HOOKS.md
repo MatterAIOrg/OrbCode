@@ -7,7 +7,7 @@ after edits, **notify** yourself, or **keep the agent working** until a
 condition is met.
 
 OrbCode's hooks follow the **same contract as Claude Code's hooks**, so scripts
-written for Claude Code work here with two tweaks: use `$ORBCODE_PROJECT_DIR`
+written for Claude Code work here with two tweaks: use `$MATTERAI_PROJECT_DIR`
 (not `$CLAUDE_PROJECT_DIR`) and use OrbCode's tool names (`execute_command`,
 `file_edit`, …) in your matchers. See [Differences from Claude
 Code](#differences-from-claude-code).
@@ -104,7 +104,7 @@ User hooks always run. **Project hooks are disabled until you trust them** (they
 ship inside a repo and run shell commands — see [Security](#security)). Once
 trusted, a project can **add** hooks without clobbering your global ones — for a
 given event the user matchers come first, then the project matchers, and they
-all execute. (Override the config directory with `ORBCODE_CONFIG_DIR`.)
+all execute. (Override the config directory with `MATTERAI_CONFIG_DIR`.)
 
 Hooks are **not** written to `config.json` (the app's own state file) — they are
 configuration you own.
@@ -173,7 +173,7 @@ file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')
 ```
 
 You can also read fields straight from the environment where provided (e.g.
-`$ORBCODE_PROJECT_DIR`).
+`$MATTERAI_PROJECT_DIR`).
 
 ---
 
@@ -371,14 +371,14 @@ merged:
 
 | Variable | Value |
 | --- | --- |
-| `ORBCODE_PROJECT_DIR` | the workspace directory (same as `cwd` in the payload) |
+| `MATTERAI_PROJECT_DIR` | the workspace directory (same as `cwd` in the payload) |
 
 Hooks inherit a **redacted** copy of your environment: `$PATH`, `$HOME`,
 `$LANG`, `$SHELL`, etc. are available, but **credential-like variables are
 stripped** so a hook can never exfiltrate your API token. Specifically redacted:
 
-- `ORBCODE_TOKEN`, `ORBCODE_API_KEY`, `ORBCODE_CONFIG_DIR`,
-  `ORBCODE_BACKEND_URL`, `ORBCODE_APP_URL` (OrbCode's own vars).
+- `MATTERAI_TOKEN`, `MATTERAI_API_KEY`, `MATTERAI_CONFIG_DIR`,
+  `MATTERAI_BACKEND_URL`, `MATTERAI_APP_URL` (OrbCode's own vars).
 - Any variable whose name matches `/(?:^|_)(TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY)(?:$|_)/i`
   (so `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY`, `DATABASE_PASSWORD`, … are
   redacted too).
@@ -566,7 +566,7 @@ exit 0
     "UserPromptSubmit": [
       { "hooks": [
         { "type": "command",
-          "command": "echo \"Repo: $(basename $ORBCODE_PROJECT_DIR) · branch $(git branch --show-current 2>/dev/null) · $(date '+%H:%M')\"" }
+          "command": "echo \"Repo: $(basename $MATTERAI_PROJECT_DIR) · branch $(git branch --show-current 2>/dev/null) · $(date '+%H:%M')\"" }
       ] }
     ]
   }
@@ -742,7 +742,7 @@ schema, matcher regexes, parallel execution, per-command timeout). Differences:
 | --- | --- | --- |
 | Settings file | `~/.claude/settings.json` | `~/.orbcode/settings.json` |
 | Project file | `.claude/settings.json` | `.orbcode/settings.json` |
-| Project dir env var | `$CLAUDE_PROJECT_DIR` | `$ORBCODE_PROJECT_DIR` |
+| Project dir env var | `$CLAUDE_PROJECT_DIR` | `$MATTERAI_PROJECT_DIR` |
 | Tool names in matchers | `Bash`, `Edit`, `Write`, `Read`, … | `execute_command`, `file_edit`, `file_write`, `read_file`, … |
 | Hook types | `command`, plus newer MCP/HTTP/prompt hooks | `command` only |
 | Events | full internal SDK set | the documented set: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `PreCompact`, `SessionEnd` (+ `SubagentStop`, reserved) |
@@ -778,7 +778,7 @@ cheque and then quietly swap in a different command.
 
 In **non-interactive** (`-p`) mode there is no prompt, so untrusted project
 hooks are **skipped** with a warning on stderr. Set
-`ORBCODE_TRUST_PROJECT_HOOKS=1` to trust project hooks in CI/automation where
+`MATTERAI_TRUST_PROJECT_HOOKS=1` to trust project hooks in CI/automation where
 you control the repository. **This env var is only honored when stdin is not a
 TTY** — a stray `export` in a shell rc file cannot silently disable the trust
 gate for interactive sessions.

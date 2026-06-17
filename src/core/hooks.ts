@@ -350,11 +350,11 @@ function capContext(text: string): string {
 
 /** Keys always stripped from the hook environment (OrbCode credentials/config). */
 const HOOK_ENV_REDACT_EXACT = new Set([
-	"ORBCODE_TOKEN",
-	"ORBCODE_API_KEY",
-	"ORBCODE_CONFIG_DIR",
-	"ORBCODE_BACKEND_URL",
-	"ORBCODE_APP_URL",
+	"MATTERAI_TOKEN",
+	"MATTERAI_API_KEY",
+	"MATTERAI_CONFIG_DIR",
+	"MATTERAI_BACKEND_URL",
+	"MATTERAI_APP_URL",
 ])
 
 /** Pattern for credential-like env var names (TOKEN, KEY, SECRET, …) so
@@ -366,7 +366,7 @@ const HOOK_ENV_REDACT_PATTERN = /(?:^|_)(TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDEN
  *  (so PATH, HOME, npx, git, … all work) minus anything that looks like a
  *  credential — hooks must never see the user's API token. */
 function buildHookEnv(cwd: string): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ORBCODE_PROJECT_DIR: cwd }
+	const env: NodeJS.ProcessEnv = { MATTERAI_PROJECT_DIR: cwd }
 	for (const [key, value] of Object.entries(process.env)) {
 		if (value === undefined) continue
 		if (HOOK_ENV_REDACT_EXACT.has(key)) continue

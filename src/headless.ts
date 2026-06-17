@@ -7,9 +7,9 @@ import type { AgentEvent } from "./core/events.js"
 export async function runHeadless(prompt: string, yolo: boolean): Promise<void> {
 	const settings = loadSettings()
 
-	// An unknown --model (or ORBCODE_MODEL) silently resolves to the default; say
+	// An unknown --model (or MATTERAI_MODEL) silently resolves to the default; say
 	// so on stderr instead of quietly running a different model than requested.
-	const requestedModel = process.env.ORBCODE_MODEL
+	const requestedModel = process.env.MATTERAI_MODEL
 	if (requestedModel && !isValidAxonModel(requestedModel)) {
 		process.stderr.write(
 			`warning: unknown model "${requestedModel}"; using "${settings.model}". ` +
@@ -24,7 +24,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 	// so they don't need a MatterAI login. Only gate on the token when the
 	// selected model actually goes through the MatterAI gateway.
 	if (!token && !usesAiSdk(getModel(settings.model))) {
-		console.error("Not signed in. Run `orbcode login`, set ORBCODE_TOKEN, or put an apiKey in settings.json.")
+		console.error("Not signed in. Run `orbcode login`, set MATTERAI_TOKEN, or put an apiKey in settings.json.")
 		process.exit(1)
 	}
 
@@ -34,7 +34,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 	if (pendingHooks) {
 		process.stderr.write(
 			`note: ${pendingHooks.commands.length} project hook(s) in .orbcode/settings.json are untrusted and were skipped. ` +
-				`Trust them in an interactive session, or set ORBCODE_TRUST_PROJECT_HOOKS=1.\n`,
+				`Trust them in an interactive session, or set MATTERAI_TRUST_PROJECT_HOOKS=1.\n`,
 		)
 	}
 

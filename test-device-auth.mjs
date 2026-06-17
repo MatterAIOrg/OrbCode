@@ -36,8 +36,8 @@ const server = http.createServer((req, res) => {
 })
 
 await new Promise((resolve) => server.listen(0, resolve))
-process.env.ORBCODE_BACKEND_URL = `http://localhost:${server.address().port}`
-process.env.ORBCODE_APP_URL = "http://localhost:9999"
+process.env.MATTERAI_BACKEND_URL = `http://localhost:${server.address().port}`
+process.env.MATTERAI_APP_URL = "http://localhost:9999"
 
 const { startDeviceAuth, pollDeviceAuth, getAuthorizeUrl } = await import("./dist/auth/auth.js")
 

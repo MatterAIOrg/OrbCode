@@ -52,11 +52,11 @@ export interface DeviceAuthStart {
 }
 
 function deviceAuthBaseUrl(): string {
-  return process.env.ORBCODE_BACKEND_URL || DEFAULT_BACKEND_URL;
+  return process.env.MATTERAI_BACKEND_URL || DEFAULT_BACKEND_URL;
 }
 
 function deviceAuthAppUrl(): string {
-  return process.env.ORBCODE_APP_URL || APP_URL;
+  return process.env.MATTERAI_APP_URL || APP_URL;
 }
 
 export async function startDeviceAuth(): Promise<DeviceAuthStart> {
