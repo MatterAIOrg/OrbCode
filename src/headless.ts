@@ -1,4 +1,4 @@
-import { getAuthToken, loadSettings } from "./config/settings.js"
+import { getAuthToken, getPendingProjectHooks, loadSettings } from "./config/settings.js"
 import { Agent } from "./core/agent.js"
 import type { AgentEvent } from "./core/events.js"
 
@@ -9,6 +9,16 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 	if (!token) {
 		console.error("Not signed in. Run `orbcode login`, set ORBCODE_TOKEN, or put an apiKey in settings.json.")
 		process.exit(1)
+	}
+
+	// There's no interactive trust prompt in headless mode, so untrusted project
+	// hooks are skipped for safety. Tell the user how to enable them.
+	const pendingHooks = getPendingProjectHooks()
+	if (pendingHooks) {
+		process.stderr.write(
+			`note: ${pendingHooks.commands.length} project hook(s) in .orbcode/settings.json are untrusted and were skipped. ` +
+				`Trust them in an interactive session, or set ORBCODE_TRUST_PROJECT_HOOKS=1.\n`,
+		)
 	}
 
 	let exitCode = 0
@@ -26,6 +36,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 		baseUrl: settings.baseUrl,
 		autoApproveEdits: yolo,
 		autoApproveSafeCommands: yolo,
+		hooks: settings.hooks,
 		callbacks: {
 			onEvent: (event: AgentEvent) => {
 				switch (event.type) {
@@ -38,6 +49,10 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 						break
 					case "completion":
 						completionResult = event.result
+						break
+					case "system":
+						// Hook messages go to stderr so stdout stays the final answer.
+						process.stderr.write(`${event.isError ? "hook error" : "hook"}: ${event.message}\n`)
 						break
 					case "error":
 						process.stderr.write(`error: ${event.message}\n`)
@@ -59,6 +74,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 	})
 
 	await agent.runTurn(prompt)
+	await agent.endSession("other")
 	const finalContent = completionResult || lastText || textBuffer
 	if (finalContent) {
 		process.stdout.write(finalContent.trimEnd() + "\n")

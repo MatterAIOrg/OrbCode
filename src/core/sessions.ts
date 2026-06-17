@@ -29,10 +29,15 @@ function getSessionsDir(): string {
 	return path.join(getConfigDir(), "sessions")
 }
 
+/** On-disk path of a session's transcript, also passed to hooks. */
+export function getSessionFilePath(id: string): string {
+	return path.join(getSessionsDir(), `${id}.json`)
+}
+
 export function saveSession(data: SessionData): void {
 	const dir = getSessionsDir()
 	fs.mkdirSync(dir, { recursive: true })
-	fs.writeFileSync(path.join(dir, `${data.id}.json`), JSON.stringify(data), { mode: 0o600 })
+	fs.writeFileSync(getSessionFilePath(data.id), JSON.stringify(data), { mode: 0o600 })
 }
 
 export function loadSessionById(id: string): SessionData | undefined {

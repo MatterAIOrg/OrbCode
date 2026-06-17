@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-06-17
+
+### Security
+
+- **Hooks no longer receive OrbCode credentials.** Hook commands now run with a
+  redacted environment: `ORBCODE_TOKEN`, `ORBCODE_API_KEY`,
+  `ORBCODE_CONFIG_DIR`, `ORBCODE_BACKEND_URL`, `ORBCODE_APP_URL`, and any
+  variable whose name matches a credential pattern (`*TOKEN*`, `*KEY*`,
+  `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*PRIVATE_KEY*`) is stripped. A
+  hook can no longer exfiltrate your API token. Non-credential vars (`PATH`,
+  `HOME`, `ORBCODE_PROJECT_DIR`, …) are preserved.
+- **`ORBCODE_TRUST_PROJECT_HOOKS=1` is now only honored when stdin is not a
+  TTY.** A stray `export` in a shell rc file can no longer silently disable the
+  project-hook trust gate for interactive sessions; the escape hatch still
+  works in CI/headless mode. Only the exact value `"1"` is honored (not
+  `"true"`).
+- **Hook-injected context is sandboxed.** `additionalContext` (and plain stdout
+  on `UserPromptSubmit`/`SessionStart`) is now wrapped in `<hook_context>` tags
+  and capped at ~8 KB. The system prompt instructs the model to treat the
+  contents as untrusted, closing a prompt-injection vector.
+- **Tool-input rewrites are now logged.** When a `PreToolUse` hook rewrites a
+  tool's input via `updatedInput`, OrbCode emits a visible system message so
+  you can see that a hook changed what the model asked for.
+- **Matcher regexes are auto-anchored.** `"execute_command"` now matches exactly
+  that tool name, not `"execute_command_extra"`. Use `"a|b"` for alternation.
+
+### Changed
+
+- Default hook timeout lowered from 60s to **10s** so a slow hook can't block
+  the tool hot path for a full minute. Override per-command with `timeout`.
+- `Agent.clear()` now resets `pendingStartContext`, `sessionStarted`, and
+  `stopHookActive` so a `/new` after a hook-bearing session starts clean.
+- SessionStart context is folded into the `/compact` request instead of
+  lingering for the next turn.
+- `endAndExit` guards against double-invocation (Ctrl+D spam) and unrefs its
+  cap timer so it never keeps the event loop alive.
+- `/logout` now clears any pending hook-trust prompt and deferred startup
+  prompt.
+- The HookTrustPrompt now documents that Enter defaults to "keep disabled".
+- In-flight `Notification` hooks are tracked and awaited (up to 3s) on
+  `endSession`, so a slow notification hook can't leak a child process.
+- A `PostToolUse` hook that stops the turn now emits a system message.
+
+### Added
+
+- `test-hook-env.mjs`: verifies credential env vars are redacted from hooks.
+- New test cases: matcher auto-anchoring, alternation, SIGKILL escalation,
+  context cap, strict `ORBCODE_TRUST_PROJECT_HOOKS` value, PreToolUse
+  `ask`/`allow` + `updatedInput` interactions.
+
+## [0.1.12] - 2026-06-16
+
+### Added
+
+- Lifecycle **hooks**, compatible with Claude Code's hooks contract. Configure
+  shell commands in the `hooks` block of `settings.json` (user- and
+  project-level blocks are merged) to run at well-defined points in the agent
+  loop: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+  `Notification`, `Stop`, `PreCompact`, and `SessionEnd` (plus `SubagentStop`,
+  reserved for future subagents). Hooks receive a JSON payload on stdin and can
+  block a tool or prompt, skip/force an approval, rewrite tool input, inject
+  context, or stop a turn — via exit codes (0/2/other) or a JSON object on
+  stdout. Each hook is sandboxed with a per-command timeout and can never crash
+  the agent. Overview in the README's Hooks section; full reference with a
+  copy-paste cookbook in [docs/HOOKS.md](docs/HOOKS.md).
+- Project-hook **trust gate**: hooks defined in a repo's
+  `.orbcode/settings.json` execute shell commands, so they are disabled until
+  you approve them in a one-time prompt (your own `~/.orbcode/settings.json`
+  hooks always run). Trust is content-hashed — editing a project's hooks
+  re-prompts — and persisted to `~/.orbcode/hook-trust.json`. Non-interactive
+  (`-p`) runs skip untrusted project hooks with a warning;
+  `ORBCODE_TRUST_PROJECT_HOOKS=1` opts in for CI.
+
 ## [0.1.8] - 2026-06-12
 
 ### Added
@@ -154,7 +227,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.13
 [0.1.8]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.8
 [0.1.5]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.5
 [0.1.4]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.4
