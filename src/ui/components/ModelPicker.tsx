@@ -2,7 +2,7 @@ import React, { useState } from "react"
 import { Box, Text, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
-import { AXON_MODELS, type AxonModel } from "../../api/models.js"
+import { BUILTIN_AXON_MODELS, type AxonModel } from "../../api/models.js"
 
 const VISIBLE_ROWS = 6
 
@@ -19,7 +19,7 @@ function formatPrice(model: AxonModel): string {
 }
 
 export function ModelPicker({ currentId, onSelect, onCancel }: ModelPickerProps) {
-	const models = Object.values(AXON_MODELS)
+	const models = Object.values(BUILTIN_AXON_MODELS)
 	const [selected, setSelected] = useState(() => {
 		const index = models.findIndex((m) => m.id === currentId)
 		return index === -1 ? 0 : index

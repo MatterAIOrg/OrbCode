@@ -1,6 +1,16 @@
 # OrbCode CLI
 
+[![npm version](https://img.shields.io/npm/v/@matterailab/orbcode?color=blue&logo=npm)](https://www.npmjs.com/package/@matterailab/orbcode)
+[![npm downloads](https://img.shields.io/npm/dm/@matterailab/orbcode?logo=npm)](https://www.npmjs.com/package/@matterailab/orbcode)
+[![license](https://img.shields.io/npm/l/@matterailab/orbcode?color=green)](./LICENSE)
+[![node](https://img.shields.io/node/v/@matterailab/orbcode?color=green&logo=node.js)](https://nodejs.org)
+[![github stars](https://img.shields.io/github/stars/MatterAIOrg/OrbCode?style=social&logo=github)](https://github.com/MatterAIOrg/OrbCode)
+[![github issues](https://img.shields.io/github/issues/MatterAIOrg/OrbCode?logo=github)](https://github.com/MatterAIOrg/OrbCode/issues)
+[![docs](https://img.shields.io/badge/docs-docs.matterai.so-purple)](https://docs.matterai.so/orbcode-cli/overview)
+
 Agentic coding in your terminal — powered by **Axon models by MatterAI**.
+
+> 📖 **Full documentation: <https://docs.matterai.so/orbcode-cli/overview>**
 
 OrbCode CLI is a standalone terminal port of the Orbital extension: the same Axon
 models, the same native tool schemas, the same MatterAI auth backend — rebuilt from
@@ -13,6 +23,7 @@ activity rows, edit/command approvals, and todo tracking.
 
 ## Table of contents
 
+- [Quick start](#quick-start)
 - [Install](#install)
 - [Updating / relinking](#updating--relinking)
 - [Usage](#usage)
@@ -31,10 +42,29 @@ activity rows, edit/command approvals, and todo tracking.
 - [Development](#development)
 - [Tests](#tests)
 - [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
 ---
+
+## Quick start
+
+```bash
+npm install -g @matterailab/orbcode   # install the CLI (needs Node.js >= 20)
+orbcode login                          # sign in once via your browser
+cd your-project && orbcode             # start coding
+```
+
+That's it — you're in an interactive agent session. Ask it to read, edit, run
+commands, or fix bugs. New here? Skim the [docs](https://docs.matterai.so/orbcode-cli/overview)
+or jump to [Usage](#usage).
+
+Prefer not to install globally? Run it on the fly:
+
+```bash
+npx @matterailab/orbcode
+```
 
 ## Install
 
@@ -143,18 +173,20 @@ Sign out with `/logout` (removes the saved token).
 
 ## Models
 
-The two Axon models are built in; `/model` opens a scroll-and-select picker
-(`/model <id>` still selects directly). Additional models can be declared via
-`customModels` in settings.json. The choice persists across sessions.
+The built-in Axon models are listed below; `/model` opens a scroll-and-select
+picker (`/model <id>` still selects directly). Additional models can be
+declared via `customModels` in settings.json. The choice persists across
+sessions.
 
-| id                     | context | max output | pricing            |
-| ---------------------- | ------- | ---------- | ------------------ |
-| `axon-eido-3-code-pro` | 400k    | 64k        | $3/M in · $9/M out |
-| `axon-code-2-5-pro`    | 400k    | 64k        | $2/M in · $6/M out |
-| `axon-code-2-5-mini`   | 400k    | 64k        | free               |
+| id                        | context | max output | pricing                |
+| ------------------------- | ------- | ---------- | ---------------------- |
+| `axon-eido-3-code-pro`    | 400k    | 64k        | $3/M in · $9/M out     |
+| `axon-eido-3-code-mini`   | 400k    | 64k        | $1.5/M in · $4.5/M out |
+| `axon-code-2-5-pro`       | 400k    | 64k        | $2/M in · $6/M out     |
+| `axon-code-2-5-mini`      | 400k    | 64k        | free                   |
 
-`axon-code-2-5-pro` is the default. All three support native JSON tool calls and
-image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
+`axon-eido-3-code-mini` is the default. All four support native JSON tool calls
+and image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
 shown in the status bar.
 
 ### Other providers (Anthropic, OpenAI-compatible)
@@ -198,6 +230,11 @@ MatterAI login.
   (e.g. for models that don't support `effort`).
 - `provider: "openai-compatible"` → any OpenAI-compatible endpoint; requires
   `baseUrl`. Key from `apiKey` on the entry.
+
+> **Note:** Third-party models are **not** shown in the TUI's `/model` picker.
+> They're still available headlessly via `orbcode -p "..." --model <id>` (or
+> `MATTERAI_MODEL=<id>`); in an interactive session, `/model claude-opus-4-8`
+> prints the exact command to run.
 
 Anything without a `provider` (or `provider: "matterai"`) keeps using the
 MatterAI gateway untouched.
@@ -600,6 +637,13 @@ node test-device-auth.mjs  # device-auth polling flow against a local mock
   terminal, then restart it. Terminals that already prompted for access (e.g.
   iTerm) keep working. A normal global install (`npm install -g @matterailab/orbcode`) is
   unaffected because it lives outside protected folders.
+
+## Documentation
+
+The README covers the essentials. For the complete, kept-up-to-date reference
+(guides, configuration, hooks cookbook, troubleshooting), visit the docs site:
+
+**👉 <https://docs.matterai.so/orbcode-cli/overview>**
 
 ## Contributing
 
