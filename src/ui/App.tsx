@@ -3,7 +3,7 @@ import { Box, Static, Text, useApp, useInput } from "ink"
 import open from "open"
 
 import { COLORS, VERSION } from "../branding.js"
-import { AXON_MODELS, getModel, isValidAxonModel } from "../api/models.js"
+import { BUILTIN_AXON_MODELS, getModel, isValidAxonModel } from "../api/models.js"
 import { LoginView } from "./LoginView.js"
 import { APP_URL, fetchBalance, fetchProfile, fetchTaskTitle, type ProfileData } from "../auth/auth.js"
 import {
@@ -524,21 +524,31 @@ export function App({
 					})
 					break
 				case "/model": {
-					const ids = Object.keys(AXON_MODELS)
-					if (arg && isValidAxonModel(arg)) {
+					// The interactive picker is restricted to Axon's own models for now.
+					// Third-party providers (Anthropic, OpenAI-compatible) are still
+					// usable headlessly via `orbcode -p "..." --model <id>` — see
+					// the README "Other providers" section.
+					const pickerIds = Object.keys(BUILTIN_AXON_MODELS)
+					if (arg && pickerIds.includes(arg)) {
 						switchModel(arg)
+					} else if (arg && isValidAxonModel(arg)) {
+						// Recognized id, but it's a third-party model: not selectable in the TUI.
+						pushRow({
+							kind: "info",
+							text: `Model "${arg}" is only available in non-interactive mode. Run: orbcode -p "..." --model ${arg}`,
+						})
 					} else if (arg) {
 						// Allow short suffixes like "pro" or "mini" to resolve to the
 						// latest matching registered id, so /model pro keeps working
 						// as new model generations are added.
-						const matches = ids
+						const matches = pickerIds
 							.filter((id) => id.endsWith(`-${arg}`))
 							.sort()
 							.reverse()
 						if (matches.length > 0) {
 							switchModel(matches[0])
 						} else {
-							pushRow({ kind: "error", text: `Unknown model "${arg}". Available: ${ids.join(", ")}` })
+							pushRow({ kind: "error", text: `Unknown model "${arg}". Available: ${pickerIds.join(", ")}` })
 						}
 					} else {
 						setModelPickerOpen(true)

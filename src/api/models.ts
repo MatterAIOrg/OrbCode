@@ -53,7 +53,8 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
   "claude-opus-4-8": {
     id: "claude-opus-4-8",
     name: "Claude Opus 4.8",
-    description: "Anthropic's most capable Opus model — long-horizon agentic work, knowledge work, and coding.",
+    description:
+      "Anthropic's most capable Opus model — long-horizon agentic work, knowledge work, and coding.",
     contextWindow: 1_000_000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -65,7 +66,8 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
   "claude-opus-4-7": {
     id: "claude-opus-4-7",
     name: "Claude Opus 4.7",
-    description: "Previous-generation Opus — highly autonomous, strong on agentic, vision, and memory tasks.",
+    description:
+      "Previous-generation Opus — highly autonomous, strong on agentic, vision, and memory tasks.",
     contextWindow: 1_000_000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -89,7 +91,8 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
   "claude-sonnet-4-6": {
     id: "claude-sonnet-4-6",
     name: "Claude Sonnet 4.6",
-    description: "Anthropic's best balance of speed and intelligence; adaptive thinking, 1M context.",
+    description:
+      "Anthropic's best balance of speed and intelligence; adaptive thinking, 1M context.",
     contextWindow: 1_000_000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -101,7 +104,8 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
   "claude-haiku-4-5": {
     id: "claude-haiku-4-5",
     name: "Claude Haiku 4.5",
-    description: "Fastest, most cost-effective Claude model for simple, latency-sensitive tasks.",
+    description:
+      "Fastest, most cost-effective Claude model for simple, latency-sensitive tasks.",
     contextWindow: 200_000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -115,7 +119,8 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
   "claude-fable-5": {
     id: "claude-fable-5",
     name: "Claude Fable 5",
-    description: "Anthropic's most capable widely released model — most demanding reasoning and long-horizon work.",
+    description:
+      "Anthropic's most capable widely released model — most demanding reasoning and long-horizon work.",
     contextWindow: 1_000_000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -126,8 +131,14 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
   },
 };
 
-export const AXON_MODELS: Record<string, AxonModel> = {
-  ...ANTHROPIC_MODELS,
+/**
+ * Axon's own models (MatterAI gateway). These are the only models shown in
+ * the TUI's `/model` picker and are the supported defaults. Third-party
+ * providers (Anthropic, OpenAI-compatible) are registered under
+ * `AXON_MODELS` for `-p --model` runs but are intentionally hidden from the
+ * interactive picker for now.
+ */
+export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
   "axon-code-2-5-mini": {
     id: "axon-code-2-5-mini",
     name: "Axon Code 2.5 Mini (free)",
@@ -168,17 +179,28 @@ export const AXON_MODELS: Record<string, AxonModel> = {
     id: "axon-eido-3-code-mini",
     name: "Axon Eido 3 Mini",
     description:
-      "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for low-effort day-to-day tasks",
+      "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
     contextWindow: 400000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.000001,
-    outputPrice: 0.000003,
+    inputPrice: 0.0000015,
+    outputPrice: 0.0000045,
     free: false,
   },
 };
 
-export const DEFAULT_MODEL_ID = "axon-code-2-5-pro";
+/**
+ * Full model registry, including third-party providers. The TUI picker uses
+ * `BUILTIN_AXON_MODELS`; non-interactive `-p --model` runs resolve through
+ * this map, so a custom 3P entry (e.g. `claude-opus-4-8` from settings.json)
+ * still works headlessly.
+ */
+export const AXON_MODELS: Record<string, AxonModel> = {
+  ...BUILTIN_AXON_MODELS,
+  ...ANTHROPIC_MODELS,
+};
+
+export const DEFAULT_MODEL_ID = "axon-eido-3-code-mini";
 
 /** A model declared in settings.json; everything except the id is optional. */
 export interface CustomModelConfig {
