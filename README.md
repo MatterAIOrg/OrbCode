@@ -36,6 +36,9 @@ activity rows, edit/command approvals, and todo tracking.
 - [Headless mode](#headless-mode)
 - [Configuration](#configuration)
 - [Hooks](#hooks)
+- [MCP servers](#mcp-servers)
+- [Skills](#skills)
+- [AGENTS.md memory](#agentsmd-memory)
 - [Architecture](#architecture)
 - [Tools](#tools)
 - [Agent loop](#agent-loop)
@@ -293,8 +296,9 @@ MatterAI gateway untouched.
 | `/compact`   | summarize the conversation and replace history with the summary                                       |
 | `/tasks`     | print the current task list                                                                           |
 | `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
-| `/cost`      | show session cost and fetch account balance                                                           |
+| `/usage`     | fetch plan usage                                                                                      |
 | `/init`      | analyze the codebase and create/improve `AGENTS.md`                                                   |
+| `/mcp`       | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
 | `/login`     | start the browser sign-in flow                                                                        |
 | `/logout`    | remove the saved token                                                                                |
 | `/version`   | print the CLI version                                                                                 |
@@ -486,6 +490,316 @@ untrusted.
 **→ Full reference with worked recipes for every event:
 [docs/HOOKS.md](https://github.com/MatterAIOrg/OrbCode/blob/main/docs/HOOKS.md).**
 
+## MCP servers
+
+OrbCode connects to external tools via the **Model Context Protocol** (MCP). MCP
+servers expose tools that appear alongside the native tools as
+`mcp__<server>__<tool>` and can be called by the model like any other tool.
+
+### Configuration
+
+MCP servers are configured in three scopes (highest precedence last):
+
+1. **User scope** — `mcpServers` in `~/.orbcode/settings.json`. Applies to every
+   project on this machine.
+2. **Project scope** — `.mcp.json` in the project root (and parent directories,
+   closer-to-cwd wins). This is the check-into-git, shared format, compatible
+   with Claude Code's `.mcp.json`.
+3. **Local scope** — `mcpServers` in `.orbcode/settings.json`. Per-project,
+   per-machine overrides (not checked in).
+
+### Adding servers from the command line
+
+The `orbcode mcp` subcommand manages servers without editing JSON by hand —
+like Claude Code's `claude mcp add/remove/list`:
+
+```bash
+# stdio (default transport): name + command + args
+orbcode mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /Users/me/projects
+
+# http transport
+orbcode mcp add --transport http linear-server https://mcp.linear.app/mcp
+
+# sse transport with a header
+orbcode mcp add -t sse --header "Authorization=Bearer ${TOKEN}" my-sse https://example.com/sse
+
+# http with OAuth (auth from /mcp after adding)
+orbcode mcp add --transport http --oauth notion https://mcp.notion.com/mcp
+orbcode mcp add -t http --oauth --oauth-scope "read:issues" linear https://mcp.linear.app/mcp
+
+# stdio with env vars, written to user scope (~/.orbcode/settings.json)
+orbcode mcp add -s user -e API_KEY=secret -e DEBUG=true my-server node server.js
+
+# list all configured servers (name, scope, transport detail)
+orbcode mcp list
+
+# remove a server (finds it in whichever scope it lives)
+orbcode mcp remove filesystem
+```
+
+Flags go before the server name; everything after the name is the command +
+args (so stdio servers can take their own flags like `-y`). Use `--` to force
+the split if needed. `-s`/`--scope` selects `project` (default, writes
+`.mcp.json`), `user` (writes `~/.orbcode/settings.json`), or `local` (writes
+`.orbcode/settings.json`). Run `orbcode mcp help` for the full reference.
+
+`add` and `remove` print the file they modified:
+
+```
+$ orbcode mcp add --transport http linear-server https://mcp.linear.app/mcp
+Added HTTP MCP server linear-server
+  URL: https://mcp.linear.app/mcp
+  Scope: project
+  File modified: /Users/me/my-project/.mcp.json
+```
+
+OAuth servers show `needs-auth` after adding — they don't auto-open a browser.
+Open `/mcp` in the TUI, select the server, and press `a` (or `1`) to
+authenticate. OrbCode shows an auth screen:
+
+```
+  Authenticating with linear-server…
+
+  ✽  A browser window will open for authentication
+
+  If your browser doesn't open automatically, copy this URL manually (c to copy)
+  https://mcp.linear.app/authorize?response_type=code&client_id=…
+
+  If the redirect page shows a connection error, paste the URL from your browser's address bar:
+  URL> █
+
+  Return here after authenticating in your browser. Press Esc to go back.
+```
+
+The browser opens automatically to the server's OAuth authorize page (RFC 9728
+discovery → PKCE → redirect to a loopback callback → token exchange). Press `c`
+to copy the URL to the clipboard if the browser doesn't open. If the redirect
+fails (e.g. wrong port), press enter and paste the redirect URL from the
+browser's address bar — OrbCode extracts the code from it. Either path
+(callback or paste) completes the flow. Tokens persist under
+`~/.orbcode/mcp-auth/<server>.json` (mode 0600) for future sessions; refresh
+happens automatically when they expire. For M2M grants (`client_credentials`,
+`private_key_jwt`), there's no browser — the token exchange is direct.
+
+`.mcp.json` format (project scope):
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
+    }
+  }
+}
+```
+
+`settings.json` `mcpServers` (user/local scope) uses the same per-server shape.
+Environment variables (`${VAR}`) are expanded from `process.env`.
+
+Three server types are supported:
+
+- **stdio** (default, omit `type`): OrbCode spawns `command` with `args` and
+  talks over stdin/stdout. Optional `env` and `cwd`.
+- **http**: Streamable HTTP transport. `url` + optional `headers` + optional
+  `oauth` (see [Authentication](#mcp-authentication)).
+- **sse**: Server-Sent Events (legacy remote). `url` + optional `headers` +
+  optional `oauth`.
+
+### MCP authentication
+
+Remote servers (http/sse) often require auth. OrbCode supports three ways:
+
+**1. Static headers** (API keys, personal access tokens). Use `headers` with
+`${ENV_VAR}` expansion — the token is read from the environment, never written
+to disk:
+
+```json
+{
+  "github": {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
+  }
+}
+```
+
+**2. OAuth 2.0 flows** (for servers that require user login: GitHub, Google
+Drive, Slack, Notion, …). Set `oauth: true` (or `{ "scope": "..." }`) on an
+http/sse server. OrbCode runs the full authorization-code flow via the SDK:
+RFC 9728 protected-resource discovery, RFC 8414 authorization-server metadata,
+PKCE, dynamic client registration, and token refresh. A one-shot loopback HTTP
+server receives the browser redirect. Tokens, client info, code verifiers, and
+discovery state are persisted per-server under `~/.orbcode/mcp-auth/<server>.json`
+(mode 0600) so re-auth is only needed when a token expires or is revoked.
+
+```json
+{
+  "notion": {
+    "type": "http",
+    "url": "https://mcp.notion.com/mcp",
+    "oauth": true
+  },
+  "google-drive": {
+    "type": "http",
+    "url": "https://mcp.google.com/drive",
+    "oauth": { "scope": "https://www.googleapis.com/auth/drive.readonly" }
+  }
+}
+```
+
+**3. Machine-to-machine OAuth** (no browser). For service-to-service auth,
+use `client_credentials` or `private_key_jwt` grants — these use the SDK's
+built-in `ClientCredentialsProvider` / `PrivateKeyJwtProvider`:
+
+```json
+{
+  "internal-api": {
+    "type": "http",
+    "url": "https://internal.example.com/mcp",
+    "oauth": {
+      "grantType": "client_credentials",
+      "clientId": "orbcode-client",
+      "clientSecret": "${INTERNAL_CLIENT_SECRET}",
+      "scope": "mcp:tools"
+    }
+  },
+  "jwt-api": {
+    "type": "http",
+    "url": "https://jwt.example.com/mcp",
+    "oauth": {
+      "grantType": "private_key_jwt",
+      "clientId": "orbcode-client",
+      "privateKey": "${JWT_PRIVATE_KEY_PEM}",
+      "algorithm": "RS256"
+    }
+  }
+}
+```
+
+When a server needs auth, its status shows `needs-auth` in `/mcp`; press **a**
+to re-authenticate (clears stored tokens and re-runs the flow). Secrets in
+`oauth` blocks support `${ENV_VAR}` expansion like `headers`, so client
+secrets and private keys can be sourced from the environment rather than
+committed to `.mcp.json`.
+
+### Enabling & disabling servers
+
+- **User/local-scope servers** connect automatically on startup (you wrote them,
+  so they're trusted).
+- **Project-scope servers** (from `.mcp.json`) require a one-time approval: on
+  first launch in a project, OrbCode shows a checklist of detected servers.
+  Select the ones you trust; the decision is persisted to
+  `.orbcode/settings.json` (`enabledMcpServers` / `disabledMcpServers`) so they
+  auto-connect on future sessions.
+
+The `/mcp` command opens an interactive manager at any time:
+
+- ↑/↓ to select a server. The selected server shows a detail panel with
+  **Status**, **Auth** (authenticated / not authenticated / static headers),
+  **URL** (or stdio command), **Config location** (the file path), and a
+  numbered action list.
+- **enter** or **2** toggles enable/disable. **r** or **3** reconnects. **a**
+  or **1** authenticates a `needs-auth` OAuth server (opens a browser for the
+  authorization-code flow; M2M grants exchange directly). **esc** closes.
+- Each server shows a live status icon: `✓ connected`, `△ needs-auth`,
+  `✗ failed`, `○ disabled`, `⋯ connecting`, plus a tool count when connected.
+- Enable/disable choices are persisted per-project. OAuth tokens are persisted
+  per-server under `~/.orbcode/mcp-auth/`.
+
+### Headless mode
+
+In `orbcode -p`, there's no interactive approval, so project-scope servers are
+only connected if they were previously approved (via an interactive `/mcp`
+session). Unapproved project servers are skipped with a stderr note. User/local
+servers connect as usual.
+
+## Skills
+
+Skills are reusable instruction sets the model can load on demand. A skill is a
+directory containing a `SKILL.md` file with optional YAML frontmatter and a
+markdown body of specialized instructions.
+
+### Creating a skill
+
+Place a directory under `~/.orbcode/skills/` (user, applies everywhere) or
+`.orbcode/skills/` (project, checked into the repo):
+
+```
+~/.orbcode/skills/
+  my-skill/
+    SKILL.md
+```
+
+`SKILL.md` format:
+
+```markdown
+---
+description: Write concise, idiomatic Go code following project conventions
+when_to_use: the task involves writing or reviewing Go code
+---
+
+# Go style skill
+
+When writing Go in this project:
+- Use `errors.Join` for multi-error aggregation
+- Prefer table-driven tests
+- ...
+```
+
+- `description` (frontmatter or first paragraph): shown in the skill catalog.
+- `when_to_use` (frontmatter): a hint telling the model when to invoke this skill.
+- `${SKILL_DIR}` in the body is replaced with the skill's absolute directory
+  path, so you can reference bundled scripts.
+
+### How skills are used
+
+The skill catalog (names + descriptions + when-to-use) is injected into the
+system prompt. When a task matches a skill's `when_to_use` condition, the model
+calls the `use_skill` tool with the skill's name, which loads the full
+instructions into context. Project skills override user skills on name
+collisions (closer-to-cwd wins).
+
+## AGENTS.md memory
+
+AGENTS.md files provide project- and user-level instructions that are injected
+into every system prompt — build commands, code style, architecture notes,
+conventions. This is OrbCode's equivalent of Claude Code's `CLAUDE.md`, using
+the open `AGENTS.md` filename so it works across tools.
+
+### Discovery
+
+Files are loaded in this order (lowest precedence first; higher-precedence files
+appear later and get more weight):
+
+1. **User memory**: `~/.orbcode/AGENTS.md` — personal global instructions.
+2. **Project memory**: `AGENTS.md` and `.orbcode/AGENTS.md` in the cwd and every
+   parent directory (closer-to-cwd wins). Checked into the repo, shared with the
+   team.
+3. **Local memory**: `AGENTS.local.md` in the cwd and parents — private
+   per-machine overrides (gitignore this).
+
+### @include directives
+
+An AGENTS.md file can include other files with `@path` references:
+
+```markdown
+# Project guide
+
+See the detailed style guide: @./docs/style.md
+And the global one: @~/orbcode-global.md
+```
+
+`@path` (relative to the including file), `@./path`, `@~/path`, and `@/abs/path`
+are all supported. Includes are resolved recursively (up to 5 levels, with cycle
+detection). Use `/init` to have OrbCode generate a starter `AGENTS.md` by
+analyzing the codebase.
+
 ## Architecture
 
 ```
@@ -502,22 +816,49 @@ src/
     stream.ts        chunk model: text / reasoning / native_tool_calls / usage
     headers.ts       X-AxonCode-Version, X-AxonCode-TaskId, X-AXON-REPO, …
   prompts/system.ts  system prompt: agent roleDefinition + tool guide (ported
-                     verbatim from the extension) + CLI system-info section
+                     verbatim from the extension) + CLI system-info section +
+                     AGENTS.md memory + skills catalog injection
   tools/
     schemas/         native-tools JSON schemas, copied verbatim from the extension
-    executors/       CLI implementations (fs, child_process, search, web)
-    index.ts         dispatch, approval classification, call summaries
+    executors/       CLI implementations (fs, child_process, search, web, skills)
+    index.ts         dispatch, approval classification, call summaries, MCP routing
   core/
-    agent.ts         the agent loop (see below)
+    agent.ts         the agent loop (see below); owns the McpManager
     events.ts        AgentEvent model consumed by the UI
     hooks.ts         lifecycle hooks engine, Claude-Code compatible (see Hooks)
+  mcp/
+    types.ts         MCP server config + connection state types
+    config.ts        .mcp.json + settings.json mcpServers loader (3-scope merge)
+    client.ts        SDK transport (stdio/http/sse) + tool enum + tool call
+    manager.ts       McpManager: connection lifecycle, enable/disable, tool routing
+  skills/
+    types.ts         Skill + frontmatter types
+    loader.ts        ~/.orbcode/skills + .orbcode/skills discovery (SKILL.md format)
+  memory/
+    types.ts         MemoryFile type
+    loader.ts        AGENTS.md discovery (user/project/local) + @include resolution
   ui/
     App.tsx          main Ink app: static finalized rows + dynamic streaming area
     LoginView.tsx    device-flow login screen with paste fallback
     components/      Header, InputBox, rows, ApprovalPrompt, FollowupPrompt,
-                     Spinner, StatusBar
+                     HookTrustPrompt, McpApprovalPrompt, McpPicker, ModelPicker,
+                     SessionPicker, Spinner, StatusBar
     markdown.ts      markdown → ANSI renderer
 ```
+
+**MCP integration**: the `McpManager` (owned by the agent) loads the merged
+config on `start()`, connects to approved servers in parallel, and exposes
+their tools as `mcp__<server>__<tool>` definitions alongside the native tools.
+The agent routes any `mcp__*` tool call to the manager, which dispatches it to
+the right SDK client. Project-scope servers (from `.mcp.json`) require a
+one-time approval; the TUI shows a checklist at startup and `/mcp` manages them
+at runtime. Connections are torn down on session end.
+
+**Skills & memory**: on agent construction, `loadMemoryFiles()` walks the
+AGENTS.md discovery chain (user → project → local, with `@include` resolution)
+and `loadSkills()` walks the skills directories. Both are injected into the
+system prompt so the model sees project instructions and the skill catalog on
+every turn. The `use_skill` tool loads a skill's full body on demand.
 
 **Streaming** faithfully ports the extension's handler quirks: cumulative
 content dedup (some backends re-send full content), `<think>` blocks routed to
@@ -535,7 +876,7 @@ extension). It shows in the status bar, is written into the session file (so
 `/resume` lists real titles), and becomes the terminal window title:
 `<title> (orbcode)`.
 
-**Usage data**: `/status` and `/cost` fetch `/axoncode/profile` and show the
+**Usage data**: `/status` and `/usage` fetch `/axoncode/profile` and show the
 plan, usage percentage (used/remaining), remaining reviews, and the credits
 reset date — the same data as the extension's profile view.
 
@@ -554,11 +895,13 @@ Active in the CLI (schemas byte-identical to the extension's `native-tools`):
 | `execute_command`          | user's shell, 120s timeout, 30k output cap, optional cwd                                     |
 | `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
 | `update_todo_list`         | drives the TUI todo panel                                                                    |
+| `use_skill`                | loads a skill's full instructions from ~/.orbcode/skills or .orbcode/skills                  |
 | `ask_followup_question`    | interactive menu in the TUI                                                                  |
 | `attempt_completion`       | ends the turn with a completion card                                                         |
+| `mcp__<server>__<tool>`    | any tool exposed by a connected MCP server (see [MCP servers](#mcp-servers))                 |
 
 Present in `tools/schemas/` but **inactive** (need IDE services): `codebase_search`,
-`lsp`, `list_code_definition_names`, `use_skill`, `check_past_chat_memories`,
+`lsp`, `list_code_definition_names`, `check_past_chat_memories`,
 `browser_action`, `generate_image`, `new_task`, `switch_mode`,
 `fetch_instructions`, `run_slash_command`.
 
