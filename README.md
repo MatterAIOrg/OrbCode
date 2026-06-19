@@ -296,7 +296,7 @@ MatterAI gateway untouched.
 | `/compact`   | summarize the conversation and replace history with the summary                                       |
 | `/tasks`     | print the current task list                                                                           |
 | `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
-| `/cost`      | show session cost and fetch account balance                                                           |
+| `/usage`     | fetch plan usage                                                                                      |
 | `/init`      | analyze the codebase and create/improve `AGENTS.md`                                                   |
 | `/mcp`       | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
 | `/login`     | start the browser sign-in flow                                                                        |
@@ -876,7 +876,7 @@ extension). It shows in the status bar, is written into the session file (so
 `/resume` lists real titles), and becomes the terminal window title:
 `<title> (orbcode)`.
 
-**Usage data**: `/status` and `/cost` fetch `/axoncode/profile` and show the
+**Usage data**: `/status` and `/usage` fetch `/axoncode/profile` and show the
 plan, usage percentage (used/remaining), remaining reviews, and the credits
 reset date — the same data as the extension's profile view.
 

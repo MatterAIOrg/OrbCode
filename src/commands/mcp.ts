@@ -111,6 +111,12 @@ function parseAddFlags(args: string[]): {
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i]!
 		if (sawPositional) {
+			// A "--" immediately after the server name is the separator between
+			// orbcode's flags and the server's command (e.g. `add name -- npx`),
+			// matching Claude Code's `claude mcp add <name> -- <command>`. Consume
+			// it so it isn't mistaken for the command. A later "--" is kept as a
+			// literal arg for the server command.
+			if (arg === "--" && positional.length === 1) continue
 			positional.push(arg)
 			continue
 		}

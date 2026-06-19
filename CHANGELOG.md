@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-06-19
+
+### Fixed
+
+- **`orbcode mcp add` no longer swallows a `--` separator after the server
+  name as the command.** `orbcode mcp add --scope user context7 -- npx -y
+  @upstash/context7-mcp ...` previously wrote `command: "--"` (a literal
+  `--`), so the server failed to spawn. A `--` immediately after the server
+  name is now consumed as the flag/command separator, matching Claude Code's
+  `claude mcp add <name> -- <command>`. A later `--` is still passed through
+  as a literal argument to the server command.
+
+### Changed
+
+- **`/cost` slash command renamed to `/usage`.** It now fetches and prints
+  your plan usage from `/axoncode/profile` — the plan name (uppercased) and,
+  for tiered accounts, the 5-hour / weekly / monthly windows with percentage
+  used and reset time (or the credits reset date for non-tiered accounts) —
+  instead of showing the session cost and fetching the account balance.
+  Session cost remains in the status bar and `/status`. The usage block no
+  longer prints the legacy `usagePercentage` and `remainingReviews` lines.
+
 ## [0.2.0] - 2026-06-17
 
 ### Changed
@@ -284,7 +306,9 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.2.0...HEAD
+[0.2.3]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.3
+[0.2.0]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.0
 [0.1.14]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.14
 [0.1.13]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.13
 [0.1.8]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.8
