@@ -10,11 +10,13 @@ import {
 	getAuthToken,
 	getPendingProjectHooks,
 	loadSettings,
+	saveMcpApproval,
 	saveSettings,
 	trustProjectHooks,
 	type OrbCodeSettings,
 } from "../config/settings.js"
 import { Agent } from "../core/agent.js"
+import { McpManager } from "../mcp/manager.js"
 import type { UpdateInfo } from "../utils/updateCheck.js"
 import type {
 	AgentEvent,
@@ -27,6 +29,8 @@ import { InputBox, type SlashCommand } from "./components/InputBox.js"
 import { ApprovalPrompt } from "./components/ApprovalPrompt.js"
 import { FollowupPrompt } from "./components/FollowupPrompt.js"
 import { HookTrustPrompt } from "./components/HookTrustPrompt.js"
+import { McpApprovalPrompt } from "./components/McpApprovalPrompt.js"
+import { McpPicker } from "./components/McpPicker.js"
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js"
 import { ModelPicker } from "./components/ModelPicker.js"
 import { SessionPicker } from "./components/SessionPicker.js"
@@ -44,6 +48,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
 	{ name: "/status", description: "show session status (model, context, cost, account)" },
 	{ name: "/cost", description: "show session cost and balance" },
 	{ name: "/init", description: "analyze this codebase and create an AGENTS.md" },
+	{ name: "/mcp", description: "manage MCP servers — enable, disable, reconnect, view status" },
 	{ name: "/commit", description: "check pending changes and create detailed commits" },
 	{ name: "/code-review", description: "expert review of pending changes: performance, security, bugs, tests" },
 	{ name: "/analytics", description: "open your MatterAI analytics dashboard" },
@@ -217,6 +222,12 @@ export function App({
 	const [queuedMessages, setQueuedMessages] = useState<string[]>([])
 	const [modelPickerOpen, setModelPickerOpen] = useState(false)
 	const [resumableSessions, setResumableSessions] = useState<SessionData[] | null>(null)
+	// MCP manager (created once, shared across agents in this process). Null until
+	// the first agent is created so we don't spawn servers before login.
+	const mcpManagerRef = useRef<McpManager | null>(null)
+	const [mcpPickerOpen, setMcpPickerOpen] = useState(false)
+	// Project-scope MCP servers awaiting the user's approval at startup.
+	const [pendingMcpApproval, setPendingMcpApproval] = useState<string[] | null>(null)
 	const [staticKey, setStaticKey] = useState(0)
 	const [tasks, setTasks] = useState("")
 	const [contextTokens, setContextTokens] = useState(0)
@@ -411,6 +422,17 @@ export function App({
 	const createAgent = useCallback(
 		(resume?: SessionData): Agent => {
 			const current = loadSettings()
+			// Create the MCP manager once per process and reuse it across agents
+			// (so /new and /resume keep the same server connections). It reads
+			// the enabled/disabled lists from settings and connects to approved
+			// servers lazily on start().
+			if (!mcpManagerRef.current) {
+				mcpManagerRef.current = new McpManager(
+					process.cwd(),
+					current.disabledMcpServers ?? [],
+					current.enabledMcpServers ?? [],
+				)
+			}
 			return new Agent({
 				cwd: process.cwd(),
 				token: getAuthToken(current)!,
@@ -420,6 +442,7 @@ export function App({
 				autoApproveEdits: current.autoApproveEdits,
 				autoApproveSafeCommands: current.autoApproveSafeCommands,
 				hooks: current.hooks,
+				mcp: mcpManagerRef.current,
 				resume,
 				callbacks: {
 					onEvent: handleEvent,
@@ -488,6 +511,8 @@ export function App({
 		(reason: string) => {
 			const agent = agentRef.current
 			if (!agent) {
+				// No agent yet, but the MCP manager may have started; tear it down.
+				void mcpManagerRef.current?.stop().catch(() => {})
 				exit()
 				return
 			}
@@ -639,6 +664,15 @@ export function App({
 					setBusyLabel("Thinking")
 					void getAgent().runTurn(INIT_PROMPT)
 					break
+				case "/mcp": {
+					const manager = mcpManagerRef.current
+					if (!manager) {
+						pushRow({ kind: "info", text: "MCP not initialized yet — send a message first." })
+						break
+					}
+					setMcpPickerOpen(true)
+					break
+				}
 				case "/commit":
 					if (!getAuthToken(settings)) {
 						setView("login")
@@ -754,6 +788,31 @@ export function App({
 		[handleSubmit, pushRow],
 	)
 
+	// Resolve the MCP server approval prompt: connect to the approved project
+	// servers, persist the decision, and proceed with any deferred startup prompt.
+	const resolveMcpApproval = useCallback(
+		async (approved: string[]) => {
+			setPendingMcpApproval(null)
+			const manager = mcpManagerRef.current
+			if (manager) {
+				// Enable each approved server (connects immediately). Disapproved
+				// ones stay disabled and won't prompt again (persisted below).
+				await Promise.all(approved.map((name) => manager.enableServer(name).catch(() => {})))
+				saveMcpApproval(process.cwd(), manager.getEnabled(), manager.getDisabled())
+				const snap = manager.snapshot()
+				const connected = snap.servers.filter((s) => s.status === "connected").length
+				pushRow({
+					kind: "info",
+					text: `MCP: ${connected}/${snap.servers.length} server${snap.servers.length === 1 ? "" : "s"} connected${approved.length ? ` (approved: ${approved.join(", ")})` : ""}.`,
+				})
+			}
+			const deferred = deferredPromptRef.current
+			deferredPromptRef.current = null
+			if (deferred) handleSubmit(deferred)
+		},
+		[handleSubmit, pushRow],
+	)
+
 	// Apply --resume and an initial prompt (`orbcode "do something"`) on startup.
 	const bootedRef = useRef(false)
 	useEffect(() => {
@@ -768,6 +827,22 @@ export function App({
 			deferredPromptRef.current = initialPrompt ?? null
 		} else if (initialPrompt) {
 			handleSubmit(initialPrompt)
+		}
+		// Start the MCP manager and surface any project-scope servers that need
+		// approval. The approval prompt is non-blocking: the agent can start
+		// working while the user decides, and approved servers connect live.
+		const current = loadSettings()
+		if (getAuthToken(current)) {
+			const manager = new McpManager(
+				process.cwd(),
+				current.disabledMcpServers ?? [],
+				current.enabledMcpServers ?? [],
+			)
+			mcpManagerRef.current = manager
+			void manager.start().then(() => {
+				const pendingMcp = manager.getPendingApproval()
+				if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp)
+			})
 		}
 		refreshUsage()
 	}, [initialSession, initialPrompt, handleResume, handleSubmit, refreshUsage])
@@ -845,7 +920,9 @@ export function App({
 		!pendingApproval &&
 		!pendingFollowup &&
 		!pendingHookTrust &&
+		!pendingMcpApproval &&
 		!modelPickerOpen &&
+		!mcpPickerOpen &&
 		!resumableSessions
 
 	return (
@@ -948,6 +1025,26 @@ export function App({
 							/>
 						</Box>
 					)}
+					{pendingMcpApproval && (
+						<Box marginTop={1}>
+							<McpApprovalPrompt
+								serverNames={pendingMcpApproval}
+								onApprove={resolveMcpApproval}
+							/>
+						</Box>
+					)}
+					{mcpPickerOpen && mcpManagerRef.current && (
+						<Box marginTop={1}>
+							<McpPicker
+								manager={mcpManagerRef.current}
+								onChanged={() => {
+									const m = mcpManagerRef.current
+									if (m) saveMcpApproval(process.cwd(), m.getEnabled(), m.getDisabled())
+								}}
+								onCancel={() => setMcpPickerOpen(false)}
+							/>
+						</Box>
+					)}
 					{pendingApproval && (
 						<Box marginTop={1}>
 							<ApprovalPrompt
@@ -972,7 +1069,7 @@ export function App({
 							/>
 						</Box>
 					)}
-					{busy && !pendingApproval && !pendingFollowup && !pendingHookTrust && !streamingText && (
+					{busy && !pendingApproval && !pendingFollowup && !pendingHookTrust && !pendingMcpApproval && !mcpPickerOpen && !streamingText && (
 						<Box marginTop={1}>
 							<Spinner label={busyLabel} />
 						</Box>

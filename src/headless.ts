@@ -2,6 +2,7 @@ import { getModel, isValidAxonModel, usesAiSdk } from "./api/models.js"
 import { getAuthToken, getPendingProjectHooks, loadSettings } from "./config/settings.js"
 import { Agent } from "./core/agent.js"
 import type { AgentEvent } from "./core/events.js"
+import { McpManager } from "./mcp/manager.js"
 
 /** Non-interactive `orbcode -p "prompt"` mode: prints the final response to stdout. */
 export async function runHeadless(prompt: string, yolo: boolean): Promise<void> {
@@ -38,6 +39,28 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 		)
 	}
 
+	// Start MCP servers. In headless mode there's no interactive approval, so
+	// project-scope servers are only connected if they were previously approved
+	// (persisted in .orbcode/settings.json). Unapproved project servers are
+	// skipped with a note, matching the project-hooks behavior.
+	const mcp = new McpManager(
+		process.cwd(),
+		settings.disabledMcpServers ?? [],
+		settings.enabledMcpServers ?? [],
+	)
+	const mcpSnapshot = await mcp.start()
+	const pendingMcp = mcp.getPendingApproval()
+	if (pendingMcp.length > 0) {
+		process.stderr.write(
+			`note: ${pendingMcp.length} project MCP server(s) in .mcp.json are unapproved and were skipped. ` +
+				`Approve them in an interactive session with /mcp.\n`,
+		)
+	}
+	const connectedMcp = mcpSnapshot.servers.filter((s) => s.status === "connected").length
+	if (connectedMcp > 0) {
+		process.stderr.write(`MCP: ${connectedMcp}/${mcpSnapshot.servers.length} server(s) connected.\n`)
+	}
+
 	let exitCode = 0
 	// Only the final content is printed: either the attempt_completion result
 	// or, failing that, the last assistant text. Intermediate text and tool
@@ -56,6 +79,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 		autoApproveEdits: yolo,
 		autoApproveSafeCommands: yolo,
 		hooks: settings.hooks,
+		mcp,
 		callbacks: {
 			onEvent: (event: AgentEvent) => {
 				switch (event.type) {
@@ -94,6 +118,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 
 	await agent.runTurn(prompt)
 	await agent.endSession("other")
+	await mcp.stop().catch(() => {})
 	const finalContent = completionResult || lastText || textBuffer
 	if (finalContent) {
 		process.stdout.write(finalContent.trimEnd() + "\n")

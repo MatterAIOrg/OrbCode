@@ -1,6 +1,10 @@
 import * as os from "node:os"
 
 import { getShell } from "../utils/shell.js"
+import type { MemoryFile } from "../memory/types.js"
+import { renderMemorySection } from "../memory/loader.js"
+import type { Skill } from "../skills/types.js"
+import { renderSkillCatalog } from "../skills/loader.js"
 
 // Role definition and tool guide ported verbatim from the Orbital extension
 // (agent mode roleDefinition + applyDiffToolDescription). Only the system
@@ -53,6 +57,18 @@ Bias towards not asking the user for help if you can find the answer yourself.
 # Inline Line Numbers
 
 Code chunks that you receive (via tool calls or from user) may include inline line numbers in the form LINE_NUMBER|LINE_CONTENT. Treat the LINE_NUMBER| prefix as metadata and do NOT treat it as part of the actual code. LINE_NUMBER is right-aligned number padded with spaces to 6 characters.
+
+# Project & User Instructions (AGENTS.md)
+
+Your system prompt may include an "Project & User Instructions (AGENTS.md)" section. These are instructions from AGENTS.md files in the user's home directory, the project root, and parent directories. They contain project-specific guidance: build commands, code style, architecture notes, conventions. Treat them as authoritative instructions from the user about this codebase and follow them exactly. They override default behavior.
+
+# Skills
+
+Your system prompt may include an "Available Skills" section listing skills by name with a description and when-to-use hint. Skills are reusable instruction sets stored in ~/.orbcode/skills/ and .orbcode/skills/. When a task matches a skill's when-to-use condition, invoke the \`use_skill\` tool with the skill's name to load its full instructions, then follow them for the current task.
+
+# MCP Tools
+
+Tools whose names start with \`mcp__\` are provided by external MCP servers the user has configured. They work exactly like native tools — call them with the standard tool call format when the task requires their capabilities. Their descriptions and parameter schemas come from the MCP servers.
 
 CRITICAL: For any task, small or big, you will always and always use the update_todo_list tool to create the TODO list, always keep is upto date with updates to the status and updating/editing the list as needed.`
 
@@ -379,11 +395,23 @@ function getSystemInfoSection(cwd: string): string {
 The Current Workspace Directory is the directory the user launched OrbCode CLI from, and is therefore the default directory for all tool operations. Commands run in the current workspace directory unless a different cwd is passed; changing directories inside a command does not modify the workspace directory. When the user initially gives you a task, a listing of filepaths in the current workspace directory will be included in the Environment Details section. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current workspace directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.`
 }
 
-export function buildSystemPrompt(cwd: string): string {
-	return `${roleDefinition}
+export interface SystemPromptOptions {
+	/** AGENTS.md memory files to inject (lowest precedence first). */
+	memoryFiles?: MemoryFile[]
+	/** Skills catalog to advertise to the model. */
+	skills?: Map<string, Skill>
+}
 
-${toolGuide}
-
-${getSystemInfoSection(cwd)}
-`
+export function buildSystemPrompt(cwd: string, options: SystemPromptOptions = {}): string {
+	const memorySection = options.memoryFiles ? renderMemorySection(options.memoryFiles) : ""
+	const skillSection = options.skills ? renderSkillCatalog(options.skills) : ""
+	return [
+		roleDefinition,
+		toolGuide,
+		getSystemInfoSection(cwd),
+		memorySection,
+		skillSection,
+	]
+		.filter(Boolean)
+		.join("\n\n")
 }

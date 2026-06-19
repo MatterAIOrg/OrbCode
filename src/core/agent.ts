@@ -18,6 +18,9 @@ import { previewFileChange } from "../tools/executors/files.js"
 import type { AgentCallbacks, ApprovalDecision } from "./events.js"
 import { getSessionFilePath, saveSession, type SessionData } from "./sessions.js"
 import { HookRunner, type HooksConfig } from "./hooks.js"
+import { McpManager } from "../mcp/manager.js"
+import { loadMemoryFiles } from "../memory/loader.js"
+import { loadSkills } from "../skills/loader.js"
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
@@ -35,6 +38,8 @@ export interface AgentOptions {
 	resume?: SessionData
 	/** lifecycle hooks from settings.json */
 	hooks?: HooksConfig
+	/** MCP server manager (started externally; may be undefined when MCP is off). */
+	mcp?: McpManager
 }
 
 interface PendingToolCall {
@@ -110,6 +115,8 @@ export class Agent {
 	private title = ""
 	private createdAt = new Date().toISOString()
 	private readonly hooks: HookRunner
+	/** MCP server manager (may be undefined when MCP is disabled). */
+	private mcp?: McpManager
 	/** SessionStart fires once, lazily, before the first turn of this instance. */
 	private sessionStarted = false
 	/** carries SessionStart additionalContext into the first user message */
@@ -142,7 +149,13 @@ export class Agent {
 			this.firstMessageSent = this.messages.length > 0
 		}
 		this.sessionApproveEdits = options.autoApproveEdits
-		this.systemPrompt = buildSystemPrompt(options.cwd)
+		this.mcp = options.mcp
+		// Build the system prompt with AGENTS.md memory files and the skills
+		// catalog injected, so the model sees project/user instructions and
+		// knows which skills it can invoke.
+		const memoryFiles = loadMemoryFiles(options.cwd)
+		const skills = loadSkills(options.cwd)
+		this.systemPrompt = buildSystemPrompt(options.cwd, { memoryFiles, skills })
 		this.client = createLLMClient({
 			token: options.token,
 			modelId: options.modelId,
@@ -399,12 +412,24 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	async endSession(reason: string): Promise<void> {
 		// Let in-flight Notification hooks settle before the final SessionEnd.
 		await this.awaitBackground(3000)
-		if (!this.hooks.hasHooks("SessionEnd")) return
-		try {
-			await this.hooks.run("SessionEnd", { reason })
-		} catch {
-			// a SessionEnd hook must never prevent the app from exiting
+		if (this.hooks.hasHooks("SessionEnd")) {
+			try {
+				await this.hooks.run("SessionEnd", { reason })
+			} catch {
+				// a SessionEnd hook must never prevent the app from exiting
+			}
 		}
+		// Tear down MCP server connections so child processes / sockets don't leak.
+		try {
+			await this.mcp?.stop()
+		} catch {
+			// best-effort
+		}
+	}
+
+	/** The MCP manager (for the TUI's /mcp command and approval flow). */
+	get mcpManager(): McpManager | undefined {
+		return this.mcp
 	}
 
 	/** Summarize the conversation so far and replace history with the summary. */
@@ -495,7 +520,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
 
-		const stream = this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(), signal)
+		const stream = this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(this.mcp), signal)
 
 		for await (const chunk of stream) {
 			if (signal.aborted) throw new DOMException("aborted", "AbortError")
@@ -707,7 +732,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		}
 
-		const result = await executeTool(toolCall.name, args, this.toolContext())
+		const result = await executeTool(toolCall.name, args, this.toolContext(), this.mcp)
 
 		// PostToolUse can feed extra context (or a block reason) back to the
 		// model. PreToolUse additionalContext is delivered here too.

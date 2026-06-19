@@ -5,6 +5,7 @@ import * as path from "node:path"
 
 import { DEFAULT_MODEL_ID, isValidAxonModel, registerCustomModels, type CustomModelConfig } from "../api/models.js"
 import { isHookEvent, type HookMatcher, type HooksConfig } from "../core/hooks.js"
+import type { McpServerConfig } from "../mcp/types.js"
 
 export interface OrbCodeSettings {
 	/** login token, written by `orbcode login` (config.json only) */
@@ -26,6 +27,13 @@ export interface OrbCodeSettings {
 	env?: Record<string, string>
 	/** lifecycle hooks (Claude-Code style); merged across all settings.json files */
 	hooks?: HooksConfig
+	/** MCP servers defined in settings.json (user/local scope). Project-scope
+	 *  servers live in `.mcp.json` and are loaded by the MCP config layer. */
+	mcpServers?: Record<string, McpServerConfig>
+	/** project-scope MCP server names the user has approved to connect. */
+	enabledMcpServers?: string[]
+	/** MCP server names the user has explicitly disabled. */
+	disabledMcpServers?: string[]
 }
 
 const DEFAULTS: OrbCodeSettings = {
@@ -43,6 +51,8 @@ const SETTINGS_KEYS = [
 	"baseUrl",
 	"apiKey",
 	"env",
+	"enabledMcpServers",
+	"disabledMcpServers",
 ] as const
 
 export function getConfigDir(): string {
@@ -178,6 +188,12 @@ export function loadSettings(): OrbCodeSettings {
 		if (Array.isArray(fileSettings.customModels)) {
 			customModels.push(...(fileSettings.customModels as CustomModelConfig[]))
 		}
+		// MCP servers: merge across scopes (local overrides project overrides
+		// user on name collisions). The MCP config layer also reads .mcp.json;
+		// settings.json mcpServers are the per-user/per-machine override path.
+		if (fileSettings.mcpServers && typeof fileSettings.mcpServers === "object") {
+			settings.mcpServers = { ...(settings.mcpServers ?? {}), ...(fileSettings.mcpServers as Record<string, McpServerConfig>) }
+		}
 	}
 	if (customModels.length > 0) {
 		settings.customModels = customModels
@@ -238,4 +254,27 @@ export function saveSettings(settings: OrbCodeSettings): void {
 		autoApproveSafeCommands: settings.autoApproveSafeCommands,
 	}
 	fs.writeFileSync(getConfigPath(), JSON.stringify(toPersist, null, "\t") + "\n", { mode: 0o600 })
+}
+
+/**
+ * Persist the enabled/disabled MCP server lists to the local project
+ * settings.json (`.orbcode/settings.json`). These are per-project approval
+ * decisions, so they live in the local scope, not in config.json.
+ */
+export function saveMcpApproval(
+	cwd: string,
+	enabled: string[],
+	disabled: string[],
+): void {
+	const settingsPath = path.join(cwd, ".orbcode", "settings.json")
+	let existing: Record<string, unknown> = {}
+	try {
+		existing = JSON.parse(fs.readFileSync(settingsPath, "utf8"))
+	} catch {
+		// file may not exist yet
+	}
+	existing.enabledMcpServers = [...new Set(enabled)]
+	existing.disabledMcpServers = [...new Set(disabled)]
+	fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+	fs.writeFileSync(settingsPath, JSON.stringify(existing, null, "\t") + "\n", { mode: 0o600 })
 }

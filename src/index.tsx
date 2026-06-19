@@ -4,6 +4,7 @@ import { render } from "ink"
 import { PRODUCT_NAME, VERSION } from "./branding.js"
 import { App } from "./ui/App.js"
 import { runHeadless } from "./headless.js"
+import { runMcpCommand } from "./commands/mcp.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
 import {
 	clearUpdateCache,
@@ -26,6 +27,9 @@ Usage:
   orbcode login           sign in to MatterAI
   orbcode update          install the latest version from npm
   orbcode update --force  force a global install even if this CLI doesn't look global
+  orbcode mcp add ...     add an MCP server (see: orbcode mcp help)
+  orbcode mcp remove ...  remove an MCP server
+  orbcode mcp list        list configured MCP servers
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
@@ -102,6 +106,12 @@ async function main(): Promise<void> {
 	if (args[0] === "update") {
 		const force = args.includes("--force") || args.includes("-f")
 		const code = await runUpdate(force)
+		process.exit(code)
+	}
+
+	// `orbcode mcp ...` — manage MCP servers from the command line (add/remove/list).
+	if (args[0] === "mcp") {
+		const code = await runMcpCommand(args.slice(1))
 		process.exit(code)
 	}
 
