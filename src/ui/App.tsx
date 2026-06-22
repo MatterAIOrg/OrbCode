@@ -50,7 +50,7 @@ import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
-import { RowView, formatToolName, type Row } from "./components/rows.js";
+import { RowView, type Row } from "./components/rows.js";
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
@@ -207,12 +207,6 @@ interface PendingFollowup {
   resolve: (answer: string) => void;
 }
 
-interface RunningTool {
-  id: string;
-  name: string;
-  summary: string;
-}
-
 let rowCounter = 0;
 function rowId(): string {
   return `row-${rowCounter++}`;
@@ -226,11 +220,14 @@ export function App({
   initialView,
   initialPrompt,
   initialSession,
+  systemPromptOverride,
   updateCheck,
 }: {
   initialView?: "login" | "chat";
   initialPrompt?: string;
   initialSession?: SessionData;
+  /** Optional override replacing the default system prompt (from `-s`). */
+  systemPromptOverride?: string;
   /** Promise resolving to the latest-npm-version comparison; resolved after first paint. */
   updateCheck?: Promise<UpdateInfo>;
 }) {
@@ -255,7 +252,6 @@ export function App({
   const [busyLabel, setBusyLabel] = useState("Thinking");
   const [streamingReasoning, setStreamingReasoning] = useState("");
   const [streamingText, setStreamingText] = useState("");
-  const [runningTool, setRunningTool] = useState<RunningTool | null>(null);
   const [pendingApproval, setPendingApproval] =
     useState<PendingApproval | null>(null);
   const [pendingFollowup, setPendingFollowup] =
@@ -329,6 +325,9 @@ export function App({
   const deferredPromptRef = useRef<string | null>(null);
   // Guards endAndExit against double-invocation (Ctrl+D spam).
   const exitingRef = useRef(false);
+  // Mirror of the `-s` override so a fresh agent (created mid-session via
+  // /new or /resume) keeps the override instead of falling back to default.
+  const systemPromptOverrideRef = useRef<string | undefined>(systemPromptOverride);
 
   const enqueueMessage = useCallback((text: string) => {
     queueRef.current = [...queueRef.current, text];
@@ -401,6 +400,7 @@ export function App({
           });
           reasoningBufferRef.current = "";
           setStreamingReasoning("");
+          setBusyLabel("Working");
           break;
         case "text-delta":
           textBufferRef.current += event.text;
@@ -411,18 +411,13 @@ export function App({
           pushRow({ kind: "assistant", text: textBufferRef.current });
           textBufferRef.current = "";
           setStreamingText("");
+          setBusyLabel("Working");
           break;
         case "tool-start":
-          setRunningTool({
-            id: event.id,
-            name: event.name,
-            summary: event.summary,
-          });
-          setBusyLabel(`Running ${event.name}`);
+          setBusyLabel("Working");
           break;
         case "tool-end":
-          setRunningTool(null);
-          setBusyLabel("Thinking");
+          setBusyLabel("Working");
           pushRow({
             kind: "tool",
             name: event.name,
@@ -466,7 +461,6 @@ export function App({
             reasoningBufferRef.current = "";
             setStreamingReasoning("");
           }
-          setRunningTool(null);
           setBusy(false);
           maybeFetchTitle();
           refreshUsage();
@@ -517,6 +511,9 @@ export function App({
         hooks: current.hooks,
         mcp: mcpManagerRef.current,
         resume,
+        // The override (from `-s`) is captured in a ref so a /new or /resume
+        // mid-session still applies it to the new agent.
+        systemPromptOverride: systemPromptOverrideRef.current,
         callbacks: {
           onEvent: handleEvent,
           requestApproval: (request) =>
@@ -1127,14 +1124,6 @@ export function App({
               </Text>
             </Box>
           )}
-          {runningTool && (
-            <Box marginTop={1}>
-              <Text color={COLORS.warning}>
-                {formatToolName(runningTool.name)}{" "}
-                <Text dimColor>{runningTool.summary}</Text>
-              </Text>
-            </Box>
-          )}
           {taskLines.length > 0 && (
             <Box flexDirection="column" marginTop={1} paddingLeft={1}>
               <Text dimColor bold>
@@ -1238,7 +1227,8 @@ export function App({
             !pendingHookTrust &&
             !pendingMcpApproval &&
             !mcpPickerOpen &&
-            !streamingText && (
+            !streamingText &&
+            !streamingReasoning && (
               <Box marginTop={1}>
                 <Spinner label={busyLabel} />
               </Box>
