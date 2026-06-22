@@ -40,6 +40,13 @@ export interface AgentOptions {
 	hooks?: HooksConfig
 	/** MCP server manager (started externally; may be undefined when MCP is off). */
 	mcp?: McpManager
+	/**
+	 * Replace the default system prompt entirely. Set via `orbcode -s <text>`
+	 * / `--system-prompt <text>`. The user is responsible for preserving any
+	 * critical content (tool guide, environment info, etc.); the agent
+	 * receives only the override as its system message.
+	 */
+	systemPromptOverride?: string
 }
 
 interface PendingToolCall {
@@ -152,10 +159,13 @@ export class Agent {
 		this.mcp = options.mcp
 		// Build the system prompt with AGENTS.md memory files and the skills
 		// catalog injected, so the model sees project/user instructions and
-		// knows which skills it can invoke.
-		const memoryFiles = loadMemoryFiles(options.cwd)
-		const skills = loadSkills(options.cwd)
-		this.systemPrompt = buildSystemPrompt(options.cwd, { memoryFiles, skills })
+		// knows which skills it can invoke. An explicit override (from
+		// `orbcode -s <text>`) bypasses the default entirely.
+		const memoryFiles = options.systemPromptOverride ? [] : loadMemoryFiles(options.cwd)
+		const skills = options.systemPromptOverride ? new Map() : loadSkills(options.cwd)
+		this.systemPrompt = options.systemPromptOverride
+			? options.systemPromptOverride
+			: buildSystemPrompt(options.cwd, { memoryFiles, skills })
 		this.client = createLLMClient({
 			token: options.token,
 			modelId: options.modelId,
@@ -732,6 +742,9 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		}
 
+		// Yield so the UI can paint the "Working" indicator before a
+		// potentially long synchronous tool call blocks the event loop.
+		await new Promise(resolve => setImmediate(resolve))
 		const result = await executeTool(toolCall.name, args, this.toolContext(), this.mcp)
 
 		// PostToolUse can feed extra context (or a block reason) back to the

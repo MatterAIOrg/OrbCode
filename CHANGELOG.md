@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.4] - 2026-06-22
+
+### Added
+
+- **`-s` / `--system-prompt` flag to override the default system prompt.**
+  Pass `orbcode -s "<text>"` (or `--system-prompt "<text>"`, or
+  `--system-prompt="<text>"` for values that start with `-`) to replace the
+  built-in system prompt entirely for the session. Works in both the
+  interactive TUI and headless mode (`-p`); passing `-p "..." -s "..."` runs a
+  single non-interactive turn under your custom prompt. When the override is
+  active, AGENTS.md memory files and the skills catalog are skipped, since
+  they live inside the default prompt — the model receives only your text as
+  its system message. Useful for code-review or other specialized personas.
+- **"Working" spinner with elapsed timer.** After the model finishes thinking
+  (or streaming a response), a `⠋ Working (Xs · esc to interrupt)` spinner now
+  appears and stays visible through tool execution and any gap before the next
+  LLM response — covering the previously dead-air window where long synchronous
+  operations (e.g. writing a large file) showed no feedback at all. The spinner
+  is hidden while the "Thinking" or response-streaming indicators are active so
+  the two never overlap.
+
+### Changed
+
+- The per-tool running indicator (tool name + summary line) has been removed in
+  favour of the single "Working" spinner. Tool results are still shown as rows
+  in the transcript once each tool completes.
+
 ## [0.2.3] - 2026-06-19
 
 ### Fixed
@@ -306,7 +335,7 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.2.4...HEAD
 [0.2.3]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.3
 [0.2.0]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.0
 [0.1.14]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.14

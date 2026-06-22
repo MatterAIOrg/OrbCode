@@ -5,7 +5,11 @@ import type { AgentEvent } from "./core/events.js"
 import { McpManager } from "./mcp/manager.js"
 
 /** Non-interactive `orbcode -p "prompt"` mode: prints the final response to stdout. */
-export async function runHeadless(prompt: string, yolo: boolean): Promise<void> {
+export async function runHeadless(
+	prompt: string,
+	yolo: boolean,
+	systemPromptOverride?: string,
+): Promise<void> {
 	const settings = loadSettings()
 
 	// An unknown --model (or MATTERAI_MODEL) silently resolves to the default; say
@@ -80,6 +84,7 @@ export async function runHeadless(prompt: string, yolo: boolean): Promise<void> 
 		autoApproveSafeCommands: yolo,
 		hooks: settings.hooks,
 		mcp,
+		systemPromptOverride,
 		callbacks: {
 			onEvent: (event: AgentEvent) => {
 				switch (event.type) {

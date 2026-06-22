@@ -34,6 +34,9 @@ Usage:
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
   orbcode --resume <id>   resume a previous session by id
+  orbcode -s "<prompt>"   override the default system prompt (replaces it entirely;
+                          accepts -s <text>, --system-prompt <text>, and
+                          --system-prompt=<text> for values that start with '-')
   orbcode --version       print version
   orbcode --help          show this help
 `)
@@ -88,6 +91,33 @@ function takeFlagValue(args: string[], name: string): string | undefined {
 	return value
 }
 
+/**
+ * Pop the `-s` / `--system-prompt` flag (and its value) out of `args`.
+ * Unlike `takeFlagValue` this accepts a value that starts with `-`, because
+ * a system-prompt override is free-form text. Supports three forms:
+ *   -s "<text>"             --value in next arg
+ *   --system-prompt "<text>"
+ *   --system-prompt="<text>"
+ *   --system-prompt=-<text>
+ */
+function takeSystemPrompt(args: string[]): string | undefined {
+	const longWithEq = args.findIndex((a) => a.startsWith("--system-prompt="))
+	if (longWithEq !== -1) {
+		const value = args[longWithEq].slice("--system-prompt=".length)
+		args.splice(longWithEq, 1)
+		return value.length > 0 ? value : undefined
+	}
+	const index = args.findIndex((a) => a === "-s" || a === "--system-prompt")
+	if (index === -1) return undefined
+	const value = args[index + 1]
+	if (value === undefined) {
+		console.error("Missing value after -s / --system-prompt")
+		process.exit(1)
+	}
+	args.splice(index, 2)
+	return value
+}
+
 async function main(): Promise<void> {
 	// Override Node's default process title so terminals (iTerm2 "current job
 	// name", VSCode terminal status, etc.) don't append " (node)" next to our
@@ -132,6 +162,11 @@ async function main(): Promise<void> {
 		}
 	}
 
+	// `-s` / `--system-prompt` lets the user replace the default prompt
+	// entirely. Accepts values starting with `-` (unlike other flags), so
+	// `orbcode -s '- you are a code reviewer'` works.
+	const systemPromptOverride = takeSystemPrompt(args)
+
 	const printIndex = args.findIndex((a) => a === "-p" || a === "--print")
 	if (printIndex !== -1) {
 		const prompt = args[printIndex + 1]
@@ -139,7 +174,7 @@ async function main(): Promise<void> {
 			console.error("Missing prompt after -p")
 			process.exit(1)
 		}
-		await runHeadless(prompt, args.includes("--yolo"))
+		await runHeadless(prompt, args.includes("--yolo"), systemPromptOverride)
 		return
 	}
 
@@ -161,6 +196,7 @@ async function main(): Promise<void> {
 			initialView={initialView}
 			initialPrompt={initialPrompt}
 			initialSession={initialSession}
+			systemPromptOverride={systemPromptOverride}
 			updateCheck={updateCheckPromise}
 		/>,
 	)
