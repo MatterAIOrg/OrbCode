@@ -1,19 +1,43 @@
-# Auto-release to npm from version tags on main.
+# Auto-release to npm from version tags or release-branch merges on main.
 #
-# The publish step is gated on a `vX.Y.Z` tag push to `main` — that requires
-# both a merged commit on the protected default branch AND an explicit tag,
-# both of which need write access to main. Release branches, PR pushes, and
-# force-pushes to a release branch do NOT publish, even with valid npm creds.
+# The workflow publishes in three ways:
+#   1. A merged PR from a `release/vX.Y.Z` branch into `main` (the normal
+#      path — branch name and `package.json` are both validated against
+#      each other). `gh release create` pushes the tag as a side effect;
+#      the subsequent tag-push run is short-circuited by the "already on
+#      npm" check, so there is no infinite loop.
+#   2. A `vX.Y.Z` tag push to `main` (escape hatch / re-publish path —
+#      tag must match `package.json`).
+#   3. A manual `workflow_dispatch` (re-publish / same-version dry test).
+#
+# PR pushes to a `release/v*` branch, force-pushes, and merges of any
+# other branch do NOT publish.
 #
 # Required repo secret: NPM_TOKEN (npm "Automation" access token with publish
 # rights for the `orbcode` package).
 
 name: Release
+# Per-run title:
+#   - tag push  → "Release v0.3.1"
+#   - PR merge  → "Release release/v0.3.1"
+#   - dispatch  → "Release v0.3.1" if `version` input set, else "Release manual"
+# `run-name` only sees github.* and inputs.* — package.json can't be read here.
+run-name: >-
+  Release ${{
+    github.event_name == 'push' && github.ref_name ||
+    github.event_name == 'pull_request' && github.event.pull_request.head.ref ||
+    (inputs.version && format('v{0}', inputs.version)) || 'manual'
+  }}
 
 on:
   push:
     tags:
       - "v*"
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       version:
@@ -32,7 +56,13 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'pull_request'
+        && github.event.pull_request.merged == true
+        && github.event.pull_request.base.ref == 'main'
+        && startsWith(github.event.pull_request.head.ref, 'release/v')) ||
+      (github.event_name == 'workflow_dispatch')
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +81,8 @@ jobs:
           set -euo pipefail
           PKG_VERSION=$(node -p "require('./package.json').version")
           NAME=$(node -p "require('./package.json').name")
-          if [ "${{ github.event_name }}" = "push" ]; then
+          EVENT="${{ github.event_name }}"
+          if [ "$EVENT" = "push" ]; then
             # Tag push: REF is refs/tags/vX.Y.Z
             TAG_VERSION=${GITHUB_REF#refs/tags/v}
             if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
@@ -60,6 +91,21 @@ jobs:
               exit 1
             fi
             VERSION="$TAG_VERSION"
+          elif [ "$EVENT" = "pull_request" ]; then
+            # Merged release branch: derive version from head_ref (release/vX.Y.Z)
+            # and require it to match the bumped package.json.
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+            BRANCH_VERSION=${HEAD_REF#release/v}
+            if [ -z "$BRANCH_VERSION" ] || [ "$BRANCH_VERSION" = "$HEAD_REF" ]; then
+              echo "::error::PR head ref '$HEAD_REF' is not a release/vX.Y.Z branch."
+              exit 1
+            fi
+            if [ "$BRANCH_VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Branch version $BRANCH_VERSION does not match package.json version $PKG_VERSION."
+              echo "::error::Rename the branch to release/v$PKG_VERSION (or update package.json) so they agree."
+              exit 1
+            fi
+            VERSION="$BRANCH_VERSION"
           else
             # Manual dispatch: prefer the input, fall back to package.json.
             VERSION="${{ inputs.version }}"
