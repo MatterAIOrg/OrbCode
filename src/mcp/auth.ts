@@ -196,7 +196,8 @@ function startCallbackServer(
 	const server = http.createServer((req, res) => {
 		const url = new URL(req.url ?? "/", `http://localhost:${port}`)
 		if (url.pathname !== "/callback") {
-			res.writeHead(404).end("not found")
+			res.writeHead(404, { "Content-Type": "text/html" })
+			res.end(callbackPage("not-found"))
 			return
 		}
 		const code = url.searchParams.get("code")
@@ -204,19 +205,104 @@ function startCallbackServer(
 		if (code) {
 			onCode(code)
 			res.writeHead(200, { "Content-Type": "text/html" })
-			res.end("<h1>Authorized</h1><p>You can close this tab and return to OrbCode.</p>")
+			res.end(callbackPage("success"))
 		} else if (error) {
+			const desc = url.searchParams.get("error_description") ?? error
 			res.writeHead(400, { "Content-Type": "text/html" })
-			res.end(`<h1>Authorization failed</h1><p>${error}</p>`)
+			res.end(callbackPage("error", desc))
 		} else {
 			res.writeHead(400, { "Content-Type": "text/html" })
-			res.end("<h1>Missing code</h1>")
+			res.end(callbackPage("error", "Missing authorization code in the callback."))
 		}
 		// Close after responding so the port is freed immediately.
 		server.close()
 	})
 	server.listen(port, "127.0.0.1")
 	return server
+}
+
+/** Render the OAuth callback page. Styled to match matterai.so: dark
+ *  background, cyan/teal accents, centered card, clean typography. */
+function callbackPage(kind: "success" | "error" | "not-found", detail?: string): string {
+	const isSuccess = kind === "success"
+	const title = isSuccess ? "Authorized" : kind === "not-found" ? "Not Found" : "Authorization Failed"
+	const message = isSuccess
+		? "You can close this tab and return to OrbCode."
+		: kind === "not-found"
+			? "This page was not found."
+			: detail ?? "An unexpected error occurred during authentication."
+	const icon = isSuccess ? "&#10003;" : "&#10007;"
+	const accent = isSuccess ? "#43df94" : "#e86464"
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrbCode &middot; ${title}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    text-align: center;
+    padding: 3rem 2.5rem;
+    max-width: 440px;
+    width: 90%;
+  }
+  .icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.75rem;
+    font-size: 36px;
+    font-weight: 700;
+    background: ${accent}1a;
+    border: 2px solid ${accent};
+    color: ${accent};
+  }
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.6rem;
+  }
+  p {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #8b949e;
+    margin-bottom: 2rem;
+  }
+  .brand {
+    margin-top: 2.5rem;
+    font-size: 0.8rem;
+    color: #484f58;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .brand span { color: #c4fdff; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <div class="brand">OrbCode CLI &middot; <span>powered by Axon</span></div>
+  </div>
+</body>
+</html>`
 }
 
 /** Pick an ephemeral loopback port for the callback server. */
