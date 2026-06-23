@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-23
+
 ### Added
 
 - **MCP server migration from Claude Code / Claude Desktop.** A new
@@ -33,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   y/n confirmation before doing it. Unlike Disable, Delete is irreversible
   — the config entry is gone, and you'll need to re-add the server with
   `orbcode mcp add` to get it back.
+- **Styled OAuth callback page.** The local browser page that receives the
+  OAuth redirect now matches the matterai.so look (dark `#0d1117`
+  background, centered card, green/red circular icon, brand footer) for
+  success, error, and not-found paths, replacing the previous plain
+  `<h1>` strings.
 
 ## [0.2.4] - 2026-06-22
 
