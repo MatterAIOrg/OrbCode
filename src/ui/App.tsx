@@ -46,6 +46,8 @@ import { FollowupPrompt } from "./components/FollowupPrompt.js";
 import { HookTrustPrompt } from "./components/HookTrustPrompt.js";
 import { McpApprovalPrompt } from "./components/McpApprovalPrompt.js";
 import { McpPicker } from "./components/McpPicker.js";
+import { McpMigrationPicker } from "./components/McpMigrationPicker.js";
+import { applyMigration, listMigrationEntries, type MigrationEntry } from "../commands/migrate.js";
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
@@ -78,6 +80,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/mcp",
     description: "manage MCP servers — enable, disable, reconnect, view status",
+  },
+  {
+    name: "/migrate",
+    description: "import MCP servers from Claude Code / Claude Desktop",
   },
   {
     name: "/commit",
@@ -273,6 +279,10 @@ export function App({
   // the first agent is created so we don't spawn servers before login.
   const mcpManagerRef = useRef<McpManager | null>(null);
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  // Set when /migrate is open. Holds the entries to show in the picker; null
+  // means the picker isn't open. We cache the entries on first open so the
+  // picker shows a stable list even if the user cancels and reopens.
+  const [mcpMigrationEntries, setMcpMigrationEntries] = useState<MigrationEntry[] | null>(null);
   // Project-scope MCP servers awaiting the user's approval at startup.
   const [pendingMcpApproval, setPendingMcpApproval] = useState<string[] | null>(
     null,
@@ -776,6 +786,13 @@ export function App({
           setMcpPickerOpen(true);
           break;
         }
+        case "/migrate": {
+          // Scan for sources now (cheap — just file reads) and cache the list
+          // so the picker has a stable view. `applyMigration` re-reads the
+          // destination on confirm, so a stale snapshot is fine.
+          setMcpMigrationEntries(listMigrationEntries());
+          break;
+        }
         case "/commit":
           if (!getAuthToken(settings)) {
             setView("login");
@@ -938,6 +955,98 @@ export function App({
     [handleSubmit, pushRow],
   );
 
+  // Tear down the live MCP manager (if any), then create a fresh one from
+  // the current on-disk settings and start it. Used after /migrate (new
+  // servers added) and after a /mcp delete (server removed) so /mcp works
+  // immediately without needing to send a message first. The agent is also
+  // dropped so the next message rebuilds it against the new manager's tool
+  // list.
+  const rebuildMcpManager = useCallback(async () => {
+    const oldManager = mcpManagerRef.current;
+    mcpManagerRef.current = null;
+    if (oldManager) {
+      await oldManager.stop().catch(() => {});
+    }
+    agentRef.current = null;
+    const refreshed = loadSettings();
+    setSettings(refreshed);
+    if (getAuthToken(refreshed)) {
+      const manager = new McpManager(
+        process.cwd(),
+        refreshed.disabledMcpServers ?? [],
+        refreshed.enabledMcpServers ?? [],
+      );
+      mcpManagerRef.current = manager;
+      void manager.start().then(() => {
+        const pendingMcp = manager.getPendingApproval();
+        if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp);
+      });
+    }
+  }, []);
+
+  // Apply a user-confirmed migration selection: write the chosen entries to
+  // ~/.orbcode/settings.json, then rebuild the MCP manager so the new
+  // user-scope servers connect immediately. Skips (name conflicts)
+  // are reported but not fatal.
+  const resolveMcpMigration = useCallback(
+    async (selected: MigrationEntry[]) => {
+      if (selected.length === 0) {
+        pushRow({ kind: "info", text: "MCP migration cancelled (no servers selected)." })
+        return
+      }
+      const result = applyMigration(selected)
+      const addedNames = result.added.map((e) => e.name)
+      const skippedCount = result.skipped.length
+      if (result.added.length === 0) {
+        pushRow({
+          kind: "info",
+          text: `MCP migration: nothing added (${skippedCount} skipped — name${skippedCount === 1 ? "" : "s"} already in use).`,
+        })
+        return
+      }
+      pushRow({
+        kind: "info",
+        text: `MCP migration: added ${result.added.length} server${result.added.length === 1 ? "" : "s"} to ~/.orbcode/settings.json (${addedNames.join(", ")})${skippedCount > 0 ? `; skipped ${skippedCount} (name already in use).` : "."}`,
+      })
+      // Tear down the live manager + agent, then immediately rebuild the
+      // manager so /mcp works without needing to send a message first.
+      // The agent is dropped so the next message creates a fresh one that
+      // picks up the new manager's tool list.
+      await rebuildMcpManager()
+    },
+    [pushRow, rebuildMcpManager],
+  )
+
+  // Handle a permanent delete from the /mcp picker. The manager has already
+  // dropped the server from its in-memory state and from the on-disk config;
+  // we persist the cleaned enabled/disabled lists, rebuild the manager so
+  // /mcp reflects the deletion immediately, and surface a one-line
+  // confirmation.
+  const handleMcpServerDeleted = useCallback(
+    async (name: string) => {
+      const manager = mcpManagerRef.current
+      if (manager) {
+        // `removeServer` already removed the name from both lists, but
+        // `saveMcpApproval` needs the post-removal snapshot so the
+        // per-project settings don't keep a dangling reference.
+        saveMcpApproval(
+          process.cwd(),
+          manager.getEnabled(),
+          manager.getDisabled(),
+        )
+      }
+      pushRow({
+        kind: "info",
+        text: `MCP: removed "${name}" from the config. Use \`orbcode mcp add ${name} …\` to re-add it.`,
+      })
+      // Rebuild the manager from the now-trimmed on-disk config so /mcp
+      // works immediately and the next message gets a fresh agent with the
+      // correct tool list.
+      await rebuildMcpManager()
+    },
+    [pushRow, rebuildMcpManager],
+  )
+
   // Apply --resume and an initial prompt (`orbcode "do something"`) on startup.
   const bootedRef = useRef(false);
   useEffect(() => {
@@ -1071,6 +1180,7 @@ export function App({
     !pendingMcpApproval &&
     !modelPickerOpen &&
     !mcpPickerOpen &&
+    !mcpMigrationEntries &&
     !resumableSessions;
 
   return (
@@ -1194,6 +1304,19 @@ export function App({
                     );
                 }}
                 onCancel={() => setMcpPickerOpen(false)}
+                onDeleted={handleMcpServerDeleted}
+              />
+            </Box>
+          )}
+          {mcpMigrationEntries && (
+            <Box marginTop={1}>
+              <McpMigrationPicker
+                entries={mcpMigrationEntries}
+                onCancel={() => setMcpMigrationEntries(null)}
+                onConfirm={(selected) => {
+                  setMcpMigrationEntries(null);
+                  resolveMcpMigration(selected);
+                }}
               />
             </Box>
           )}
@@ -1227,6 +1350,7 @@ export function App({
             !pendingHookTrust &&
             !pendingMcpApproval &&
             !mcpPickerOpen &&
+            !mcpMigrationEntries &&
             !streamingText &&
             !streamingReasoning && (
               <Box marginTop={1}>

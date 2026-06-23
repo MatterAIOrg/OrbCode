@@ -30,6 +30,7 @@ Usage:
   orbcode mcp add ...     add an MCP server (see: orbcode mcp help)
   orbcode mcp remove ...  remove an MCP server
   orbcode mcp list        list configured MCP servers
+  orbcode mcp migrate     import MCP servers from Claude Code / Claude Desktop
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run

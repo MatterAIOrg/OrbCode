@@ -1,7 +1,7 @@
 import type OpenAI from "openai"
 
 import { callMcpTool, connectMcpServer, type McpConnection } from "./client.js"
-import { configPathForScope, loadMcpConfig } from "./config.js"
+import { configPathForScope, loadMcpConfig, removeMcpServerAnyScope } from "./config.js"
 import { hasStoredAuth, isOAuthConfig, type AuthIntercept } from "./auth.js"
 import type { McpHttpServerConfig, McpServerConfig, McpServerState, McpSnapshot, McpTool, ScopedMcpServerConfig } from "./types.js"
 
@@ -159,6 +159,21 @@ export class McpManager {
 		const state = this.states.get(name)
 		if (state) state.disabled = true
 		await this.disconnectOne(name)
+	}
+
+	/** Permanently remove a server: disconnect, drop from the in-memory
+	 *  config/state, and remove from the on-disk config (whichever scope it
+	 *  lives in). Returns true if a config entry was actually removed. The
+	 *  caller is responsible for re-persisting the enabled/disabled lists
+	 *  (which no longer reference the removed name). */
+	async removeServer(name: string): Promise<boolean> {
+		await this.disconnectOne(name)
+		this.disabled.delete(name)
+		this.enabled.delete(name)
+		this.pendingApproval.delete(name)
+		this.configs.delete(name)
+		this.states.delete(name)
+		return removeMcpServerAnyScope(this.cwd, name) !== undefined
 	}
 
 	/** Re-authenticate a server in the needs-auth state: disconnect, clear
