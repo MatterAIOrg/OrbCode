@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-06-23
+
+### Changed
+
+- **Release workflow run title now shows the version.** The `Release` GitHub
+  Actions workflow gained a `run-name` (e.g. `Release v0.3.1`) so manual
+  dispatches and tag pushes are easier to tell apart in the Actions list. No
+  functional change to the publish flow.
 
 ## [0.3.0] - 2026-06-23
 
@@ -29,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `--all`. Servers whose name already exists in the destination are
   silently skipped and counted in the summary. Codex support (TOML) is
   intentionally deferred.
+
 - **Delete action in the `/mcp` picker.** The interactive server manager
   gained a "Delete" action (last in the list, red) that permanently removes
   a server from its config file (whichever scope it lives in) and shows a
@@ -74,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`orbcode mcp add` no longer swallows a `--` separator after the server
   name as the command.** `orbcode mcp add --scope user context7 -- npx -y
-  @upstash/context7-mcp ...` previously wrote `command: "--"` (a literal
+@upstash/context7-mcp ...` previously wrote `command: "--"` (a literal
   `--`), so the server failed to spawn. A `--` immediately after the server
   name is now consumed as the flag/command separator, matching Claude Code's
   `claude mcp add <name> -- <command>`. A later `--` is still passed through

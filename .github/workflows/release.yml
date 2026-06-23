@@ -9,6 +9,11 @@
 # rights for the `orbcode` package).
 
 name: Release
+# Per-run title: "Release v0.3.0" for tag pushes, and for manual dispatches
+# either "Release v<inputs.version>" (when supplied) or "Release manual".
+# `run-name` only sees github.* and inputs.* — package.json can't be read here,
+# so the dispatch flow relies on the `version` input to show the tag.
+run-name: "Release ${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) || 'manual' }}"
 
 on:
   push:
