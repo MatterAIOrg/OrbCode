@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `--all`. Servers whose name already exists in the destination are
   silently skipped and counted in the summary. Codex support (TOML) is
   intentionally deferred.
+- **Delete action in the `/mcp` picker.** The interactive server manager
+  gained a "Delete" action (last in the list, red) that permanently removes
+  a server from its config file (whichever scope it lives in) and shows a
+  y/n confirmation before doing it. Unlike Disable, Delete is irreversible
+  — the config entry is gone, and you'll need to re-add the server with
+  `orbcode mcp add` to get it back.
 
 ## [0.2.4] - 2026-06-22
 

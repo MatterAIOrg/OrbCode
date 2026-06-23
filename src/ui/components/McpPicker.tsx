@@ -13,6 +13,10 @@ interface McpPickerProps {
 	manager: McpManager
 	onChanged: () => void
 	onCancel: () => void
+	/** Called after a server is permanently deleted so the parent can
+	 *  re-persist the enabled/disabled lists (which no longer contain the
+	 *  removed name) and rebuild the agent. */
+	onDeleted: (name: string) => void
 }
 
 function statusColor(state: McpServerState): string {
@@ -52,6 +56,11 @@ function buildActions(state: McpServerState): string[] {
 	if (state.disabled || state.status === "disabled") actions.push("Enable")
 	else actions.push("Disable")
 	actions.push("Reconnect")
+	// Delete is last so it's a deliberate choice past the everyday toggles.
+	// It's always available — disabling and re-enabling a server still leaves
+	// the config entry, which is the right behaviour when you might want it
+	// back. Delete is the explicit "I don't want this server here at all" path.
+	actions.push("Delete")
 	return actions
 }
 
@@ -63,9 +72,9 @@ function buildActions(state: McpServerState): string[] {
  *   - Action menu: ↑/↓ to select an action, enter to execute, esc to go back.
  *
  * Actions adapt to the server's state: Authenticate (needs-auth), Enable
- * (disabled), Disable (connected/failed), Reconnect (always).
+ * (disabled), Disable (connected/failed), Reconnect (always), Delete (always).
  */
-export function McpPicker({ manager, onChanged, onCancel }: McpPickerProps) {
+export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPickerProps) {
 	const [snapshot, setSnapshot] = useState(() => manager.snapshot())
 	const [selected, setSelected] = useState(0)
 	const [busy, setBusy] = useState(false)
@@ -74,6 +83,13 @@ export function McpPicker({ manager, onChanged, onCancel }: McpPickerProps) {
 	const [authUrl, setAuthUrl] = useState("")
 	const [actionMode, setActionMode] = useState(false)
 	const [actionSelected, setActionSelected] = useState(0)
+	// Pending destructive confirmation. The resolve ref unblocks the awaiting
+	// `deleteSelected` call when the user picks y/n at the prompt.
+	const [pendingConfirm, setPendingConfirm] = useState<{
+		title: string
+		body: string
+		resolve: (ok: boolean) => void
+	} | null>(null)
 	const codeResolveRef = useRef<((code: string) => void) | null>(null)
 	const codeRejectRef = useRef<((reason: Error) => void) | null>(null)
 
@@ -82,8 +98,43 @@ export function McpPicker({ manager, onChanged, onCancel }: McpPickerProps) {
 	const current = servers[selected]
 	const actions = current ? buildActions(current) : []
 
-	useInput((_input, key) => {
+	/** Show a yes/no confirmation and resolve when the user picks one. Used
+	 *  for destructive actions like deleting a server. */
+	function confirmDangerousAction(title: string, body: string): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
+			setPendingConfirm({ title, body, resolve })
+		})
+	}
+
+	useInput((input, key) => {
 		if (authingServer || busy) return
+
+		// A destructive confirmation is in flight. Eat every key except the
+		// explicit y/n + enter / esc — matches the rest of the picker's
+		// "no shorthand" rule.
+		if (pendingConfirm) {
+			if (key.escape) {
+				pendingConfirm.resolve(false)
+				setPendingConfirm(null)
+				return
+			}
+			if (key.return) {
+				pendingConfirm.resolve(true)
+				setPendingConfirm(null)
+				return
+			}
+			if (input === "y" || input === "Y") {
+				pendingConfirm.resolve(true)
+				setPendingConfirm(null)
+				return
+			}
+			if (input === "n" || input === "N") {
+				pendingConfirm.resolve(false)
+				setPendingConfirm(null)
+				return
+			}
+			return
+		}
 
 		if (actionMode) {
 			if (key.escape) {
@@ -137,6 +188,7 @@ export function McpPicker({ manager, onChanged, onCancel }: McpPickerProps) {
 		else if (action === "Enable") await enableSelected()
 		else if (action === "Disable") await disableSelected()
 		else if (action === "Reconnect") await reconnectSelected()
+		else if (action === "Delete") await deleteSelected()
 	}
 
 	async function enableSelected(): Promise<void> {
@@ -158,6 +210,40 @@ export function McpPicker({ manager, onChanged, onCancel }: McpPickerProps) {
 		setBusyMessage("Disabling…")
 		try {
 			await manager.disableServer(current.name)
+			await refresh()
+		} finally {
+			setBusy(false)
+			setBusyMessage("")
+		}
+	}
+
+	async function deleteSelected(): Promise<void> {
+		if (!current) return
+		const name = current.name
+		// Pull the config path so the confirmation can show what file gets
+		// modified — without this, the user has to remember the scope rules.
+		const configPath = manager.getConfigPath(name) ?? "~/.orbcode/settings.json"
+		const confirmed = await confirmDangerousAction(
+			`Delete MCP server "${name}"?`,
+			`This removes the entry from ${configPath}. You'll have to re-add it manually.`,
+		)
+		if (!confirmed) return
+		setBusy(true)
+		setBusyMessage("Deleting…")
+		try {
+			const removed = await manager.removeServer(name)
+			if (!removed) {
+				// Race: someone else removed it between opening the picker and
+				// confirming. Refresh and bail — the user can see it's gone.
+				await refresh()
+				return
+			}
+			// Move the cursor to a safe position before the snapshot shrinks.
+			// `setSelected` runs before the next render commits, so clamping
+			// here is correct.
+			const next = manager.snapshot().servers
+			setSelected((s) => Math.min(s, Math.max(0, next.length - 1)))
+			onDeleted(name)
 			await refresh()
 		} finally {
 			setBusy(false)
@@ -247,6 +333,18 @@ export function McpPicker({ manager, onChanged, onCancel }: McpPickerProps) {
 				onPasteCode={handlePasteCode}
 				onCancel={handleAuthCancel}
 			/>
+		)
+	}
+
+	if (pendingConfirm) {
+		return (
+			<Box flexDirection="column" borderStyle="round" borderColor={COLORS.error} paddingX={1}>
+				<Text bold color={COLORS.error}>
+					{pendingConfirm.title}
+				</Text>
+				<Text>{pendingConfirm.body}</Text>
+				<Text dimColor>y confirm · n / esc cancel</Text>
+			</Box>
 		)
 	}
 
@@ -365,8 +463,18 @@ function DetailPanel({
 			<Box marginTop={1} flexDirection="column">
 				{actions.map((action, i) => {
 					const isSelected = actionMode && i === actionSelected
+					// Color destructive actions red so they read differently
+					// from the everyday toggles. Keeps the affordance visually
+					// separate from the harmless enable/disable/reconnect
+					// choices right above it.
+					const isDestructive = action === "Delete"
+					const color = isSelected
+						? COLORS.accent
+						: isDestructive
+							? COLORS.error
+							: undefined
 					return (
-						<Text key={action} color={isSelected ? COLORS.accent : undefined}>
+						<Text key={action} color={color}>
 							{isSelected ? "❯ " : "  "}
 							{i + 1}. {action}
 						</Text>
