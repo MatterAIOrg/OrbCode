@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP server migration from Claude Code / Claude Desktop.** A new
+  `orbcode mcp migrate` subcommand (with `--all` and `--dry-run` flags) and
+  a `/migrate` slash command in the TUI scan well-known paths for MCP server
+  configs and copy them into `~/.orbcode/settings.json` (user scope). Sources
+  detected:
+  - `~/.claude/settings.json` (Claude Code, user scope)
+  - `~/.claude.json` → root `mcpServers` (Claude Code, user scope — the most
+    common location, written by `claude mcp add -s user …`)
+  - `~/.claude.json` → `projects.<cwd>.mcpServers` (Claude Code, this project)
+  - `claude_desktop_config.json` (Claude Desktop — platform-specific path)
+
+  When the same server name appears in both layers of `~/.claude.json`, the
+  root entry is shown and the project-layer duplicate is hidden (Claude's
+  own per-project override precedence). The TUI shows a combined checklist
+  across all sources; the CLI prints a preview by default and only writes
+  with `--all`. Servers whose name already exists in the destination are
+  silently skipped and counted in the summary. Codex support (TOML) is
+  intentionally deferred.
+
 ## [0.2.4] - 2026-06-22
 
 ### Added

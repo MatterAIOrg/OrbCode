@@ -4,6 +4,14 @@ import {
 	loadMcpConfig,
 	removeMcpServerAnyScope,
 } from "../mcp/config.js"
+import {
+	applyMigration,
+	describeEntry,
+	discoverSources,
+	listMigrationEntries,
+	type MigrationEntry,
+} from "./migrate.js"
+import { loadSettings } from "../config/settings.js"
 import type { McpHttpServerConfig, McpScope, McpServerConfig, McpSseServerConfig, McpStdioServerConfig } from "../mcp/types.js"
 
 /**
@@ -18,6 +26,7 @@ import type { McpHttpServerConfig, McpScope, McpServerConfig, McpSseServerConfig
  *   orbcode mcp add --header KEY=value ... <name> <url>            http/sse headers
  *   orbcode mcp remove <name>                                      remove from any scope
  *   orbcode mcp list                                               list all servers
+ *   orbcode mcp migrate [--all] [--dry-run]                        import from Claude/Codex
  *
  * Flags:
  *   -s, --scope <user|project|local>   config scope (default: project)
@@ -48,6 +57,8 @@ Usage:
   orbcode mcp add [options] --transport sse <name> <url>   add an sse server
   orbcode mcp remove <name>                                remove a server
   orbcode mcp list                                         list all servers
+  orbcode mcp migrate [--all] [--dry-run]                  import MCP servers from
+                                                          Claude Code / Claude Desktop
 
 Options:
   -s, --scope <user|project|local>   config scope (default: project)
@@ -56,11 +67,34 @@ Options:
       --header KEY=value             HTTP header (repeatable, http/sse)
       --oauth                        enable OAuth for http/sse
       --oauth-scope <scope>          OAuth scope (implies --oauth)
+      --all                          (migrate) import every detected server
+      --dry-run                      (migrate) show what would be imported, don't write
 
 Scopes:
   project   .mcp.json in the current directory (shared, checked into git)
   user      ~/.orbcode/settings.json (applies to all projects on this machine)
-  local     .orbcode/settings.json (per-project, per-machine, not checked in)`)
+  local     .orbcode/settings.json (per-project, per-machine, not checked in)
+
+Migration sources:
+  orbcode mcp migrate scans these files and copies their mcpServers blocks
+  into ~/.orbcode/settings.json (user scope). Servers whose name already
+  exists in the destination are silently skipped.
+
+    Claude Code (user)         ~/.claude/settings.json
+    Claude Code (user, json)   ~/.claude.json -> root mcpServers
+                               (the most common location — this is where
+                               "claude mcp add -s user ..." writes)
+    Claude Code (this project) ~/.claude.json -> projects.<cwd>.mcpServers
+    Claude Desktop             ~/Library/Application Support/Claude/claude_desktop_config.json
+                               (macOS)  %APPDATA%\\Claude\\claude_desktop_config.json
+                               (Linux)  $XDG_CONFIG_HOME/Claude/claude_desktop_config.json
+
+  When the same name appears in both layers of ~/.claude.json, the
+  project-layer entry is treated as a per-project override (Claude's own
+  precedence) and is hidden from the picker — you'll only see the root
+  version, which is the one that applies across projects.
+
+  Use the /migrate slash command in the TUI for an interactive picker.`)
 }
 
 /** Handle `orbcode mcp ...`. Returns the process exit code. */
@@ -76,6 +110,9 @@ export async function runMcpCommand(args: string[]): Promise<number> {
 		case "list":
 		case "ls":
 			return runList(rest)
+		case "migrate":
+		case "import":
+			return runMigrate(rest)
 		case "help":
 		case "--help":
 		case "-h":
@@ -271,4 +308,130 @@ function runList(_args: string[]): number {
 		console.log(`  ${name.padEnd(20)} ${scope.padEnd(8)} ${detail}`)
 	}
 	return 0
+}
+
+/** `orbcode mcp migrate [--all] [--dry-run]` — copy MCP servers from Claude
+ *  Code / Claude Desktop into `~/.orbcode/settings.json` (user scope).
+ *  Without `--all`, prints a preview and exits 0. `--dry-run` is a read-only
+ *  preview even with `--all`. Name conflicts are silently skipped. */
+function runMigrate(args: string[]): number {
+	let migrateAll = false
+	let dryRun = false
+	for (const arg of args) {
+		if (arg === "--all" || arg === "-a") migrateAll = true
+		else if (arg === "--dry-run" || arg === "-n") dryRun = true
+		else if (arg === "--help" || arg === "-h") {
+			console.log("orbcode mcp migrate [--all] [--dry-run]\n")
+			console.log("Import MCP servers from Claude Code / Claude Desktop into")
+			console.log("~/.orbcode/settings.json (user scope).")
+			console.log("")
+			console.log("  --all, -a      import every detected server (default: preview only)")
+			console.log("  --dry-run, -n  show what would be imported, never write")
+			return 0
+		} else {
+			console.error(`Unknown flag: ${arg}. Try: orbcode mcp migrate --help`)
+			return 1
+		}
+	}
+
+	const sources = discoverSources()
+	if (sources.length === 0) {
+		console.log("No MCP server sources found on this machine.")
+		console.log("")
+		console.log("Searched:")
+		console.log("  - ~/.claude/settings.json          (Claude Code, user scope)")
+		console.log("  - ~/.claude.json -> root mcpServers (Claude Code, user scope)")
+		console.log("  - ~/.claude.json -> projects.<cwd>.mcpServers (Claude Code, this project)")
+		console.log("  - Claude Desktop config            (claude_desktop_config.json)")
+		return 0
+	}
+
+	const entries = listMigrationEntries()
+	if (entries.length === 0) {
+		console.log("Found MCP server source files, but none contain server entries.")
+		return 0
+	}
+
+	// Always show what we found, so the user knows where the data is coming from.
+	console.log("Detected MCP server sources:")
+	for (const source of sources) {
+		const count = Object.keys(source.servers).length
+		console.log(`  ${source.label.padEnd(28)} ${count} server${count === 1 ? "" : "s"}`)
+		console.log(`    ${source.configPath}`)
+	}
+	console.log("")
+
+	// If `--all` was passed, copy everything. Otherwise preview and exit.
+	const toApply = migrateAll ? entries : []
+
+	// Always classify skipped (name conflicts) so the user sees the dry-run
+	// impact, not just the would-be additions.
+	const { skipped } = applyMigrationDryRun(entries)
+
+	if (!migrateAll) {
+		console.log("Preview — no files modified. Pass --all to apply.")
+		console.log("")
+		console.log("Servers that would be imported:")
+		for (const entry of entries) {
+			const conflict = skipped.some((s) => s.entry.key === entry.key)
+			const tag = conflict ? "skip" : "add "
+			console.log(`  [${tag}] ${entry.name.padEnd(24)} ${describeEntry(entry)}`)
+			console.log(`          ${entry.sourceLabel}`)
+		}
+		console.log("")
+		console.log(`Would add:    ${entries.length - skipped.length}`)
+		console.log(`Would skip:   ${skipped.length} (already exists in destination)`)
+		return 0
+	}
+
+	// migrateAll path. If also --dry-run, don't write.
+	if (dryRun) {
+		console.log("Dry run — no files modified.")
+		console.log("")
+		console.log("Servers that would be imported:")
+		for (const entry of toApply) {
+			const conflict = skipped.some((s) => s.entry.key === entry.key)
+			const tag = conflict ? "skip" : "add "
+			console.log(`  [${tag}] ${entry.name.padEnd(24)} ${describeEntry(entry)}`)
+			console.log(`          ${entry.sourceLabel}`)
+		}
+		console.log("")
+		console.log(`Would add:    ${toApply.length - skipped.length}`)
+		console.log(`Would skip:   ${skipped.length} (already exists in destination)`)
+		return 0
+	}
+
+	const result = applyMigration(toApply)
+	console.log(`Added ${result.added.length} MCP server${result.added.length === 1 ? "" : "s"} to ~/.orbcode/settings.json`)
+	for (const entry of result.added) {
+		console.log(`  + ${entry.name.padEnd(24)} ${describeEntry(entry)}`)
+	}
+	if (result.skipped.length > 0) {
+		console.log(`Skipped ${result.skipped.length} (already exists):`)
+		for (const { entry, reason } of result.skipped) {
+			console.log(`  - ${entry.name.padEnd(24)} ${reason}`)
+		}
+	}
+	return 0
+}
+
+/** Pure classification pass that mirrors `applyMigration` but never writes.
+ *  Used by `--dry-run` and the default preview to surface the skipped count
+ *  without touching the file. */
+function applyMigrationDryRun(entries: MigrationEntry[]): {
+	added: string[]
+	skipped: { entry: MigrationEntry; reason: string }[]
+} {
+	const settings = loadSettings()
+	const existing = settings.mcpServers ?? {}
+	const added: string[] = []
+	const skipped: { entry: MigrationEntry; reason: string }[] = []
+	for (const entry of entries) {
+		if (entry.name in existing) {
+			skipped.push({ entry, reason: "already exists in ~/.orbcode/settings.json" })
+		} else {
+			added.push(entry.key)
+		}
+	}
+	return { added, skipped }
 }
