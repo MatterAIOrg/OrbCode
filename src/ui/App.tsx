@@ -167,7 +167,7 @@ function buildInitPrompt(agentsPath: string): string {
 
   ${agentsPath}
 
-Investigate first — read the directory layout, key config files, and a few representative source files — then write. Keep it under ~60 lines so it is cheap to include in every future prompt. Cover, briefly:
+Investigate first — read the directory layout, key config files, and a few representative source files — then write. Keep it under ~150 lines so it stays cheap to include in every future prompt. Cover, briefly:
 1. What the project does (1-2 lines) and its main tech stack.
 2. Project structure — the key directories/files and what each is responsible for.
 3. Architecture — how the main pieces fit together (entry points, data/control flow).
