@@ -21,6 +21,7 @@ import { HookRunner, type HooksConfig } from "./hooks.js"
 import { McpManager } from "../mcp/manager.js"
 import { loadMemoryFiles } from "../memory/loader.js"
 import { loadSkills } from "../skills/loader.js"
+import { renderLinkedReposSection } from "../config/links.js"
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
@@ -272,6 +273,7 @@ export class Agent {
 		const timeZoneOffsetHours = Math.floor(Math.abs(timeZoneOffset))
 		const timeZoneOffsetMinutes = Math.abs(Math.round((Math.abs(timeZoneOffset) - timeZoneOffsetHours) * 60))
 		const timeZoneOffsetStr = `${timeZoneOffset >= 0 ? "+" : "-"}${timeZoneOffsetHours}:${timeZoneOffsetMinutes.toString().padStart(2, "0")}`
+		const linkedRepos = renderLinkedReposSection(this.options.cwd)
 		return `# Environment Details
 
 ## Current Workspace Directory (${this.options.cwd}) Files
@@ -279,7 +281,7 @@ ${files.join("\n") || "(empty directory)"}
 ${files.length >= 200 ? "\n(File list truncated.)" : ""}
 
 ${git}
-
+${linkedRepos ? `\n${linkedRepos}` : ""}
 ## Current Time
 Current time in ISO 8601 UTC format: ${now.toISOString()}
 User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`

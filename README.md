@@ -297,7 +297,8 @@ MatterAI gateway untouched.
 | `/tasks`     | print the current task list                                                                           |
 | `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
 | `/usage`     | fetch plan usage                                                                                      |
-| `/init`      | analyze the codebase and create/improve `AGENTS.md`                                                   |
+| `/init`      | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
+| `/link`      | link other repos on your machine so changes here are checked against them (enter a folder path) |
 | `/mcp`       | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
 | `/login`     | start the browser sign-in flow                                                                        |
 | `/logout`    | remove the saved token                                                                                |

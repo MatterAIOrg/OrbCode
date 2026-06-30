@@ -14,8 +14,8 @@ import type { MemoryFile } from "./types.js"
  * first), with closer-to-cwd and higher-precedence types winning:
  *
  *   1. User memory:   ~/.orbcode/AGENTS.md
- *   2. Project memory: AGENTS.md and .orbcode/AGENTS.md in cwd and every
- *      parent directory (closer-to-cwd wins)
+ *   2. Project memory: AGENTS.md and .orb/AGENTS.md (and the legacy
+ *      .orbcode/AGENTS.md) in cwd and every parent directory (closer-to-cwd wins)
  *   3. Local memory:   AGENTS.local.md in cwd and parents (highest precedence)
  *
  * Memory files support `@path` include directives (relative, `~/`, or
@@ -130,9 +130,11 @@ export function loadMemoryFiles(cwd = process.cwd()): MemoryFile[] {
 	// 1. User memory (~/.orbcode/AGENTS.md)
 	files.push(...loadWithIncludes(path.join(getConfigDir(), "AGENTS.md"), "user", processed, 0))
 
-	// 2. Project memory (AGENTS.md + .orbcode/AGENTS.md), root -> cwd
+	// 2. Project memory (AGENTS.md + .orb/AGENTS.md), root -> cwd. The legacy
+	//    .orbcode/AGENTS.md location is still read for backward compatibility.
 	for (const dir of ancestorDirs(cwd).reverse()) {
 		files.push(...loadWithIncludes(path.join(dir, "AGENTS.md"), "project", processed, 0))
+		files.push(...loadWithIncludes(path.join(dir, ".orb", "AGENTS.md"), "project", processed, 0))
 		files.push(...loadWithIncludes(path.join(dir, ".orbcode", "AGENTS.md"), "project", processed, 0))
 	}
 
