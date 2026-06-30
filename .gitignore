@@ -9,7 +9,11 @@ build/
 coverage/
 .cache/
 
-# Per-developer project memory loaded by the agent at runtime.
-# The .orbcode/ directory itself is a valid project-config location
-# (project-level settings.json), so only the personal AGENTS.md is excluded.
+# Repo-level agent data in .orb/ (shared by the IDE and the CLI). AGENTS.md is
+# per-developer project memory and links.json holds machine-specific absolute
+# paths, so neither is committed. The .orbcode/ directory is unchanged — it's
+# still a valid project-config location (project-level settings.json); only the
+# legacy personal AGENTS.md there is excluded.
+.orb/AGENTS.md
+.orb/links.json
 .orbcode/AGENTS.md

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Linked repositories (`/link`).** A new `/link` slash command opens an
+  interactive manager where you point this repo at other repos on your machine
+  (enter a folder path — absolute, `~/path`, or relative to the project). Links
+  are persisted per-project in
+  `.orb/links.json` and injected into the agent's environment details —
+  including each linked repo's `AGENTS.md`, pulled in ahead of time — so a
+  change here is checked for impact on, or propagated to, the linked repos.
+  `.orb/links.json` is shared with the Orbital IDE extension (links written
+  there are honored here, and vice versa), and a linked repo's `AGENTS.md` is
+  read from `.orb/`, `.orbital/`, or `.orbcode/`.
+
+### Changed
+
+- **`/init` now writes to `.orb/AGENTS.md` and targets cold-start.** The
+  generated `AGENTS.md` is written to the repo-level `.orb/` directory and now
+  captures project structure, architecture, business-logic mapping, and code
+  patterns/conventions — the context an agent needs to start coding without
+  re-exploring.
+- **Repo-level agent data lives in `.orb/`.** The folder OrbCode creates in a
+  project for `AGENTS.md` (and now `links.json`) is `.orb/` — a single,
+  tool-neutral name shared by the IDE and the CLI. Machine settings are
+  unchanged (`~/.orbcode` and `<repo>/.orbcode/settings.json` stay put); the
+  legacy `.orbcode/AGENTS.md` location is still read for backward compatibility.
+
 ## [0.3.2] - 2026-06-24
 
 ### Fixed

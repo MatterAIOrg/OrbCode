@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
 import open from "open";
+import * as path from "node:path";
 
 import { COLORS, VERSION } from "../branding.js";
 import {
@@ -53,6 +54,14 @@ import { ModelPicker } from "./components/ModelPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
 import { RowView, type Row } from "./components/rows.js";
+import { LinkManager } from "./components/LinkManager.js";
+import {
+  addLink,
+  loadLinks,
+  removeLink,
+  resolveProjectDir,
+  type LinkedRepo,
+} from "../config/links.js";
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
@@ -76,6 +85,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/init",
     description: "analyze this codebase and create an AGENTS.md",
+  },
+  {
+    name: "/link",
+    description: "link other repos so changes here are checked against them",
   },
   {
     name: "/mcp",
@@ -149,13 +162,21 @@ function usageLines(profile: ProfileData): string[] {
   return lines;
 }
 
-const INIT_PROMPT = `Analyze this codebase and create an AGENTS.md file containing:
-1. A short overview of what the project does
-2. Build, run, lint and test commands
-3. Architecture and code structure (key directories and what lives in them)
-4. Code style conventions used in this repo (imports, formatting, naming, error handling)
+function buildInitPrompt(agentsPath: string): string {
+  return `Analyze this codebase and write a concise AGENTS.md that reduces cold-start for future coding sessions. Create or update the file at exactly this path:
 
-If an AGENTS.md already exists, improve it. Keep it under ~60 lines so it is cheap to include in future prompts.`;
+  ${agentsPath}
+
+Investigate first — read the directory layout, key config files, and a few representative source files — then write. Keep it under ~60 lines so it is cheap to include in every future prompt. Cover, briefly:
+1. What the project does (1-2 lines) and its main tech stack.
+2. Project structure — the key directories/files and what each is responsible for.
+3. Architecture — how the main pieces fit together (entry points, data/control flow).
+4. Business-logic / domain mapping — where the core domain concepts live in the code.
+5. Notable code patterns and conventions to follow (imports, naming, error handling, tests).
+6. The common build, run, lint and test commands.
+
+Favor durable facts over volatile detail. If an AGENTS.md already exists at that path, refine it rather than rewriting from scratch.`;
+}
 
 // Ported from the Orbital extension's commit slash command (commitCommandResponse).
 const buildCommitPrompt = (
@@ -275,6 +296,9 @@ export function App({
   const [resumableSessions, setResumableSessions] = useState<
     SessionData[] | null
   >(null);
+  const [linkManagerOpen, setLinkManagerOpen] = useState(false);
+  const [links, setLinks] = useState<LinkedRepo[]>([]);
+  const [linkStatus, setLinkStatus] = useState("");
   // MCP manager (created once, shared across agents in this process). Null until
   // the first agent is created so we don't spawn servers before login.
   const mcpManagerRef = useRef<McpManager | null>(null);
@@ -764,7 +788,7 @@ export function App({
           }
           break;
         }
-        case "/init":
+        case "/init": {
           if (!getAuthToken(settings)) {
             setView("login");
             break;
@@ -772,7 +796,17 @@ export function App({
           pushRow({ kind: "user", text: "/init" });
           setBusy(true);
           setBusyLabel("Thinking");
-          void getAgent().runTurn(INIT_PROMPT);
+          const agentsPath = path.join(
+            resolveProjectDir(process.cwd()),
+            "AGENTS.md",
+          );
+          void getAgent().runTurn(buildInitPrompt(agentsPath));
+          break;
+        }
+        case "/link":
+          setLinks(loadLinks(process.cwd()));
+          setLinkStatus("");
+          setLinkManagerOpen(true);
           break;
         case "/mcp": {
           const manager = mcpManagerRef.current;
@@ -1181,7 +1215,8 @@ export function App({
     !modelPickerOpen &&
     !mcpPickerOpen &&
     !mcpMigrationEntries &&
-    !resumableSessions;
+    !resumableSessions &&
+    !linkManagerOpen;
 
   return (
     <Box flexDirection="column">
@@ -1270,6 +1305,25 @@ export function App({
                 sessions={resumableSessions}
                 onSelect={handleResume}
                 onCancel={() => setResumableSessions(null)}
+              />
+            </Box>
+          )}
+          {linkManagerOpen && (
+            <Box marginTop={1}>
+              <LinkManager
+                links={links}
+                status={linkStatus}
+                onAdd={(input) => {
+                  const result = addLink(process.cwd(), input);
+                  setLinkStatus(result.message);
+                  if (result.ok) setLinks(loadLinks(process.cwd()));
+                }}
+                onRemove={(link) => {
+                  removeLink(process.cwd(), link.path);
+                  setLinks(loadLinks(process.cwd()));
+                  setLinkStatus(`Unlinked ${path.basename(link.path)}`);
+                }}
+                onClose={() => setLinkManagerOpen(false)}
               />
             </Box>
           )}
