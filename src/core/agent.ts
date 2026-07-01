@@ -25,6 +25,45 @@ import { renderLinkedReposSection } from "../config/links.js"
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
+/** How many times to automatically re-establish a model request that fails
+ *  before producing any output (transient/connection errors). */
+const MAX_STREAM_RETRIES = 3
+
+/** Transient failures worth auto-retrying: any transport/connection error (no
+ *  usable HTTP status — socket reset, DNS, timeout, TLS drop) plus 5xx/408/429
+ *  server responses. Real 4xx client errors (auth, bad request) are not retried. */
+function isRetryableStreamError(error: unknown): boolean {
+	const err = error as { status?: number; code?: number | string }
+	const status = Number(err?.status ?? err?.code)
+	if (Number.isFinite(status) && status !== 0) {
+		return status >= 500 || status === 408 || status === 429
+	}
+	return true
+}
+
+function retryBackoffMs(attempt: number): number {
+	return Math.min(500 * 2 ** attempt, 8000)
+}
+
+/** Sleep that settles early (rejecting with AbortError) if the signal fires, so
+ *  a user interrupt isn't stuck waiting out a retry backoff. */
+function interruptibleDelay(ms: number, signal: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal.aborted) {
+			reject(new DOMException("aborted", "AbortError"))
+			return
+		}
+		const onAbort = () => {
+			clearTimeout(timer)
+			reject(new DOMException("aborted", "AbortError"))
+		}
+		const timer = setTimeout(() => {
+			signal.removeEventListener("abort", onAbort)
+			resolve()
+		}, ms)
+		signal.addEventListener("abort", onAbort, { once: true })
+	})
+}
 
 export interface AgentOptions {
 	cwd: string
@@ -479,7 +518,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				},
 			]
 			let summary = ""
-			for await (const chunk of this.client.createMessage(this.systemPrompt, request, [], signal)) {
+			for await (const chunk of this.streamWithRetry(
+				() => this.client.createMessage(this.systemPrompt, request, [], signal),
+				signal,
+			)) {
 				if (signal.aborted) throw new DOMException("aborted", "AbortError")
 				if (chunk.type === "text") {
 					summary += chunk.text
@@ -520,30 +562,82 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 	}
 
+	/**
+	 * Consume a model stream, automatically re-establishing the request up to
+	 * MAX_STREAM_RETRIES times when it fails BEFORE producing any chunk — the
+	 * common socket-closure case (connection dropped at setup or while waiting
+	 * for the first token). Once chunks have streamed we can't retry without
+	 * duplicating on-screen output, so the error propagates. A user abort is
+	 * never retried.
+	 */
+	private async *streamWithRetry(
+		makeStream: () => ReturnType<LLMClient["createMessage"]>,
+		signal: AbortSignal,
+	): ReturnType<LLMClient["createMessage"]> {
+		for (let attempt = 0; ; attempt++) {
+			let produced = false
+			try {
+				for await (const chunk of makeStream()) {
+					produced = true
+					yield chunk
+				}
+				return
+			} catch (error) {
+				if (signal.aborted || (error as Error).name === "AbortError") throw error
+				if (produced || attempt >= MAX_STREAM_RETRIES || !isRetryableStreamError(error)) {
+					throw error
+				}
+				const delayMs = retryBackoffMs(attempt)
+				this.options.callbacks.onEvent({
+					type: "system",
+					message: `Connection to the model failed (${(error as Error).message}). Retrying ${attempt + 1}/${MAX_STREAM_RETRIES} in ${Math.ceil(delayMs / 1000)}s…`,
+					isError: false,
+				})
+				await interruptibleDelay(delayMs, signal)
+			}
+		}
+	}
+
 	/** Run one model request + tool execution round. Returns true when the turn is over. */
 	private async runStep(): Promise<boolean> {
 		const { onEvent } = this.options.callbacks
 		const signal = this.abortController!.signal
 
 		let assistantText = ""
-		let hadReasoning = false
+		// A reasoning segment is "open" from its first delta until visible content
+		// (text or a tool call) begins. We emit reasoning-done at that transition so
+		// "Thought for Ns" reflects only the thinking time — not the answer that
+		// follows — and the live "Thinking" block stops before the answer streams.
+		// A fresh segment can re-open if the model interleaves reasoning with content.
+		let reasoningOpen = false
 		let reasoningStart = 0
 		let reasoningDetails: unknown
+		const finalizeReasoning = () => {
+			if (reasoningOpen) {
+				reasoningOpen = false
+				onEvent({ type: "reasoning-done", durationMs: Date.now() - reasoningStart })
+			}
+		}
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
 
-		const stream = this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(this.mcp), signal)
+		const stream = this.streamWithRetry(
+			() => this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(this.mcp), signal),
+			signal,
+		)
 
 		for await (const chunk of stream) {
 			if (signal.aborted) throw new DOMException("aborted", "AbortError")
 			switch (chunk.type) {
 				case "text":
+					// Visible content begins — the reasoning phase (if any) is over.
+					finalizeReasoning()
 					assistantText += chunk.text
 					onEvent({ type: "text-delta", text: chunk.text })
 					break
 				case "reasoning":
-					if (!hadReasoning) {
-						hadReasoning = true
+					if (!reasoningOpen) {
+						reasoningOpen = true
 						reasoningStart = Date.now()
 					}
 					onEvent({ type: "reasoning-delta", text: chunk.text })
@@ -553,6 +647,8 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 					reasoningDetails = chunk.details
 					break
 				case "native_tool_calls":
+					// A tool call also ends the reasoning phase.
+					finalizeReasoning()
 					for (const tc of chunk.toolCalls) {
 						const index = tc.index ?? nextSyntheticIndex++
 						let pending = toolCallsByIndex.get(index)
@@ -579,9 +675,8 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		}
 
-		if (hadReasoning) {
-			onEvent({ type: "reasoning-done", durationMs: Date.now() - reasoningStart })
-		}
+		// A reasoning-only turn (no following text/tool content) still needs closing.
+		finalizeReasoning()
 		if (assistantText) {
 			onEvent({ type: "text-done" })
 		}
