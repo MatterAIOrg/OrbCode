@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-30
+
 ### Added
 
 - **Linked repositories (`/link`).** A new `/link` slash command opens an
@@ -26,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generated `AGENTS.md` is written to the repo-level `.orb/` directory and now
   captures project structure, architecture, business-logic mapping, and code
   patterns/conventions — the context an agent needs to start coding without
-  re-exploring.
+  re-exploring. The cap is now ~150 lines (up from ~60) so it can cover all
+  four sections without being truncated.
 - **Repo-level agent data lives in `.orb/`.** The folder OrbCode creates in a
   project for `AGENTS.md` (and now `links.json`) is `.orb/` — a single,
   tool-neutral name shared by the IDE and the CLI. Machine settings are
