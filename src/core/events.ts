@@ -5,6 +5,8 @@ export type AgentEvent =
 	| { type: "reasoning-done"; durationMs: number }
 	| { type: "text-delta"; text: string }
 	| { type: "text-done" }
+	/** discard the in-flight streaming buffers before an auto-retry re-streams */
+	| { type: "stream-reset" }
 	| { type: "tool-start"; id: string; name: string; summary: string }
 	| {
 			type: "tool-end"

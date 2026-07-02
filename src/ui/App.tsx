@@ -78,6 +78,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
   { name: "/tasks", description: "show the current task list" },
   {
+    name: "/task",
+    description: "reference a previous task in the current conversation",
+  },
+  {
     name: "/status",
     description: "show session status (model, context, cost, account)",
   },
@@ -223,6 +227,50 @@ Instructions:
 
 This is a review only — do NOT modify any files. Present the findings to the user.${userInput ? `\n\nThe user provided the following input with the code-review command:\n${userInput}` : ""}`;
 
+const MAX_TASK_CONVERSATION_CHARS = 8000;
+
+function extractConversation(session: SessionData): string {
+  const lines: string[] = [];
+  for (const message of session.messages) {
+    if (message.role === "user" && typeof message.content === "string") {
+      const match = /<user_query>\n?([\s\S]*?)\n?<\/user_query>/.exec(
+        message.content,
+      );
+      if (match) lines.push(`User: ${match[1]}`);
+    } else if (
+      message.role === "assistant" &&
+      typeof message.content === "string" &&
+      message.content.trim()
+    ) {
+      lines.push(`Assistant: ${message.content}`);
+    }
+  }
+  return lines.join("\n\n");
+}
+
+function buildTaskReferencePrompt(session: SessionData): string {
+  const conversation = extractConversation(session);
+  const truncated =
+    conversation.length > MAX_TASK_CONVERSATION_CHARS
+      ? conversation.slice(0, MAX_TASK_CONVERSATION_CHARS) +
+        "\n\n[... conversation truncated ...]"
+      : conversation;
+  return `The user has referenced a previous task. Here is the conversation from that task:
+
+<previous_task title="${session.title || session.id}">
+${truncated}
+</previous_task>
+
+Please summarize this previous task and add it as a reference for the current task. The summary should capture:
+- What the task was about
+- What was accomplished
+- Key decisions made
+- Files that were created or modified
+- Any remaining work
+
+Present the summary in a clear, organized format. This summary will serve as context for the current task.`;
+}
+
 interface PendingApproval {
   request: ApprovalRequest;
   resolve: (decision: ApprovalDecision) => void;
@@ -294,6 +342,9 @@ export function App({
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [resumableSessions, setResumableSessions] = useState<
+    SessionData[] | null
+  >(null);
+  const [taskPickerSessions, setTaskPickerSessions] = useState<
     SessionData[] | null
   >(null);
   const [linkManagerOpen, setLinkManagerOpen] = useState(false);
@@ -445,6 +496,17 @@ export function App({
           pushRow({ kind: "assistant", text: textBufferRef.current });
           textBufferRef.current = "";
           setStreamingText("");
+          setBusyLabel("Working");
+          break;
+        case "stream-reset":
+          // An auto-retry is re-streaming this step from scratch — drop the
+          // partial text/reasoning shown for the failed attempt so it doesn't
+          // duplicate. (Committed rows are untouched; the agent only resets when
+          // nothing has been committed yet.)
+          textBufferRef.current = "";
+          setStreamingText("");
+          reasoningBufferRef.current = "";
+          setStreamingReasoning("");
           setBusyLabel("Working");
           break;
         case "tool-start":
@@ -612,6 +674,20 @@ export function App({
     [createAgent, pushRow, resetTranscript],
   );
 
+  const handleTaskSelect = useCallback(
+    (session: SessionData) => {
+      setTaskPickerSessions(null);
+      pushRow({
+        kind: "user",
+        text: `/task (referencing: ${session.title || session.id})`,
+      });
+      setBusy(true);
+      setBusyLabel("Thinking");
+      void getAgent().runTurn(buildTaskReferencePrompt(session));
+    },
+    [getAgent, pushRow],
+  );
+
   const switchModel = useCallback(
     (modelId: string) => {
       const updated = { ...loadSettings(), model: modelId };
@@ -739,6 +815,24 @@ export function App({
             break;
           }
           setResumableSessions(sessions);
+          break;
+        }
+        case "/task": {
+          if (!getAuthToken(settings)) {
+            setView("login");
+            break;
+          }
+          const taskSessions = listSessions(process.cwd()).filter(
+            (s) => s.id !== agentRef.current?.taskId,
+          );
+          if (taskSessions.length === 0) {
+            pushRow({
+              kind: "info",
+              text: "No previous tasks found for this directory.",
+            });
+            break;
+          }
+          setTaskPickerSessions(taskSessions);
           break;
         }
         case "/compact":
@@ -1216,6 +1310,7 @@ export function App({
     !mcpPickerOpen &&
     !mcpMigrationEntries &&
     !resumableSessions &&
+    !taskPickerSessions &&
     !linkManagerOpen;
 
   return (
@@ -1305,6 +1400,16 @@ export function App({
                 sessions={resumableSessions}
                 onSelect={handleResume}
                 onCancel={() => setResumableSessions(null)}
+              />
+            </Box>
+          )}
+          {taskPickerSessions && (
+            <Box marginTop={1}>
+              <SessionPicker
+                sessions={taskPickerSessions}
+                title="Reference a previous task"
+                onSelect={handleTaskSelect}
+                onCancel={() => setTaskPickerSessions(null)}
               />
             </Box>
           )}

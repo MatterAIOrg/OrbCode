@@ -10,6 +10,7 @@ interface SessionPickerProps {
 	sessions: SessionData[]
 	onSelect: (session: SessionData) => void
 	onCancel: () => void
+	title?: string
 }
 
 function relativeTime(iso: string): string {
@@ -23,7 +24,7 @@ function relativeTime(iso: string): string {
 	return `${days}d ago`
 }
 
-export function SessionPicker({ sessions, onSelect, onCancel }: SessionPickerProps) {
+export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a previous session" }: SessionPickerProps) {
 	const [selected, setSelected] = useState(0)
 
 	useInput((input, key) => {
@@ -55,7 +56,7 @@ export function SessionPicker({ sessions, onSelect, onCancel }: SessionPickerPro
 	return (
 		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
-				Resume a previous session
+				{title}
 			</Text>
 			{windowStart > 0 && <Text dimColor>  ↑ {windowStart} more</Text>}
 			{visible.map((session, i) => {
