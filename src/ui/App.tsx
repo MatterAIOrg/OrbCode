@@ -498,6 +498,17 @@ export function App({
           setStreamingText("");
           setBusyLabel("Working");
           break;
+        case "stream-reset":
+          // An auto-retry is re-streaming this step from scratch — drop the
+          // partial text/reasoning shown for the failed attempt so it doesn't
+          // duplicate. (Committed rows are untouched; the agent only resets when
+          // nothing has been committed yet.)
+          textBufferRef.current = "";
+          setStreamingText("");
+          reasoningBufferRef.current = "";
+          setStreamingReasoning("");
+          setBusyLabel("Working");
+          break;
         case "tool-start":
           setBusyLabel("Working");
           break;

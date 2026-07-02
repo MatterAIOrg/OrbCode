@@ -521,6 +521,13 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			for await (const chunk of this.streamWithRetry(
 				() => this.client.createMessage(this.systemPrompt, request, [], signal),
 				signal,
+				() => {
+					// Compaction only streams text (committed once at the end), so a
+					// mid-stream retry just discards the partial summary.
+					summary = ""
+					onEvent({ type: "stream-reset" })
+					return true
+				},
 			)) {
 				if (signal.aborted) throw new DOMException("aborted", "AbortError")
 				if (chunk.type === "text") {
@@ -564,15 +571,20 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 
 	/**
 	 * Consume a model stream, automatically re-establishing the request up to
-	 * MAX_STREAM_RETRIES times when it fails BEFORE producing any chunk — the
-	 * common socket-closure case (connection dropped at setup or while waiting
-	 * for the first token). Once chunks have streamed we can't retry without
-	 * duplicating on-screen output, so the error propagates. A user abort is
+	 * MAX_STREAM_RETRIES times on a transient/connection failure. A user abort is
 	 * never retried.
+	 *
+	 * Before the first chunk of an attempt nothing has streamed, so the retry is
+	 * always clean. Once chunks have streamed, retrying would duplicate on-screen
+	 * output — so we only retry mid-stream when the caller supplies `onRestart` and
+	 * it returns true, meaning it rolled the partial output back (cleared buffers,
+	 * reset accumulators). If it can't (e.g. a row was already committed), the error
+	 * propagates.
 	 */
 	private async *streamWithRetry(
 		makeStream: () => ReturnType<LLMClient["createMessage"]>,
 		signal: AbortSignal,
+		onRestart?: () => boolean,
 	): ReturnType<LLMClient["createMessage"]> {
 		for (let attempt = 0; ; attempt++) {
 			let produced = false
@@ -584,9 +596,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				return
 			} catch (error) {
 				if (signal.aborted || (error as Error).name === "AbortError") throw error
-				if (produced || attempt >= MAX_STREAM_RETRIES || !isRetryableStreamError(error)) {
-					throw error
-				}
+				if (attempt >= MAX_STREAM_RETRIES || !isRetryableStreamError(error)) throw error
+				// Output already streamed this attempt: only retry if the caller can
+				// cleanly roll it back, otherwise a restart would duplicate it.
+				if (produced && !(onRestart?.() ?? false)) throw error
 				const delayMs = retryBackoffMs(attempt)
 				this.options.callbacks.onEvent({
 					type: "system",
@@ -612,18 +625,39 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		let reasoningOpen = false
 		let reasoningStart = 0
 		let reasoningDetails: unknown
+		// Once a reasoning-done row is committed to the transcript we can't roll it
+		// back, so a mid-stream retry after that point isn't clean.
+		let reasoningRowCommitted = false
 		const finalizeReasoning = () => {
 			if (reasoningOpen) {
 				reasoningOpen = false
+				reasoningRowCommitted = true
 				onEvent({ type: "reasoning-done", durationMs: Date.now() - reasoningStart })
 			}
 		}
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
 
+		// Roll back this step's partial output so streamWithRetry can restart a
+		// dropped stream mid-flight. Tools only run after the stream completes, so
+		// nothing irreversible has happened yet; the one thing we can't undo is an
+		// already-committed reasoning row, so we decline the restart in that case.
+		const rollbackForRetry = (): boolean => {
+			if (reasoningRowCommitted) return false
+			assistantText = ""
+			reasoningOpen = false
+			reasoningStart = 0
+			reasoningDetails = undefined
+			toolCallsByIndex.clear()
+			nextSyntheticIndex = 10000
+			onEvent({ type: "stream-reset" })
+			return true
+		}
+
 		const stream = this.streamWithRetry(
 			() => this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(this.mcp), signal),
 			signal,
+			rollbackForRetry,
 		)
 
 		for await (const chunk of stream) {
