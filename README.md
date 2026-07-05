@@ -185,10 +185,9 @@ sessions.
 | ------------------------- | ------- | ---------- | ---------------------- |
 | `axon-eido-3-code-pro`    | 400k    | 64k        | $3/M in · $9/M out     |
 | `axon-eido-3-code-mini`   | 400k    | 64k        | $1.5/M in · $4.5/M out |
-| `axon-code-2-5-pro`       | 400k    | 64k        | $2/M in · $6/M out     |
-| `axon-code-2-5-mini`      | 400k    | 64k        | free                   |
+| `axon-eido-3-flash`       | 200k    | 64k        | free                   |
 
-`axon-eido-3-code-mini` is the default. All four support native JSON tool calls
+`axon-eido-3-code-mini` is the default. All three support native JSON tool calls
 and image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
 shown in the status bar.
 
@@ -298,6 +297,7 @@ MatterAI gateway untouched.
 | `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
 | `/usage`     | fetch plan usage                                                                                      |
 | `/init`      | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
+| `/task`      | reference a previous session as context for the current task — opens a picker if no ID is given |
 | `/link`      | link other repos on your machine so changes here are checked against them (enter a folder path) |
 | `/mcp`       | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
 | `/login`     | start the browser sign-in flow                                                                        |
