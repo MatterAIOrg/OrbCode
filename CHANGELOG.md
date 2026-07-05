@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-05
+
+### Added
+
+- **`/task` slash command to reference a previous task.** `orbcode /task` (or
+  `/task` in the TUI) opens a session picker over previous sessions in the same
+  directory. On selection, the prior conversation is wrapped in
+  `<previous_task>` tags and the model is prompted to summarize it as reference
+  for the current task. Conversations longer than ~8000 chars are truncated so
+  the prompt stays well under context limits. If no previous tasks exist, a
+  friendly info row is shown instead of opening an empty picker.
+- **`axon-eido-3-flash`** replaces `axon-code-2-5-mini` as the free model in
+  the built-in registry. Flash offers 200K context, fast responses, and zero
+  cost — suitable for low-effort day-to-day tasks. `axon-code-2-5-pro` has been
+  removed from the built-in catalog (use `customModels` if you still need it).
+
+### Changed
+
+- **System prompt rewritten for speed and editing discipline.** The `always
+  gather exhaustive context` guidance is replaced with a `gather enough context,
+  then act` principle. The model is now told that a small, localized change
+  typically needs about 3-6 tool calls and that further exploration after the
+  edit point is identified is waste. The TODO list rule is tightened to
+  multi-step tasks (3+ steps). A new editing discipline block instructs the
+  model to copy `old_string` verbatim from a same-turn read, treat earlier reads
+  as stale after a successful edit, and never guess at a corrected
+  `old_string` when a `multi_file_edit` batch fails. `read_file` and
+  `search_files` sections get concise references with reading/search hygiene
+  rules. A `Verifying tool results and avoiding loops` section teaches the model
+  to check that outputs match the sent parameters and never repeat an identical
+  failing call. `Plan before editing` mandates writing the full plan once, then
+  executing edits in one batched pass with a single typecheck/build at the end.
+
+### Fixed
+
+- **Transient model stream failures are now automatically retried.** Connection
+  drops before the first chunk (DNS/socket reset/TLS, plus 5xx, 408, 429) are
+  retried up to 3 times with exponential backoff capped at 8s. Real 4xx client
+  errors and user aborts are not retried. A `Connection to the model failed
+  (...). Retrying n/3 in Ns…` message is emitted so the user sees progress.
+  The backoff is interruptible so Ctrl+C never gets stuck.
+- **Reasoning phase timing now reflects only the thinking time.** Previously a
+  single `hadReasoning` flag caused the `Thought for Ns` timer to span the
+  entire reasoning+answer span. Reasoning is now modeled as open/close segments:
+  it opens on the first reasoning delta and closes on the first text delta or
+  tool call, matching the on-screen `Thinking` block behavior and supporting
+  interleaved reasoning/content correctly.
+- **Mid-stream retry allowed when partial output can be rolled back.** When a
+  connection drops after some output has streamed, the agent can now re-issue
+  the request if it can cleanly undo the partial output (reset text buffers,
+  clear pending tool calls, emit a `stream-reset` event for the UI). The
+  restart is declined if a reasoning row was already committed to the
+  transcript. The compaction path also supports mid-stream retry for its
+  in-memory summary buffer.
+
 ## [0.3.3] - 2026-06-30
 
 ### Added
@@ -127,8 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`orbcode mcp add` no longer swallows a `--` separator after the server
-  name as the command.** `orbcode mcp add --scope user context7 -- npx -y
+- `orbcode mcp add` no longer swallows a `--` separator after the server
+  name as the command. `orbcode mcp add --scope user context7 -- npx -y
 @upstash/context7-mcp ...` previously wrote `command: "--"` (a literal
   `--`), so the server failed to spawn. A `--` immediately after the server
   name is now consumed as the flag/command separator, matching Claude Code's
@@ -424,7 +479,14 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.4
+[0.3.3]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.3
+[0.3.2]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.2
+[0.3.1]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.1
+[0.3.0]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.0
+[0.2.4]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.4
 [0.2.3]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.3
 [0.2.0]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.2.0
 [0.1.14]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.1.14

@@ -139,29 +139,17 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
  * interactive picker for now.
  */
 export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
-  "axon-code-2-5-mini": {
-    id: "axon-code-2-5-mini",
-    name: "Axon Code 2.5 Mini (free)",
+  "axon-eido-3-flash": {
+    id: "axon-eido-3-flash",
+    name: "Axon Eido 3 Flash (free)",
     description:
-      "Axon Mini is an general purpose super intelligent LLM coding model for low-effort day-to-day tasks",
-    contextWindow: 400000,
+      "Axon Eido is a fast and low cost general purpose model for low-effort day-to-day tasks",
+    contextWindow: 200000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000005,
-    outputPrice: 0.0000015,
+    inputPrice: 0.0,
+    outputPrice: 0.0,
     free: true,
-  },
-  "axon-code-2-5-pro": {
-    id: "axon-code-2-5-pro",
-    name: "Axon Code 2.5 Pro",
-    description:
-      "Axon Code 2.5 Pro is the next-generation of Axon Code for coding tasks, currently in experimental stage.",
-    contextWindow: 400000,
-    maxOutputTokens: 64000,
-    supportsImages: true,
-    inputPrice: 0.000002,
-    outputPrice: 0.000006,
-    free: false,
   },
   "axon-eido-3-code-pro": {
     id: "axon-eido-3-code-pro",
