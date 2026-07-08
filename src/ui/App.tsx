@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import open from "open";
 import * as path from "node:path";
 
@@ -307,6 +307,9 @@ export function App({
   updateCheck?: Promise<UpdateInfo>;
 }) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const termRows = stdout?.rows ?? 24;
+  const termCols = stdout?.columns ?? 80;
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
     loadSettings(),
   );
@@ -362,7 +365,6 @@ export function App({
   const [pendingMcpApproval, setPendingMcpApproval] = useState<string[] | null>(
     null,
   );
-  const [staticKey, setStaticKey] = useState(0);
   const [tasks, setTasks] = useState("");
   const [contextTokens, setContextTokens] = useState(0);
   const [totalCost, setTotalCost] = useState(0);
@@ -465,7 +467,6 @@ export function App({
         modelName: getModel(loadSettings().model).name,
       },
     ]);
-    setStaticKey((k) => k + 1);
   }, []);
 
   const handleEvent = useCallback(
@@ -1266,7 +1267,6 @@ export function App({
       if (process.stdout.isTTY) {
         process.stdout.write("\x1b[2J\x1b[H");
       }
-      setStaticKey((k) => k + 1);
     }
   });
 
@@ -1313,16 +1313,88 @@ export function App({
     !taskPickerSessions &&
     !linkManagerOpen;
 
+  // ── Viewport management ─────────────────────────────────────────────
+  // Instead of <Static> (which permanently writes to stdout and causes
+  // uncontrolled scrolling), we render everything in the dynamic region and
+  // only show the rows that fit above the pinned input box + status bar.
+  // This keeps the input box always at the bottom of the terminal.
+
+  // Height of the fixed bottom chrome (input box border + text + status bar +
+  // margins). Intentionally slightly overestimated so we never push the
+  // input box off-screen.
+  let bottomHeight = 8;
+  if (queuedMessages.length > 0)
+    bottomHeight += 2 + Math.min(5, queuedMessages.length);
+  if (
+    pendingApproval ||
+    pendingFollowup ||
+    pendingHookTrust ||
+    pendingMcpApproval ||
+    modelPickerOpen ||
+    mcpPickerOpen ||
+    mcpMigrationEntries ||
+    resumableSessions ||
+    taskPickerSessions ||
+    linkManagerOpen
+  )
+    bottomHeight += 10;
+
+  // Height of the middle dynamic elements (between rows and input box).
+  let middleHeight = 0;
+  if (streamingReasoning) middleHeight += 4;
+  if (taskLines.length > 0)
+    middleHeight += 1 + Math.min(10, taskLines.length);
+  if (busy && !streamingText && !streamingReasoning) middleHeight += 1;
+  if (updateInfo?.updateAvailable && updateInfo.latest) middleHeight += 4;
+
+  // Available height for committed rows + streaming text.
+  const availableHeight = Math.max(3, termRows - bottomHeight - middleHeight);
+
+  // Estimate how many terminal lines a row will occupy.
+  const wrapWidth = Math.max(20, termCols - 4);
+  const visibleRows = useMemo(() => {
+    let used = 0;
+    let start = rows.length;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const h = estimateRowLines(rows[i], wrapWidth);
+      if (used + h > availableHeight) break;
+      used += h;
+      start = i;
+    }
+    return rows.slice(start);
+  }, [rows, availableHeight, wrapWidth]);
+
+  // Cap streaming text to the space left after committed rows.
+  const rowsHeight = useMemo(
+    () => visibleRows.reduce((s, r) => s + estimateRowLines(r, wrapWidth), 0),
+    [visibleRows, wrapWidth],
+  );
+  const streamingMaxLines = Math.max(3, availableHeight - rowsHeight);
+  const streamingDisplay = streamingText
+    ? tailForHeight(streamingText, streamingMaxLines, wrapWidth)
+    : "";
+  const streamingReasoningDisplay = streamingReasoning
+    ? tailForHeight(streamingReasoning, 3, wrapWidth)
+    : "";
+
+  // Spacer to push the input box to the bottom when content is short.
+  const streamingHeight = streamingDisplay
+    ? Math.min(streamingMaxLines, wrapHeight(streamingDisplay, wrapWidth))
+    : 0;
+  const spacerHeight = Math.max(
+    0,
+    availableHeight - rowsHeight - streamingHeight,
+  );
+
   return (
     <Box flexDirection="column">
-      <Static key={staticKey} items={rows}>
-        {(row) => <RowView key={row.id} row={row} />}
-      </Static>
-
       {view === "login" ? (
         <LoginSection onLogin={handleLogin} />
       ) : (
         <Box flexDirection="column">
+          {visibleRows.map((row) => (
+            <RowView key={row.id} row={row} />
+          ))}
           {updateInfo?.updateAvailable && updateInfo.latest && (
             <Box
               marginTop={1}
@@ -1348,22 +1420,20 @@ export function App({
               </Text>
               <Box paddingLeft={2}>
                 <Text dimColor italic>
-                  {tail(
-                    streamingReasoning,
-                    expandReasoningRef.current ? 30 : 3,
-                  )}
+                  {streamingReasoningDisplay}
                 </Text>
               </Box>
             </Box>
           )}
-          {streamingText && (
+          {streamingDisplay && (
             <Box marginTop={1}>
               <Text>
                 <Text color={COLORS.primary}>● </Text>
-                {streamingText}
+                {streamingDisplay}
               </Text>
             </Box>
           )}
+          {spacerHeight > 0 && <Box height={spacerHeight} />}
           {taskLines.length > 0 && (
             <Box flexDirection="column" marginTop={1} paddingLeft={1}>
               <Text dimColor bold>
@@ -1556,9 +1626,77 @@ export function App({
   );
 }
 
-function tail(text: string, lines: number): string {
-  const all = text.split("\n").filter((l) => l.trim());
-  return all.slice(-lines).join("\n");
+/** Count the number of terminal rows a block of text will occupy (accounting
+ * for wrapping at `width` columns). */
+function wrapHeight(text: string, width: number): number {
+  return text.split("\n").reduce(
+    (sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / width)),
+    0,
+  );
+}
+
+/** Return the tail of `text` that fits within `maxLines` terminal rows,
+ * accounting for line wrapping at `width` columns. */
+function tailForHeight(text: string, maxLines: number, width: number): string {
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let height = 0;
+  for (let i = lines.length - 1; i >= 0 && height < maxLines; i--) {
+    const line = lines[i];
+    const wrapped = Math.max(1, Math.ceil(Math.max(1, line.length) / width));
+    if (height + wrapped > maxLines) {
+      const remaining = maxLines - height;
+      if (remaining > 0) {
+        const chars = remaining * width;
+        result.unshift(line.slice(-chars));
+      }
+      break;
+    }
+    result.unshift(line);
+    height += wrapped;
+  }
+  return result.join("\n");
+}
+
+/** Estimate how many terminal lines a committed row will occupy. Intentionally
+ * slightly conservative (overestimates) so we never show too many rows and
+ * push the input box off-screen. */
+function estimateRowLines(row: Row, width: number): number {
+  const w = Math.max(20, width);
+  function wrapped(text: string): number {
+    return text.split("\n").reduce(
+      (sum, line) =>
+        sum + Math.max(1, Math.ceil(Math.max(1, line.length) / w)),
+      0,
+    );
+  }
+  switch (row.kind) {
+    case "header":
+      return 9;
+    case "user":
+      return 1 + wrapped(row.text);
+    case "assistant":
+      return 1 + wrapped(row.text);
+    case "reasoning":
+      return row.expanded ? 1 + wrapped(row.text) : 1;
+    case "tool": {
+      let h = 1;
+      if (row.diff) {
+        h += Math.min(62, row.diff.split("\n").length) + 1;
+      } else if (row.resultPreview) {
+        h += wrapped(row.resultPreview);
+      }
+      return h;
+    }
+    case "info":
+      return Math.max(1, wrapped(row.text));
+    case "error":
+      return Math.max(1, wrapped(row.text));
+    case "completion":
+      return 2 + wrapped(row.text);
+    default:
+      return 1;
+  }
 }
 
 const QUEUE_PREVIEW_LIMIT = 80;
