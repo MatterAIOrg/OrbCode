@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-08
+
+### Fixed
+
+- **Input box now stays pinned to the bottom of the terminal.** Removed
+  `<Static>` (which permanently wrote rows to stdout and caused the whole
+  view to scroll up when a long response completed). Rows are now rendered
+  in the dynamic region with viewport-capped visibility — only the rows that
+  fit above the input box are shown. A spacer fills the gap when content is
+  short so the input box + status bar are always at the bottom. Streaming
+  text is capped with `tailForHeight()` (accounting for line wrapping) so it
+  never grows tall enough to push the input box off-screen.
+
 ## [0.4.0] - 2026-07-05
 
 ### Added
