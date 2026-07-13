@@ -12,9 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The TUI now preserves the terminal's configured colors.** Startup and
   cleanup no longer emit OSC 10/11 or OSC 110/111 sequences that override or
   reset the terminal's default foreground and background colors.
-- **The built-in UI palette is optimized for light terminals.** Text and
-  semantic colors now use dark, accessible tones, while prompt, popup, and
-  diff surfaces use subtle light backgrounds.
+- **The built-in UI palette follows both light and dark terminal themes.**
+  Neutral text inherits the terminal foreground, semantic accents use the
+  terminal's named ANSI palette, and prompts and popups no longer apply
+  hardcoded background colors. Diff rows retain their original 5% alpha-blended
+  backgrounds, with OrbCode green (`#3FA266`) and red (`#E34671`) used
+  consistently across themes.
 
 ## [0.4.3] - 2026-07-13
 

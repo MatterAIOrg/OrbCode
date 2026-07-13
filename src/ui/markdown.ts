@@ -1,12 +1,10 @@
 import chalk from "chalk"
 
-import { COLORS } from "../branding.js"
-
 /** Render inline markdown (bold, italic, code, links) to ANSI. */
 function renderInline(text: string): string {
 	let out = text
 	// inline code first so other patterns don't fire inside it
-	out = out.replace(/`([^`]+)`/g, (_, code) => chalk.hex(COLORS.accent)(code))
+	out = out.replace(/`([^`]+)`/g, (_, code) => chalk.cyan(code))
 	out = out.replace(/\*\*([^*]+)\*\*/g, (_, t) => chalk.bold(t))
 	out = out.replace(/__([^_]+)__/g, (_, t) => chalk.bold(t))
 	out = out.replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, (_, t) => chalk.italic(t))
@@ -35,7 +33,7 @@ export function renderMarkdown(markdown: string): string {
 		}
 
 		if (inCodeBlock) {
-			out.push(chalk.dim("│ ") + chalk.hex(COLORS.accent)(line))
+			out.push(chalk.dim("│ ") + chalk.cyan(line))
 			continue
 		}
 
@@ -47,13 +45,13 @@ export function renderMarkdown(markdown: string): string {
 
 		const bullet = line.match(/^(\s*)[-*]\s+(.*)$/)
 		if (bullet) {
-			out.push(`${bullet[1]}${chalk.hex(COLORS.primary)("•")} ${renderInline(bullet[2])}`)
+			out.push(`${bullet[1]}• ${renderInline(bullet[2])}`)
 			continue
 		}
 
 		const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/)
 		if (ordered) {
-			out.push(`${ordered[1]}${chalk.hex(COLORS.primary)(ordered[2] + ".")} ${renderInline(ordered[3])}`)
+			out.push(`${ordered[1]}${ordered[2]}. ${renderInline(ordered[3])}`)
 			continue
 		}
 

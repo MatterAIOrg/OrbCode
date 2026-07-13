@@ -90,7 +90,7 @@ export function LinkManager({ links, status, onAdd, onRemove, onClose }: LinkMan
 				<Text wrap="truncate-start">
 					{"    "}
 					{draft}
-					<Text inverse> </Text>
+					<Text underline> </Text>
 				</Text>
 			)}
 			{status && <Text color={COLORS.dim}>{status}</Text>}

@@ -98,7 +98,7 @@ export function McpAuthScreen({ serverName, authUrl, onPasteCode, onCancel }: Mc
 					<Text>
 						<Text color={COLORS.dim}>URL&gt; </Text>
 						{pasted}
-						<Text inverse> </Text>
+						<Text underline> </Text>
 					</Text>
 					<Text color={COLORS.dim}>enter to submit · esc to go back</Text>
 				</Box>

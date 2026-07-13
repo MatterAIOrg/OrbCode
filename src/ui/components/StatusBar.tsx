@@ -16,7 +16,7 @@ const MODE_LABELS: Record<ApprovalMode, string> = {
   auto: "⏵⏵⏵ auto-approve on",
 };
 
-const MODE_COLORS: Record<ApprovalMode, string> = {
+const MODE_COLORS: Record<ApprovalMode, string | undefined> = {
   ask: COLORS.primary,
   edits: COLORS.warning,
   auto: COLORS.success,

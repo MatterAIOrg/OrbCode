@@ -39,14 +39,12 @@ export function formatToolName(name: string): string {
 	)
 }
 
-/** Alpha-blend a foreground hex color against the light-theme background. */
+/** Alpha-blend a foreground hex color against the terminal background (#1a1a1a). */
 function blendWithBg(hex: string, alpha: number): string {
 	const r = parseInt(hex.slice(1, 3), 16)
 	const g = parseInt(hex.slice(3, 5), 16)
 	const b = parseInt(hex.slice(5, 7), 16)
-	const bgR = parseInt(COLORS.bg.slice(1, 3), 16)
-	const bgG = parseInt(COLORS.bg.slice(3, 5), 16)
-	const bgB = parseInt(COLORS.bg.slice(5, 7), 16)
+	const bgR = 0x1a, bgG = 0x1a, bgB = 0x1a
 	const blend = (c: number, bg: number) => Math.round(c * alpha + bg * (1 - alpha))
 	return `#${[r, g, b].map((c, i) => blend(c, [bgR, bgG, bgB][i]).toString(16).padStart(2, "0")).join("")}`
 }
@@ -161,7 +159,7 @@ export function formatDuration(durationMs: number): string {
 	return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`
 }
 
-/** Build a background-filled user block exactly as wide as the transcript. */
+/** Build a padded user block exactly as wide as the transcript. */
 export function formatUserBlock(text: string, width: number): string {
 	const lineWidth = Math.max(1, width)
 	const paddingX = Math.min(2, Math.floor((lineWidth - 1) / 2))
@@ -198,7 +196,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 		case "user":
 			return (
 				<Box marginTop={1}>
-					<Text color={COLORS.user} backgroundColor={COLORS.userBg}>
+					<Text color={COLORS.user}>
 						{formatUserBlock(row.text, width)}
 					</Text>
 				</Box>
