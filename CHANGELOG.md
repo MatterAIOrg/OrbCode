@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The TUI now preserves the terminal's configured colors.** Startup and
+  cleanup no longer emit OSC 10/11 or OSC 110/111 sequences that override or
+  reset the terminal's default foreground and background colors.
+- **The built-in UI palette is optimized for light terminals.** Text and
+  semantic colors now use dark, accessible tones, while prompt, popup, and
+  diff surfaces use subtle light backgrounds.
+
 ## [0.4.3] - 2026-07-13
 
 ### Changed

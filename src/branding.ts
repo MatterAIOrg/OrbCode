@@ -15,32 +15,33 @@ export const VERSION = (() => {
 })();
 export const TAGLINE = "powered by Axon models by MatterAI";
 
-// Neutral black/white/grey foundation with explicit semantic accents. All
-// values are hex so the TUI never falls back to terminal-defined colors.
+// Light neutral foundation with explicit semantic accents. The terminal's
+// configured default foreground/background remain untouched; these values are
+// used only for TUI content and intentional surfaces such as prompts/popups.
 // Hierarchy:
-//   primary  #ffffff  — main text, header chrome
-//   accent   #d0d0d0  — secondary emphasis (header model, selected rows)
-//   thinking #a8a8a8  — model-reasoning text
-//   dim      #7a7a7a  — supporting / hint text
-//   error    #E34671  — errors, removals, dangerous actions
-//   success  #3FA266  — success states, additions, auto-approval
-//   warning  #E2CE76  — confirmations and edit approval
+//   primary  #1f2328  — main text, header chrome
+//   accent   #3f4750  — secondary emphasis (header model, selected rows)
+//   thinking #59636e  — model-reasoning text
+//   dim      #6e7781  — supporting / hint text
+//   error    #cf222e  — errors, removals, dangerous actions
+//   success  #1a7f37  — success states, additions, auto-approval
+//   warning  #9a6700  — confirmations and edit approval
 export const COLORS = {
-  primary: "#ffffff",
-  accent: "#d0d0d0",
-  dim: "#7a7a7a",
-  error: "#E34671",
-  warning: "#E2CE76",
-  success: "#3FA266",
-  thinking: "#a8a8a8",
-  user: "#ffffff",
-  userBg: "#2a2a2a",
-  popupBg: "#242424",
-  inputBorder: "#808080",
-  inputBorderInactive: "#3d3d3d",
-  orbitalOuter: "#06E1E7",
-  orbitalInner: "#8BF4F7",
-  bg: "#1a1a1a",
+  primary: "#1f2328",
+  accent: "#3f4750",
+  dim: "#6e7781",
+  error: "#cf222e",
+  warning: "#9a6700",
+  success: "#1a7f37",
+  thinking: "#59636e",
+  user: "#1f2328",
+  userBg: "#eaeef2",
+  popupBg: "#f6f8fa",
+  inputBorder: "#57606a",
+  inputBorderInactive: "#afb8c1",
+  orbitalOuter: "#007f86",
+  orbitalInner: "#009aa3",
+  bg: "#ffffff",
 } as const;
 
 /**

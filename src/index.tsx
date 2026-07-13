@@ -1,7 +1,7 @@
 import React from "react"
 import { render } from "ink"
 
-import { COLORS, PRODUCT_NAME, VERSION } from "./branding.js"
+import { PRODUCT_NAME, VERSION } from "./branding.js"
 import { App } from "./ui/App.js"
 import { runHeadless } from "./headless.js"
 import { runMcpCommand } from "./commands/mcp.js"
@@ -114,6 +114,7 @@ Usage:
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
+  orbcode --resume        list previous sessions to resume
   orbcode --resume <id>   resume a previous session by id
   orbcode -s "<prompt>"   override the default system prompt (replaces it entirely;
                           accepts -s <text>, --system-prompt <text>, and
@@ -234,12 +235,21 @@ async function main(): Promise<void> {
 	}
 
 	let initialSession: SessionData | undefined
-	const resumeId = takeFlagValue(args, "resume") ?? takeFlagValue(args, "r")
-	if (resumeId) {
-		initialSession = loadSessionById(resumeId)
-		if (!initialSession) {
-			console.error(`Session "${resumeId}" not found.`)
-			process.exit(1)
+	let initialAction: "resume" | undefined
+	const resumeIndex = args.findIndex((a) => a === "--resume" || a === "-r")
+	if (resumeIndex !== -1) {
+		const value = args[resumeIndex + 1]
+		if (value && !value.startsWith("-")) {
+			const resumeId = value
+			args.splice(resumeIndex, 2)
+			initialSession = loadSessionById(resumeId)
+			if (!initialSession) {
+				console.error(`Session "${resumeId}" not found.`)
+				process.exit(1)
+			}
+		} else {
+			args.splice(resumeIndex, 1)
+			initialAction = "resume"
 		}
 	}
 
@@ -270,32 +280,28 @@ async function main(): Promise<void> {
 		process.stdin.isTTY || process.stdout.isTTY || process.stderr.isTTY,
 	)
 
-	// Take over the full terminal as an independent surface:
-	//   1. Enter the alternate screen buffer (\x1b[?1049h) so the TUI owns
-	//      the full terminal and prior output stays untouched in the primary
-	//      buffer — the terminal scrollback is not affected.
-	//   2. Set default foreground / background via OSC 10/11 to our greyscale
-	//      palette so text without an explicit color prop still follows the
-	//      theme instead of falling back to the terminal's default colors.
+	// Take over the full terminal as an independent surface by entering the
+	// alternate screen buffer (\x1b[?1049h). Keep the terminal's configured
+	// foreground and background untouched; terminals differ in how they handle
+	// dynamic-color OSC sequences, and the TUI's semantic text colors are set
+	// explicitly by its components.
 	// OpenTUI relies on 1049 to create the clean alternate buffer and then
 	// updates retained rows; do not issue ED 2 here because some terminals save
 	// cleared displays into history even while switching buffers.
 	if (isInteractiveTerminal) {
 		process.stdout.write("\x1b[?25l\x1b[s\x1b[?1049h")
-		process.stdout.write(`\x1b]10;${COLORS.primary}\x07`)
-		process.stdout.write(`\x1b]11;${COLORS.bg}\x07`)
 		process.stdout.write(ENABLE_MOUSE_TRACKING)
 		process.stdout.write("\x1b]0;orbcode\x07")
 	}
 
-	// Restore the terminal on exit: reset default colors and leave the
-	// alternate screen buffer so the user's prior terminal state is restored.
+	// Restore terminal interaction modes and leave the alternate screen buffer.
 	function restoreTerminal(): void {
 		if (isInteractiveTerminal && process.stdout.writable) {
 			process.stdout.write(DISABLE_MOUSE_TRACKING)
-			process.stdout.write("\x1b]110\x07")
-			process.stdout.write("\x1b]111\x07")
 			process.stdout.write("\x1b[?1049l")
+		}
+		if (process.env.ORBCODE_LAST_SESSION_ID) {
+			console.log(`\nSession saved. To resume: orbcode --resume ${process.env.ORBCODE_LAST_SESSION_ID}\n`)
 		}
 	}
 	process.on("exit", restoreTerminal)
@@ -309,6 +315,7 @@ async function main(): Promise<void> {
 	render(
 		<App
 			initialView={initialView}
+			initialAction={initialAction}
 			initialPrompt={initialPrompt}
 			initialSession={initialSession}
 			systemPromptOverride={systemPromptOverride}

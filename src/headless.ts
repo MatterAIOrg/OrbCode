@@ -128,5 +128,6 @@ export async function runHeadless(
 	if (finalContent) {
 		process.stdout.write(finalContent.trimEnd() + "\n")
 	}
+	process.stderr.write(`\nSession saved. To resume: orbcode --resume ${agent.taskId}\n`)
 	process.exit(exitCode)
 }
