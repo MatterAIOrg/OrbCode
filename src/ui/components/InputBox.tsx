@@ -33,10 +33,10 @@ function fitText(text: string, maxWidth: number): string {
 function PopupEdge({ width, position }: { width: number; position: "top" | "bottom" }) {
 	const innerWidth = Math.max(0, width - 2)
 	return (
-		<Text color={COLORS.popupBg}>
+		<Text color={COLORS.dim}>
 			{position === "top"
-				? `▗${"▄".repeat(innerWidth)}▖`
-				: `▝${"▀".repeat(innerWidth)}▘`}
+				? `╭${"─".repeat(innerWidth)}╮`
+				: `╰${"─".repeat(innerWidth)}╯`}
 		</Text>
 	)
 }
@@ -52,10 +52,12 @@ function PopupRow({
 }) {
 	const trailing = Math.max(0, width - POPUP_PADDING_X * 2 - contentWidth)
 	return (
-		<Text backgroundColor={COLORS.popupBg}>
-			{" ".repeat(POPUP_PADDING_X)}
+		<Text>
+			<Text color={COLORS.dim}>│</Text>
+			{" ".repeat(POPUP_PADDING_X - 1)}
 			{children}
-			{" ".repeat(trailing + POPUP_PADDING_X)}
+			{" ".repeat(trailing + POPUP_PADDING_X - 1)}
+			<Text color={COLORS.dim}>│</Text>
 		</Text>
 	)
 }
@@ -287,11 +289,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 		{ isActive: active },
 	)
 
-	// The cursor block is baked into one string with chalk: nested <Text>
-	// siblings around an inverse space make Ink's layout momentarily wrap the
+	// The cursor marker is baked into one string with chalk: nested <Text>
+	// siblings around an underlined space make Ink's layout momentarily wrap the
 	// cursor to the next line on short values.
 	const display =
-		value.slice(0, cursor) + chalk.inverse(value[cursor] ?? " ") + value.slice(cursor + 1)
+		value.slice(0, cursor) + chalk.underline(value[cursor] ?? " ") + value.slice(cursor + 1)
 	const plainDisplay = active
 		? value.slice(0, cursor) + (value[cursor] ?? " ") + value.slice(cursor + 1)
 		: value || "waiting…"
