@@ -11,14 +11,14 @@ export type Row =
 	| { kind: "assistant"; id: string; text: string }
 	| { kind: "reasoning"; id: string; text: string; durationMs: number; expanded: boolean }
 	| {
-			kind: "tool"
-			id: string
-			name: string
-			summary: string
-			resultPreview: string
-			isError: boolean
-			diff?: string
-	  }
+		kind: "tool"
+		id: string
+		name: string
+		summary: string
+		resultPreview: string
+		isError: boolean
+		diff?: string
+	}
 	| { kind: "info"; id: string; text: string }
 	| { kind: "error"; id: string; text: string }
 	| { kind: "completion"; id: string; text: string }
@@ -39,9 +39,19 @@ export function formatToolName(name: string): string {
 	)
 }
 
+/** Alpha-blend a foreground hex color against the terminal background (#1a1a1a). */
+function blendWithBg(hex: string, alpha: number): string {
+	const r = parseInt(hex.slice(1, 3), 16)
+	const g = parseInt(hex.slice(3, 5), 16)
+	const b = parseInt(hex.slice(5, 7), 16)
+	const bgR = 0x1a, bgG = 0x1a, bgB = 0x1a
+	const blend = (c: number, bg: number) => Math.round(c * alpha + bg * (1 - alpha))
+	return `#${[r, g, b].map((c, i) => blend(c, [bgR, bgG, bgB][i]).toString(16).padStart(2, "0")).join("")}`
+}
+
 const MAX_DIFF_LINES = 60
-const ADDED_BG = COLORS.success
-const REMOVED_BG = COLORS.error
+const ADDED_BG = blendWithBg(COLORS.success, 0.05)
+const REMOVED_BG = blendWithBg(COLORS.error, 0.05)
 
 type DiffRow =
 	| { kind: "file"; text: string }
@@ -119,14 +129,14 @@ export function DiffView({ diff }: { diff: string }) {
 				const num = String(row.num).padStart(numWidth)
 				if (row.type === "add") {
 					return (
-						<Text key={i} backgroundColor={ADDED_BG} color={COLORS.primary}>
+						<Text key={i} backgroundColor={ADDED_BG} color={COLORS.success}>
 							{num} + {row.text}
 						</Text>
 					)
 				}
 				if (row.type === "del") {
 					return (
-						<Text key={i} backgroundColor={REMOVED_BG} color={COLORS.primary}>
+						<Text key={i} backgroundColor={REMOVED_BG} color={COLORS.error}>
 							{num} - {row.text}
 						</Text>
 					)
@@ -165,8 +175,8 @@ export function formatUserBlock(text: string, width: number): string {
 		for (let offset = 0; offset < sourceLine.length; offset += contentWidth) {
 			output.push(
 				" ".repeat(paddingX) +
-					sourceLine.slice(offset, offset + contentWidth).padEnd(contentWidth) +
-					" ".repeat(paddingX),
+				sourceLine.slice(offset, offset + contentWidth).padEnd(contentWidth) +
+				" ".repeat(paddingX),
 			)
 		}
 	}

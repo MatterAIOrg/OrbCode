@@ -4,6 +4,22 @@ import type OpenAI from "openai"
 
 import { getConfigDir } from "../config/settings.js"
 
+export type SessionTranscriptEntry =
+	| { kind: "user"; text: string }
+	| { kind: "assistant"; text: string }
+	| { kind: "reasoning"; text: string; durationMs: number }
+	| {
+			kind: "tool"
+			name: string
+			summary: string
+			resultPreview: string
+			isError: boolean
+			diff?: string
+	  }
+	| { kind: "info"; text: string }
+	| { kind: "error"; text: string }
+	| { kind: "completion"; text: string }
+
 export interface SessionData {
 	id: string
 	cwd: string
@@ -21,6 +37,8 @@ export interface SessionData {
 	contextTokens: number
 	todos: string
 	messages: OpenAI.Chat.ChatCompletionMessageParam[]
+	/** Exact visible TUI history. Optional for sessions written before v0.4.2. */
+	transcript?: SessionTranscriptEntry[]
 }
 
 const MAX_SESSIONS_LISTED = 25

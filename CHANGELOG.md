@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Diff background colors are now 50% transparent.** Added/removed line
+  backgrounds in the diff view are alpha-blended against the terminal
+  background (`#1a1a1a`), producing a muted green (`#2C5E40`) and muted red
+  (`#7E3045`) that are less visually aggressive while preserving the red/green
+  semantic.
+
+### Fixed
+
+- **Resumed sessions now restore reasoning and tool history.** New sessions
+  persist the exact visible transcript, including thinking durations, tool
+  summaries, result previews, errors, and diffs. Older sessions reconstruct
+  tool calls, results, and edit fragments from their stored model messages
+  when possible.
+- **@-file autocomplete now shows files created during the session.**
+  The file list was computed once on mount (via `useMemo([], [])`), so new
+  files created by editing or manually never appeared in the `@` popup.
+  Changed to re-scan the workspace each time the `@` popup opens.
+
 ## [0.4.2] - 2026-07-13
 
 ### Changed

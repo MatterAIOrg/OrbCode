@@ -729,7 +729,8 @@ export function App({
   const handleResume = useCallback(
     (session: SessionData) => {
       setResumableSessions(null);
-      agentRef.current = createAgent(session);
+      const resumedAgent = createAgent(session);
+      agentRef.current = resumedAgent;
       resetTranscript();
       setTasks(session.todos ?? "");
       setTotalCost(session.totalCost ?? 0);
@@ -744,19 +745,16 @@ export function App({
         setSessionTitle(session.title);
         setTerminalTitle(session.title);
       }
-      // Replay the conversation into the transcript.
-      for (const message of session.messages) {
-        if (message.role === "user" && typeof message.content === "string") {
-          const match = /<user_query>\n?([\s\S]*?)\n?<\/user_query>/.exec(
-            message.content,
-          );
-          if (match) pushRow({ kind: "user", text: match[1] });
-        } else if (
-          message.role === "assistant" &&
-          typeof message.content === "string" &&
-          message.content.trim()
-        ) {
-          pushRow({ kind: "assistant", text: message.content });
+      // Replay the exact display transcript when available. Agent also builds
+      // a best-effort tool/result history for sessions from the legacy schema.
+      for (const entry of resumedAgent.displayTranscript) {
+        if (entry.kind === "reasoning") {
+          pushRow({
+            ...entry,
+            expanded: expandReasoningRef.current,
+          });
+        } else {
+          pushRow(entry);
         }
       }
       pushRow({

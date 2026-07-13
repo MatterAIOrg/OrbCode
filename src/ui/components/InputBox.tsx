@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text, useInput } from "ink"
 import chalk from "chalk"
 
@@ -94,18 +94,24 @@ export function InputBox({ active, width, slashCommands, onSubmit }: InputBoxPro
 	const [slashIndex, setSlashIndex] = useState(0)
 	const [dismissedValue, setDismissedValue] = useState<string | null>(null)
 
-	// Workspace file list for @-references, computed once per session.
-	const files = useMemo(
-		() => walkFiles(process.cwd(), true, 3000).filter((f) => !f.endsWith("/")),
-		[],
-	)
-
 	const showSlashMenu = active && value.startsWith("/") && !value.includes(" ")
 	const slashMatches = showSlashMenu
 		? slashCommands.filter((c) => c.name.startsWith(value)).slice(0, 8)
 		: []
 
 	const atToken = active ? findAtToken(value, cursor) : null
+
+	// Workspace file list for @-references, re-scanned each time the popup opens.
+	// Files created during the session (by editing or manually) become visible.
+	const [files, setFiles] = useState<string[]>([])
+	const wasClosed = useRef(true)
+	if (atToken && wasClosed.current) {
+		wasClosed.current = false
+		setFiles(walkFiles(process.cwd(), true, 3000).filter((f) => !f.endsWith("/")))
+	} else if (!atToken) {
+		wasClosed.current = true
+	}
+
 	const fileMatches = useMemo(() => {
 		if (!atToken || value === dismissedValue) return []
 		return files
