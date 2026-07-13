@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-13
+
 ### Changed
 
 - **Diff background colors are now 50% transparent.** Added/removed line
@@ -14,6 +16,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   background (`#1a1a1a`), producing a muted green (`#2C5E40`) and muted red
   (`#7E3045`) that are less visually aggressive while preserving the red/green
   semantic.
+- **Viewport layout adapts to the real input box height.** The input box now
+  reports its rendered height to the parent viewport (including multiline
+  prompt wrapping, slash-command popups, and file-completion popups), so the
+  bottom controls stack never overlaps the live response. The previous
+  hardcoded 4-row estimation caused overflow on multiline input or when
+  autocomplete was open.
+- **Streaming output is truncated to the viewport tail.** Instead of
+  accumulating the entire streaming response in the live area (which pushed
+  the input box off-screen in long generations), only lines fitting the
+  available height are rendered. The complete response is committed to the
+  transcript on completion.
+- **Diff line-height estimates in the virtualized transcript now account for
+  the number/type gutter.** The diff gutter occupies ~8 columns, so each
+  content line wraps at a narrower width. Hunks headers are structural and
+  skipped. This prevents underestimation that could overflow the viewport.
+- **Task list height measurement uses proper word-wrap calculations.** Task
+  items are now wrapped at the available terminal width instead of counting
+  raw lines, so long task descriptions don't push controls off-screen.
+- **Reasoning row height estimates account for the gutter.** Collapsed
+  reasoning rows are measured at `width - 2` to match the actual render,
+  preventing underestimation that clips the fold header.
+- **Result preview and completion text use correct line widths.** Both are
+  now wrapped at `width - 2` and `width - 4` respectively, matching the
+  indentation they render at.
 
 ### Fixed
 

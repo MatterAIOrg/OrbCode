@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Box, Text, useInput } from "ink"
 import chalk from "chalk"
 
@@ -17,6 +17,8 @@ interface InputBoxProps {
 	width: number
 	slashCommands: SlashCommand[]
 	onSubmit: (value: string) => void
+	/** Reports the complete rendered height, including autocomplete popups. */
+	onHeightChange?: (height: number) => void
 }
 
 const MAX_FILE_MATCHES = 8
@@ -84,7 +86,7 @@ function findAtToken(value: string, cursor: number): { query: string; start: num
 	return { query: match[1], start: cursor - match[1].length - 1 }
 }
 
-export function InputBox({ active, width, slashCommands, onSubmit }: InputBoxProps) {
+export function InputBox({ active, width, slashCommands, onSubmit, onHeightChange }: InputBoxProps) {
 	const [value, setValue] = useState("")
 	const [cursor, setCursor] = useState(0)
 	// Terminal-style prompt history: persisted across sessions in ~/.orbcode.
@@ -290,6 +292,26 @@ export function InputBox({ active, width, slashCommands, onSubmit }: InputBoxPro
 	// cursor to the next line on short values.
 	const display =
 		value.slice(0, cursor) + chalk.inverse(value[cursor] ?? " ") + value.slice(cursor + 1)
+	const plainDisplay = active
+		? value.slice(0, cursor) + (value[cursor] ?? " ") + value.slice(cursor + 1)
+		: value || "waiting…"
+	// Border (2) + wrapped prompt content. The prompt glyph occupies two
+	// columns beside the editable text, while border and padding consume four.
+	const editableWidth = Math.max(1, width - 6)
+	const promptHeight = plainDisplay.split("\n").reduce(
+		(sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / editableWidth)),
+		0,
+	)
+	const slashPopupHeight = slashMatches.length > 0 ? slashMatches.length + 3 : 0
+	const filePopupHeight = fileMatches.length > 0 ? fileMatches.length + 3 : 0
+	const renderedHeight = 2 + promptHeight + slashPopupHeight + filePopupHeight
+
+	// Parent viewport calculations must use the real bottom-stack height. A
+	// layout effect updates it before Ink paints the next frame, preventing a
+	// multiline prompt or popup from covering the live response above it.
+	useLayoutEffect(() => {
+		onHeightChange?.(renderedHeight)
+	}, [onHeightChange, renderedHeight])
 
 	return (
 		<Box flexDirection="column">
