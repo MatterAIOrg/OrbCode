@@ -2,10 +2,11 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import type OpenAI from "openai"
 
+import type { AttachmentSummary } from "../attachments.js"
 import { getConfigDir } from "../config/settings.js"
 
 export type SessionTranscriptEntry =
-	| { kind: "user"; text: string }
+	| { kind: "user"; text: string; attachments?: AttachmentSummary[] }
 	| { kind: "assistant"; text: string }
 	| { kind: "reasoning"; text: string; durationMs: number }
 	| {

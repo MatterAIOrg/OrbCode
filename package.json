@@ -33,6 +33,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/index.tsx",
     "start": "node dist/index.js",
+    "test:attachments": "node --import tsx --test test/attachments.test.ts",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {
@@ -42,10 +43,13 @@
     "ai": "^6.0.207",
     "chalk": "^5.3.0",
     "ink": "^5.2.1",
+    "mammoth": "^1.12.0",
     "open": "^10.1.0",
     "openai": "^4.78.0",
+    "pdf-parse": "^2.4.5",
     "picomatch": "^4.0.4",
-    "react": "^18.3.1"
+    "react": "^18.3.1",
+    "read-excel-file": "^9.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

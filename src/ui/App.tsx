@@ -10,6 +10,10 @@ import open from "open";
 import * as path from "node:path";
 
 import {
+  type SubmittedPrompt,
+  attachmentSummary,
+} from "../attachments.js";
+import {
   COLORS,
   ORBITAL_MARK,
   PRODUCT_NAME,
@@ -77,6 +81,7 @@ import {
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
+  { name: "/attach", description: "choose files to attach" },
   { name: "/model", description: "select the Axon model to use" },
   {
     name: "/clear",
@@ -384,7 +389,7 @@ export function App({
   // FIFO queue of messages the user typed while the LLM was still streaming.
   // Drained one-per-turn on each `turn-end` event so multi-step work can
   // keep flowing without making the user wait for the previous response.
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [resumableSessions, setResumableSessions] = useState<
     SessionData[] | null
@@ -449,7 +454,7 @@ export function App({
   // Mirror of `queuedMessages` for the agent event handler (kept on a ref so
   // we can drain it inside `handleEvent` without re-creating that callback
   // on every keystroke).
-  const queueRef = useRef<string[]>([]);
+  const queueRef = useRef<SubmittedPrompt[]>([]);
   // Holds the startup prompt while we wait for a project-hook trust decision.
   const deferredPromptRef = useRef<string | null>(null);
   // Guards endAndExit against double-invocation (Ctrl+D spam).
@@ -462,12 +467,12 @@ export function App({
   // /new or /resume) keeps the override instead of falling back to default.
   const systemPromptOverrideRef = useRef<string | undefined>(systemPromptOverride);
 
-  const enqueueMessage = useCallback((text: string) => {
-    queueRef.current = [...queueRef.current, text];
+  const enqueueMessage = useCallback((prompt: SubmittedPrompt) => {
+	queueRef.current = [...queueRef.current, prompt];
     setQueuedMessages(queueRef.current);
   }, []);
 
-  const drainQueue = useCallback((): string | null => {
+  const drainQueue = useCallback((): SubmittedPrompt | null => {
     if (queueRef.current.length === 0) return null;
     const [next, ...rest] = queueRef.current;
     queueRef.current = rest;
@@ -667,10 +672,14 @@ export function App({
           // synchronously before emitting this event.
           const nextQueued = drainQueue();
           if (nextQueued !== null && agentRef.current) {
-            pushRow({ kind: "user", text: nextQueued });
+            pushRow({
+              kind: "user",
+              text: nextQueued.text,
+              attachments: nextQueued.attachments.map(attachmentSummary),
+            });
             setBusy(true);
             setBusyLabel("Thinking");
-            void agentRef.current.runTurn(nextQueued);
+            void agentRef.current.runTurn(nextQueued.text, nextQueued.attachments);
           }
           break;
       }
@@ -1095,11 +1104,16 @@ export function App({
   );
 
   const handleSubmit = useCallback(
-    (value: string) => {
+    (input: string | SubmittedPrompt) => {
+      const prompt = typeof input === "string" ? { text: input, attachments: [] } : input;
+      const { text, attachments } = prompt;
       smoothScrollPendingRef.current = 0;
       setScrollOffset(0);
-      if (value.startsWith("/")) {
-        handleCommand(value);
+      if (text.startsWith("/")) {
+        if (attachments.length > 0) {
+          pushRow({ kind: "info", text: "Attachments are ignored for slash commands." });
+        }
+        handleCommand(text);
         return;
       }
       if (!getAuthToken(settings)) {
@@ -1110,13 +1124,17 @@ export function App({
       // queue instead of dropping it on the floor. `handleEvent`'s
       // `turn-end` case drains the queue and starts the next turn.
       if (busy) {
-        enqueueMessage(value);
+        enqueueMessage(prompt);
         return;
       }
-      pushRow({ kind: "user", text: value });
+      pushRow({
+        kind: "user",
+        text,
+        attachments: attachments.map(attachmentSummary),
+      });
       setBusy(true);
       setBusyLabel("Thinking");
-      void getAgent().runTurn(value);
+      void getAgent().runTurn(text, attachments);
     },
     [settings, busy, handleCommand, enqueueMessage, getAgent, pushRow],
   );
@@ -1811,7 +1829,8 @@ export function App({
                 </Text>
                 {queuedMessages.slice(0, 5).map((msg, i) => (
                   <Text key={i} color={COLORS.dim}>
-                    {i + 1}. {truncateForQueue(msg).replace(/\n/g, "↵")}
+                    {i + 1}. {truncateForQueue(msg.text || "Attached files").replace(/\n/g, "↵")}
+                    {msg.attachments.length > 0 ? ` · 📎 ${msg.attachments.length}` : ""}
                   </Text>
                 ))}
                 {queuedMessages.length > 5 && (
@@ -1824,6 +1843,7 @@ export function App({
               width={wrapWidth}
               slashCommands={SLASH_COMMANDS}
               onSubmit={handleSubmit}
+              supportsImages={getModel(settings.model).supportsImages}
               onHeightChange={setInputBoxHeight}
             />
             <StatusBar
@@ -1927,7 +1947,7 @@ function estimateRowLines(row: Row, width: number): number {
       return heroHeight + firstActionRow + secondActionRow + shortcuts + 3;
     }
     case "user":
-      return 1 + formatUserBlock(row.text, w).split("\n").length;
+      return 1 + formatUserBlock(row.text, w, row.attachments).split("\n").length;
     case "assistant":
       return 1 + wrapped(`● ${row.text}`);
     case "reasoning":

@@ -269,6 +269,13 @@ MatterAI gateway untouched.
   as a compact Tasks panel (`□` pending / `◧` in progress / `■` done).
 - **@-references**: type `@` in the input to fuzzy-search workspace files;
   ↑/↓ to choose, enter/tab inserts the top/selected match into the prompt.
+- **Attachments**: use `/attach` or `ctrl+f` to open the native file picker, or
+  drag files onto the input box (the terminal pastes their paths). CSV, XLSX,
+  DOCX, PDF, plain-text, JSON, Markdown, PNG, JPEG, and WebP are supported.
+  Documents are extracted to bounded text before the model call;
+  attached filenames stay visible in the composer, queue, transcript, and
+  resumed session history. Backspace on an empty prompt removes the last file,
+  and escape clears the composer.
 - **Followup questions**: `ask_followup_question` renders a selectable menu
   (arrow keys, number quick-pick, or free-text answer).
 - **Completion**: `attempt_completion` renders a bordered "✔ Task completed"
@@ -287,6 +294,7 @@ MatterAI gateway untouched.
 | command      | action                                                                                                |
 | ------------ | ----------------------------------------------------------------------------------------------------- |
 | `/help`      | list commands                                                                                         |
+| `/attach`    | open the native file picker and add one or more attachments                                           |
 | `/model`     | scrollable model picker (`/model pro` / `/model mini` / full id selects directly)                     |
 | `/clear`     | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
 | `/new`       | start a fresh conversation/session with a clean slate                                                 |
@@ -316,6 +324,7 @@ MatterAI gateway untouched.
 | `↑` / `↓`           | input history, or navigate any open menu                               |
 | `Ctrl+A` / `Ctrl+E` | start / end of line                                                    |
 | `Ctrl+U`            | clear the input line                                                   |
+| `Ctrl+F`            | open the native file picker to add attachments                         |
 
 ## Approvals & safety
 
@@ -950,6 +959,7 @@ Backend/web pieces of the device-auth flow live in:
 ```bash
 node test-ui.mjs           # in-process TUI test with a fake TTY
 node test-device-auth.mjs  # device-auth polling flow against a local mock
+npm run test:attachments   # attachment path detection and safe extraction limits
 ```
 
 - `test-ui.mjs` drives the real App (ink-testing-library technique): header,

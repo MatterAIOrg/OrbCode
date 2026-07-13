@@ -3,7 +3,13 @@ import * as path from "node:path"
 import { randomUUID } from "node:crypto"
 import type OpenAI from "openai"
 
+import {
+	type Attachment,
+	attachmentSummary,
+	formatAttachmentContext,
+} from "../attachments.js"
 import { REASONING_DETAILS_FIELD, type LLMClient } from "../api/llmClient.js"
+import { getModel } from "../api/models.js"
 import { createLLMClient } from "../api/provider.js"
 import { buildSystemPrompt } from "../prompts/system.js"
 import {
@@ -572,8 +578,16 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	/** Conversation history with internal markers stripped, ready for the model. */
 	private outgoingMessages(): OpenAI.Chat.ChatCompletionMessageParam[] {
 		return this.messages.map((message) =>
-			message.role === "user" && typeof message.content === "string"
-				? { ...message, content: stripUserQueryTags(message.content) }
+			message.role === "user"
+				? {
+						...message,
+						content:
+							typeof message.content === "string"
+								? stripUserQueryTags(message.content)
+								: message.content.map((part) =>
+										part.type === "text" ? { ...part, text: stripUserQueryTags(part.text) } : part,
+									),
+						}
 				: message,
 		)
 	}
@@ -590,10 +604,14 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 	}
 
-	async runTurn(userText: string): Promise<void> {
+	async runTurn(userText: string, attachments: Attachment[] = []): Promise<void> {
 		const { onEvent } = this.options.callbacks
 		this.abortController = new AbortController()
-		this.transcript.push({ kind: "user", text: userText })
+		this.transcript.push({
+			kind: "user",
+			text: userText,
+			...(attachments.length > 0 ? { attachments: attachments.map(attachmentSummary) } : {}),
+		})
 
 		await this.maybeFireSessionStart()
 
@@ -612,10 +630,21 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 
 		if (!this.title) {
-			this.title = userText.replace(/\s+/g, " ").trim().slice(0, 80)
+			this.title = (userText || attachments.map((attachment) => attachment.name).join(", "))
+				.replace(/\s+/g, " ")
+				.trim()
+				.slice(0, 80)
 		}
 
 		let userContent = `<user_query>\n${userText}\n</user_query>`
+		const attachmentContext = formatAttachmentContext(attachments)
+		if (attachmentContext) userContent = `${userContent}\n\n${attachmentContext}`
+		const imageAttachments = attachments.filter((attachment) => attachment.kind === "image")
+		if (imageAttachments.length > 0) {
+			userContent = `${userContent}\n\n<attached_images>\n${imageAttachments
+				.map((attachment) => `<attached_image name="${attachment.name.replace(/[\r\n"]/g, " ")}" />`)
+				.join("\n")}\n</attached_images>`
+		}
 		if (!this.firstMessageSent) {
 			userContent = `${this.buildEnvironmentDetails()}\n\n${userContent}`
 			this.firstMessageSent = true
@@ -630,7 +659,23 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		if (promptContext) {
 			userContent = `${userContent}\n\n${wrapHookContext("UserPromptSubmit", promptContext)}`
 		}
-		this.messages.push({ role: "user", content: userContent })
+		const supportedImages = getModel(this.options.modelId).supportsImages ? imageAttachments : []
+		if (supportedImages.length !== imageAttachments.length) {
+			onEvent({ type: "system", message: "The current model does not support image attachments.", isError: true })
+		}
+		this.messages.push({
+			role: "user",
+			content:
+				supportedImages.length > 0
+					? [
+							{ type: "text", text: userContent },
+							...supportedImages.map((attachment) => ({
+								type: "image_url" as const,
+								image_url: { url: attachment.dataUrl },
+							})),
+						]
+					: userContent,
+		})
 
 		try {
 			this.stopHookActive = false
