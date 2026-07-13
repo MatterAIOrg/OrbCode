@@ -311,12 +311,14 @@ type DistributiveOmit<T, K extends keyof T> = T extends unknown
 
 export function App({
   initialView,
+  initialAction,
   initialPrompt,
   initialSession,
   systemPromptOverride,
   updateCheck,
 }: {
   initialView?: "login" | "chat";
+  initialAction?: "resume";
   initialPrompt?: string;
   initialSession?: SessionData;
   /** Optional override replacing the default system prompt (from `-s`). */
@@ -723,6 +725,7 @@ export function App({
   const getAgent = useCallback((): Agent => {
     if (!agentRef.current) {
       agentRef.current = createAgent();
+      process.env.ORBCODE_LAST_SESSION_ID = agentRef.current.taskId;
     }
     return agentRef.current;
   }, [createAgent]);
@@ -732,6 +735,7 @@ export function App({
       setResumableSessions(null);
       const resumedAgent = createAgent(session);
       agentRef.current = resumedAgent;
+      process.env.ORBCODE_LAST_SESSION_ID = resumedAgent.taskId;
       resetTranscript();
       setTasks(session.todos ?? "");
       setTotalCost(session.totalCost ?? 0);
@@ -1275,6 +1279,7 @@ export function App({
     if (bootedRef.current) return;
     bootedRef.current = true;
     if (initialSession) handleResume(initialSession);
+    if (initialAction === "resume") handleCommand("/resume");
     // If this project ships untrusted hooks, ask before running anything; the
     // startup prompt waits until the user decides.
     const pending = getPendingProjectHooks(process.cwd());
@@ -1301,7 +1306,7 @@ export function App({
       });
     }
     refreshUsage();
-  }, [initialSession, initialPrompt, handleResume, handleSubmit, refreshUsage]);
+  }, [initialSession, initialAction, initialPrompt, handleResume, handleCommand, handleSubmit, refreshUsage]);
 
   // Resolve the npm version check after first paint so the TUI shows up
   // immediately and the upgrade banner fades in once we know the answer.

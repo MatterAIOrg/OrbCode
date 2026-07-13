@@ -114,6 +114,7 @@ Usage:
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
+  orbcode --resume        list previous sessions to resume
   orbcode --resume <id>   resume a previous session by id
   orbcode -s "<prompt>"   override the default system prompt (replaces it entirely;
                           accepts -s <text>, --system-prompt <text>, and
@@ -234,12 +235,21 @@ async function main(): Promise<void> {
 	}
 
 	let initialSession: SessionData | undefined
-	const resumeId = takeFlagValue(args, "resume") ?? takeFlagValue(args, "r")
-	if (resumeId) {
-		initialSession = loadSessionById(resumeId)
-		if (!initialSession) {
-			console.error(`Session "${resumeId}" not found.`)
-			process.exit(1)
+	let initialAction: "resume" | undefined
+	const resumeIndex = args.findIndex((a) => a === "--resume" || a === "-r")
+	if (resumeIndex !== -1) {
+		const value = args[resumeIndex + 1]
+		if (value && !value.startsWith("-")) {
+			const resumeId = value
+			args.splice(resumeIndex, 2)
+			initialSession = loadSessionById(resumeId)
+			if (!initialSession) {
+				console.error(`Session "${resumeId}" not found.`)
+				process.exit(1)
+			}
+		} else {
+			args.splice(resumeIndex, 1)
+			initialAction = "resume"
 		}
 	}
 
@@ -290,6 +300,9 @@ async function main(): Promise<void> {
 			process.stdout.write(DISABLE_MOUSE_TRACKING)
 			process.stdout.write("\x1b[?1049l")
 		}
+		if (process.env.ORBCODE_LAST_SESSION_ID) {
+			console.log(`\nSession saved. To resume: orbcode --resume ${process.env.ORBCODE_LAST_SESSION_ID}\n`)
+		}
 	}
 	process.on("exit", restoreTerminal)
 	const fullscreenStdout = isInteractiveTerminal
@@ -302,6 +315,7 @@ async function main(): Promise<void> {
 	render(
 		<App
 			initialView={initialView}
+			initialAction={initialAction}
 			initialPrompt={initialPrompt}
 			initialSession={initialSession}
 			systemPromptOverride={systemPromptOverride}
