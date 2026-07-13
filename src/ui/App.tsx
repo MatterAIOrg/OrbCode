@@ -364,6 +364,7 @@ export function App({
   const [exitConfirmationActive, setExitConfirmationActive] = useState(false);
   const [streamingReasoning, setStreamingReasoning] = useState("");
   const [streamingText, setStreamingText] = useState("");
+  const [inputBoxHeight, setInputBoxHeight] = useState(3);
   const [scrollOffset, setScrollOffset] = useState(0);
   const smoothScrollPendingRef = useRef(0);
   const smoothScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1451,7 +1452,10 @@ export function App({
     usage?.tieredUsage?.weekly ||
     usage?.tieredUsage?.monthly,
   );
-  let bottomControlsHeight = 4 + (hasUsageLine ? 1 : 0);
+  // InputBox reports its real height because multiline input and autocomplete
+  // popups make the bottom stack taller than the normal three-row prompt.
+  // StatusBar is one row, plus its optional usage row.
+  let bottomControlsHeight = inputBoxHeight + 1 + (hasUsageLine ? 1 : 0);
   if (queuedMessages.length > 0) {
     bottomControlsHeight +=
       2 + Math.min(5, queuedMessages.length) +
@@ -1479,15 +1483,32 @@ export function App({
   const streamingReasoningDisplay = streamingReasoning
     ? tailForHeight(streamingReasoning, 3, reasoningWrapWidth)
     : "";
+  // Do not lay out the entire accumulated response on every token. Keep only
+  // the live tail mounted; text-done commits the complete response to the
+  // virtualized transcript, so nothing is lost from history.
+  const streamingTextDisplay = streamingText
+    ? tailForHeight(
+        streamingText,
+        Math.max(1, contentHeight - 1),
+        Math.max(20, wrapWidth - 2),
+      )
+    : "";
   if (streamingReasoning) {
     dynamicHeight +=
       2 + wrapHeight(streamingReasoningDisplay, reasoningWrapWidth);
   }
-  if (streamingText) {
-    dynamicHeight += 1 + wrapHeight(`● ${streamingText}`, wrapWidth);
+  if (streamingTextDisplay) {
+    dynamicHeight += 1 + wrapHeight(`● ${streamingTextDisplay}`, wrapWidth);
   }
-  if (taskLines.length > 0)
-    dynamicHeight += 2 + Math.min(10, taskLines.length);
+  if (taskLines.length > 0) {
+    const taskWidth = Math.max(20, wrapWidth - 1);
+    dynamicHeight +=
+      2 +
+      taskLines
+        .slice(0, 10)
+        .reduce((height, line) => height + wrapHeight(line, taskWidth), 0) +
+      (taskLines.length > 10 ? 1 : 0);
+  }
   if (
     pendingApproval ||
     pendingFollowup ||
@@ -1615,11 +1636,11 @@ export function App({
                 </Box>
               </Box>
             )}
-            {streamingText && (
+            {streamingTextDisplay && (
               <Box marginTop={1}>
                 <Text>
                   <Text color={COLORS.primary}>● </Text>
-                  {streamingText}
+                  {streamingTextDisplay}
                 </Text>
               </Box>
             )}
@@ -1798,6 +1819,7 @@ export function App({
               width={wrapWidth}
               slashCommands={SLASH_COMMANDS}
               onSubmit={handleSubmit}
+              onHeightChange={setInputBoxHeight}
             />
             <StatusBar
               modelId={settings.model}
@@ -1856,10 +1878,11 @@ function tailForHeight(text: string, maxLines: number, width: number): string {
  * push the input box off-screen. */
 function estimateRowLines(row: Row, width: number): number {
   const w = Math.max(20, width);
-  function wrapped(text: string): number {
+  function wrapped(text: string, lineWidth = w): number {
+    const available = Math.max(1, lineWidth);
     return text.split("\n").reduce(
       (sum, line) =>
-        sum + Math.max(1, Math.ceil(Math.max(1, line.length) / w)),
+        sum + Math.max(1, Math.ceil(Math.max(1, line.length) / available)),
       0,
     );
   }
@@ -1903,15 +1926,26 @@ function estimateRowLines(row: Row, width: number): number {
     case "assistant":
       return 1 + wrapped(`● ${row.text}`);
     case "reasoning":
-      return row.expanded ? 2 + wrapped(row.text) : 2;
+      return row.expanded ? 2 + wrapped(row.text, w - 2) : 2;
     case "tool": {
       const heading = `${formatToolName(row.name)} ${row.summary}`;
       let h = 1 + wrapped(heading);
       if (row.diff) {
-        const diffLines = row.diff.split("\n").length;
-        h += 1 + Math.min(60, diffLines) + (diffLines > 60 ? 1 : 0);
+        // DiffView adds a stats row and an 8-ish-column number/type gutter.
+        // Hunk headers are structural and aren't rendered as their own rows.
+        const diffLines = row.diff
+          .split("\n")
+          .filter((line) => !line.startsWith("@@"));
+        const visible = diffLines.slice(0, 60);
+        h +=
+          1 +
+          visible.reduce(
+            (height, line) => height + wrapped(line, w - 10),
+            0,
+          ) +
+          (diffLines.length > 60 ? 1 : 0);
       } else if (row.resultPreview) {
-        h += wrapped(row.resultPreview);
+        h += wrapped(row.resultPreview, w - 2);
       }
       return h;
     }
@@ -1920,7 +1954,7 @@ function estimateRowLines(row: Row, width: number): number {
     case "error":
       return 1 + wrapped(`✗ ${row.text}`);
     case "completion":
-      return 4 + wrapped(row.text);
+      return 4 + wrapped(row.text, w - 4);
     default:
       return 1;
   }
