@@ -58,7 +58,7 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 			<Text bold color={COLORS.primary}>
 				{title}
 			</Text>
-			{windowStart > 0 && <Text dimColor>  ↑ {windowStart} more</Text>}
+			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
 			{visible.map((session, i) => {
 				const index = windowStart + i
 				const isSelected = index === selected
@@ -67,7 +67,7 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 					<Text key={session.id} color={isSelected ? COLORS.accent : undefined}>
 						{isSelected ? "❯ " : "  "}
 						{index + 1}. {session.title || "(untitled)"}
-						<Text dimColor>
+						<Text color={COLORS.dim}>
 							{" "}
 							· {relativeTime(session.updatedAt)} · {userTurns} message{userTurns === 1 ? "" : "s"}
 						</Text>
@@ -75,9 +75,9 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 				)
 			})}
 			{windowStart + VISIBLE_ROWS < sessions.length && (
-				<Text dimColor>  ↓ {sessions.length - windowStart - VISIBLE_ROWS} more</Text>
+				<Text color={COLORS.dim}>  ↓ {sessions.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text dimColor>↑/↓ select · enter resume · esc cancel</Text>
+			<Text color={COLORS.dim}>↑/↓ select · enter resume · esc cancel</Text>
 		</Box>
 	)
 }

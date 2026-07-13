@@ -103,11 +103,11 @@ export function LoginView({ onLogin }: LoginViewProps) {
 					<Box marginTop={1}>
 						<Spinner label="Waiting for authorization in your browser" />
 					</Box>
-					<Text dimColor>
+					<Text color={COLORS.dim}>
 						Approve the &quot;Authorize OrbCode CLI&quot; dialog at:
 					</Text>
-					<Text dimColor> {authorizeUrl}</Text>
-					<Text dimColor>Esc to cancel</Text>
+					<Text color={COLORS.dim}> {authorizeUrl}</Text>
+					<Text color={COLORS.dim}>Esc to cancel</Text>
 				</>
 			) : (
 				<Text>
@@ -117,7 +117,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
 			{phase === "starting" && <Text color={COLORS.thinking}>Contacting sign-in service…</Text>}
 			{phase === "verifying" && <Text color={COLORS.thinking}>Verifying…</Text>}
 			{error && <Text color={COLORS.error}>✗ {error}</Text>}
-			<Text dimColor>
+			<Text color={COLORS.dim}>
 				To use a token instead, set apiKey in ~/.orbcode/settings.json or the MATTERAI_TOKEN env var.
 			</Text>
 		</Box>

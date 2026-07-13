@@ -35,7 +35,7 @@ export function renderMarkdown(markdown: string): string {
 		}
 
 		if (inCodeBlock) {
-			out.push(chalk.dim("│ ") + chalk.hex("#CE9178")(line))
+			out.push(chalk.dim("│ ") + chalk.hex(COLORS.accent)(line))
 			continue
 		}
 

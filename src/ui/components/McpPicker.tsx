@@ -316,11 +316,11 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 				<Text bold color={COLORS.primary}>
 					MCP servers
 				</Text>
-				<Text dimColor>No MCP servers configured.</Text>
-				<Text dimColor>
+				<Text color={COLORS.dim}>No MCP servers configured.</Text>
+				<Text color={COLORS.dim}>
 					Add servers with: orbcode mcp add &lt;name&gt; &lt;command&gt; [args...]
 				</Text>
-				<Text dimColor>esc to close</Text>
+				<Text color={COLORS.dim}>esc to close</Text>
 			</Box>
 		)
 	}
@@ -343,7 +343,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 					{pendingConfirm.title}
 				</Text>
 				<Text>{pendingConfirm.body}</Text>
-				<Text dimColor>y confirm · n / esc cancel</Text>
+				<Text color={COLORS.dim}>y confirm · n / esc cancel</Text>
 			</Box>
 		)
 	}
@@ -356,7 +356,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 			<Text bold color={COLORS.primary}>
 				Manage MCP servers ({count})
 			</Text>
-			{windowStart > 0 && <Text dimColor>  ↑ {windowStart} more</Text>}
+			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
 			{visible.map((state, i) => {
 				const index = windowStart + i
 				const isSelected = index === selected && !actionMode
@@ -368,12 +368,12 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 						<Text color={statusColor(state)}>
 							{statusIcon(state)} {state.status}
 						</Text>
-						{state.toolCount > 0 && <Text dimColor> · {state.toolCount} tools</Text>}
+						{state.toolCount > 0 && <Text color={COLORS.dim}> · {state.toolCount} tools</Text>}
 					</Text>
 				)
 			})}
 			{windowStart + VISIBLE_ROWS < count && (
-				<Text dimColor>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
+				<Text color={COLORS.dim}>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
 			)}
 			{current && (
 				<DetailPanel
@@ -384,7 +384,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 					actionSelected={actionSelected}
 				/>
 			)}
-			<Text dimColor>
+			<Text color={COLORS.dim}>
 				{busy
 					? busyMessage
 					: actionMode
@@ -436,23 +436,23 @@ function DetailPanel({
 				{state.name} MCP Server
 			</Text>
 			<Text>
-				<Text dimColor>Status:          </Text>
+				<Text color={COLORS.dim}>Status:          </Text>
 				<Text color={statusColor(state)}>{statusIcon(state)} {state.status}</Text>
 			</Text>
 			<Text>
-				<Text dimColor>Auth:            </Text>
+				<Text color={COLORS.dim}>Auth:            </Text>
 				<Text color={isOAuth && !authenticated ? COLORS.error : isOAuth ? COLORS.success : COLORS.dim}>
 					{authText}
 				</Text>
 			</Text>
 			<Text>
-				<Text dimColor>URL:             </Text>
+				<Text color={COLORS.dim}>URL:             </Text>
 				{urlText}
 			</Text>
 			{configPath && (
 				<Text>
-					<Text dimColor>Config location: </Text>
-					<Text dimColor>{configPath}</Text>
+					<Text color={COLORS.dim}>Config location: </Text>
+					<Text color={COLORS.dim}>{configPath}</Text>
 				</Text>
 			)}
 			{state.detail && (

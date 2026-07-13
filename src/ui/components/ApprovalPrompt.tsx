@@ -44,7 +44,7 @@ export function ApprovalPrompt({ request, onDecision }: ApprovalPromptProps) {
 					<Text>{request.detail}</Text>
 				</Box>
 			)}
-			<Text dimColor>
+			<Text color={COLORS.dim}>
 				(y) yes · (n) no{!request.isDangerous && " · (a) always for this session"}
 			</Text>
 		</Box>

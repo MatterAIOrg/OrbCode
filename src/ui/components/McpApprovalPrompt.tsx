@@ -66,8 +66,8 @@ export function McpApprovalPrompt({ serverNames, onApprove }: McpApprovalPromptP
 			<Text bold color={COLORS.warning}>
 				{count} MCP server{count === 1 ? "" : "s"} found in .mcp.json
 			</Text>
-			<Text dimColor>Select any you wish to enable for this project.</Text>
-			{windowStart > 0 && <Text dimColor>  ↑ {windowStart} more</Text>}
+			<Text color={COLORS.dim}>Select any you wish to enable for this project.</Text>
+			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
 			{visible.map((name, i) => {
 				const index = windowStart + i
 				const isSelected = index === selected
@@ -80,9 +80,9 @@ export function McpApprovalPrompt({ serverNames, onApprove }: McpApprovalPromptP
 				)
 			})}
 			{windowStart + VISIBLE_ROWS < count && (
-				<Text dimColor>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
+				<Text color={COLORS.dim}>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text dimColor>space toggle · enter confirm · esc reject all</Text>
+			<Text color={COLORS.dim}>space toggle · enter confirm · esc reject all</Text>
 		</Box>
 	)
 }

@@ -70,8 +70,8 @@ export function LinkManager({ links, status, onAdd, onRemove, onClose }: LinkMan
 			<Text bold color={COLORS.primary}>
 				Linked repositories
 			</Text>
-			<Text dimColor>Repos linked here are shared with the agent so changes can be checked across them.</Text>
-			{links.length === 0 && <Text dimColor>  (none yet)</Text>}
+			<Text color={COLORS.dim}>Repos linked here are shared with the agent so changes can be checked across them.</Text>
+			{links.length === 0 && <Text color={COLORS.dim}>  (none yet)</Text>}
 			{links.map((link, index) => (
 				// truncate-start keeps the meaningful tail of long paths visible
 				// instead of wrapping them onto the next line.
@@ -93,8 +93,8 @@ export function LinkManager({ links, status, onAdd, onRemove, onClose }: LinkMan
 					<Text inverse> </Text>
 				</Text>
 			)}
-			{status && <Text dimColor>{status}</Text>}
-			<Text dimColor>↑/↓ select · enter add/remove · d remove · esc done</Text>
+			{status && <Text color={COLORS.dim}>{status}</Text>}
+			<Text color={COLORS.dim}>↑/↓ select · enter add/remove · d remove · esc done</Text>
 		</Box>
 	)
 }
