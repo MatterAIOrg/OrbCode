@@ -2,6 +2,13 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { Box, Text, useInput } from "ink"
 import chalk from "chalk"
 
+import {
+	type Attachment,
+	type SubmittedPrompt,
+	droppedAttachmentPaths,
+	parseAttachments,
+	pickAttachmentPaths,
+} from "../../attachments.js"
 import { COLORS } from "../../branding.js"
 import { walkFiles } from "../../tools/executors/listFiles.js"
 import { appendPromptHistory, loadPromptHistory } from "../../config/promptHistory.js"
@@ -16,7 +23,8 @@ interface InputBoxProps {
 	active: boolean
 	width: number
 	slashCommands: SlashCommand[]
-	onSubmit: (value: string) => void
+	onSubmit: (value: SubmittedPrompt) => void
+	supportsImages: boolean
 	/** Reports the complete rendered height, including autocomplete popups. */
 	onHeightChange?: (height: number) => void
 }
@@ -88,9 +96,15 @@ function findAtToken(value: string, cursor: number): { query: string; start: num
 	return { query: match[1], start: cursor - match[1].length - 1 }
 }
 
-export function InputBox({ active, width, slashCommands, onSubmit, onHeightChange }: InputBoxProps) {
+export function InputBox({ active, width, slashCommands, onSubmit, supportsImages, onHeightChange }: InputBoxProps) {
 	const [value, setValue] = useState("")
 	const [cursor, setCursor] = useState(0)
+	const [attachments, setAttachments] = useState<Attachment[]>([])
+	const attachmentsRef = useRef<Attachment[]>([])
+	const parseQueueRef = useRef<Promise<void>>(Promise.resolve())
+	const pendingParsesRef = useRef(0)
+	const composerGenerationRef = useRef(0)
+	const [attachmentMessage, setAttachmentMessage] = useState<{ text: string; isError: boolean } | null>(null)
 	// Terminal-style prompt history: persisted across sessions in ~/.orbcode.
 	const [history, setHistory] = useState<string[]>(() => loadPromptHistory())
 	const [historyIndex, setHistoryIndex] = useState(-1)
@@ -136,13 +150,97 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 
 	const submit = (text: string) => {
 		const trimmed = text.trim()
-		if (!trimmed) return
-		setHistory((h) => (h[h.length - 1] === trimmed ? h : [...h, trimmed]))
-		appendPromptHistory(trimmed)
+		if (trimmed === "/attach") {
+			setValue("")
+			setCursor(0)
+			setHistoryIndex(-1)
+			openAttachmentPicker()
+			return
+		}
+		if ((!trimmed && attachmentsRef.current.length === 0) || pendingParsesRef.current > 0) return
+		if (trimmed) {
+			setHistory((h) => (h[h.length - 1] === trimmed ? h : [...h, trimmed]))
+			appendPromptHistory(trimmed)
+		}
 		setHistoryIndex(-1)
 		setValue("")
 		setCursor(0)
-		onSubmit(trimmed)
+		const submittedAttachments = attachmentsRef.current
+		composerGenerationRef.current++
+		attachmentsRef.current = []
+		setAttachments([])
+		setAttachmentMessage(null)
+		onSubmit({ text: trimmed, attachments: submittedAttachments })
+	}
+
+	const clearComposer = () => {
+		composerGenerationRef.current++
+		setValue("")
+		setCursor(0)
+		attachmentsRef.current = []
+		setAttachments([])
+		setAttachmentMessage(null)
+		setHistoryIndex(-1)
+		setFileIndex(0)
+		setSlashIndex(0)
+		setDismissedValue(null)
+	}
+
+	const addDroppedAttachments = (filePaths: string[]) => {
+		const generation = composerGenerationRef.current
+		pendingParsesRef.current++
+		setAttachmentMessage({ text: "Reading attachments…", isError: false })
+		parseQueueRef.current = parseQueueRef.current
+			.then(async () => {
+				const result = await parseAttachments(filePaths, attachmentsRef.current)
+				if (generation !== composerGenerationRef.current) return
+				const accepted = supportsImages
+					? result.attachments
+					: result.attachments.filter((attachment) => attachment.kind !== "image")
+				const unsupportedImages = result.attachments.filter((attachment) => attachment.kind === "image")
+				if (accepted.length > 0) {
+					const next = [...attachmentsRef.current, ...accepted]
+					attachmentsRef.current = next
+					setAttachments(next)
+				}
+				const errors = [
+					...result.errors,
+					...unsupportedImages.map((attachment) => `${attachment.name}: the current model does not support images`),
+				]
+				setAttachmentMessage(
+					errors.length > 0
+						? { text: errors.join(" · "), isError: true }
+						: { text: `${accepted.length} attachment${accepted.length === 1 ? "" : "s"} added`, isError: false },
+				)
+			})
+			.catch((error: unknown) => {
+				if (generation !== composerGenerationRef.current) return
+				setAttachmentMessage({
+					text: error instanceof Error ? error.message : String(error),
+					isError: true,
+				})
+			})
+			.finally(() => {
+				pendingParsesRef.current--
+			})
+	}
+
+	const openAttachmentPicker = () => {
+		const generation = composerGenerationRef.current
+		setAttachmentMessage({ text: "Opening file picker…", isError: false })
+		void pickAttachmentPaths(process.cwd())
+			.then((filePaths) => {
+				if (generation !== composerGenerationRef.current) return
+				if (filePaths.length > 0) addDroppedAttachments(filePaths)
+				else setAttachmentMessage(null)
+			})
+			.catch((error: unknown) => {
+				if (generation !== composerGenerationRef.current) return
+				setAttachmentMessage({
+					text: error instanceof Error ? error.message : String(error),
+					isError: true,
+				})
+			})
 	}
 
 	const recallHistory = (index: number) => {
@@ -162,13 +260,8 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 	useInput(
 		(input, key) => {
 			if (isMouseInput(input)) return
-			if (key.escape && value.length > 0) {
-				setValue("")
-				setCursor(0)
-				setHistoryIndex(-1)
-				setFileIndex(0)
-				setSlashIndex(0)
-				setDismissedValue(null)
+			if (key.escape && (value.length > 0 || attachmentsRef.current.length > 0)) {
+				clearComposer()
 				return
 			}
 			// While actively browsing history, arrows keep navigating history even
@@ -255,6 +348,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 					setHistoryIndex(-1)
 					setValue((v) => v.slice(0, cursor - 1) + v.slice(cursor))
 					setCursor((c) => c - 1)
+				} else if (value.length === 0 && attachmentsRef.current.length > 0) {
+					const next = attachmentsRef.current.slice(0, -1)
+					attachmentsRef.current = next
+					setAttachments(next)
+					setAttachmentMessage(null)
 				}
 				return
 			}
@@ -272,10 +370,19 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 				setCursor(0)
 				return
 			}
+			if (key.ctrl && input === "f") {
+				openAttachmentPicker()
+				return
+			}
 			if (key.ctrl || key.meta || key.escape || key.tab) {
 				return
 			}
 			if (input) {
+				const droppedPaths = input.length > 1 ? droppedAttachmentPaths(input, process.cwd()) : []
+				if (droppedPaths.length > 0) {
+					addDroppedAttachments(droppedPaths)
+					return
+				}
 				// Multi-char chunks (paste) are inserted as-is. Newlines inside
 				// the chunk are literal newlines, not a submit signal — press
 				// Enter when you're ready to send.
@@ -306,7 +413,8 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 	)
 	const slashPopupHeight = slashMatches.length > 0 ? slashMatches.length + 3 : 0
 	const filePopupHeight = fileMatches.length > 0 ? fileMatches.length + 3 : 0
-	const renderedHeight = 2 + promptHeight + slashPopupHeight + filePopupHeight
+	const attachmentRows = attachments.length + (attachmentMessage ? 1 : 0)
+	const renderedHeight = 2 + promptHeight + attachmentRows + slashPopupHeight + filePopupHeight
 
 	// Parent viewport calculations must use the real bottom-stack height. A
 	// layout effect updates it before Ink paints the next frame, preventing a
@@ -377,11 +485,27 @@ export function InputBox({ active, width, slashCommands, onSubmit, onHeightChang
 				borderStyle="round"
 				borderColor={active ? COLORS.inputBorder : COLORS.inputBorderInactive}
 				paddingX={1}
+				flexDirection="column"
 			>
-				<Text color={COLORS.user} bold>
-					{"❯ "}
-				</Text>
-				{active ? <Text>{display}</Text> : <Text color={COLORS.dim}>{value || "waiting…"}</Text>}
+				{attachments.map((attachment) => {
+					const suffix = `${attachment.kind === "image" ? " · image" : ""}${attachment.truncated ? " · truncated" : ""}`
+					return (
+						<Text key={attachment.path} color={COLORS.dim}>
+							{fitText(`📎 ${attachment.name}${suffix}`, Math.max(1, width - 4))}
+						</Text>
+					)
+				})}
+				{attachmentMessage && (
+					<Text color={attachmentMessage.isError ? COLORS.error : COLORS.dim}>
+						{fitText(attachmentMessage.text, Math.max(1, width - 4))}
+					</Text>
+				)}
+				<Box>
+					<Text color={COLORS.user} bold>
+						{"❯ "}
+					</Text>
+					{active ? <Text>{display}</Text> : <Text color={COLORS.dim}>{value || "waiting…"}</Text>}
+				</Box>
 			</Box>
 		</Box>
 	)

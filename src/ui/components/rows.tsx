@@ -1,13 +1,14 @@
 import React from "react"
 import { Box, Text } from "ink"
 
+import type { AttachmentSummary } from "../../attachments.js"
 import { COLORS } from "../../branding.js"
 import { renderMarkdown } from "../markdown.js"
 import { Header } from "./Header.js"
 
 export type Row =
 	| { kind: "header"; id: string; cwd: string; modelName: string }
-	| { kind: "user"; id: string; text: string }
+	| { kind: "user"; id: string; text: string; attachments?: AttachmentSummary[] }
 	| { kind: "assistant"; id: string; text: string }
 	| { kind: "reasoning"; id: string; text: string; durationMs: number; expanded: boolean }
 	| {
@@ -160,11 +161,17 @@ export function formatDuration(durationMs: number): string {
 }
 
 /** Build a padded user block exactly as wide as the transcript. */
-export function formatUserBlock(text: string, width: number): string {
+export function formatUserBlock(text: string, width: number, attachments: AttachmentSummary[] = []): string {
 	const lineWidth = Math.max(1, width)
 	const paddingX = Math.min(2, Math.floor((lineWidth - 1) / 2))
 	const contentWidth = Math.max(1, lineWidth - paddingX * 2)
-	const sourceLines = (`❯ ${text}`).split("\n")
+	const attachmentLines = attachments.map(
+		(attachment) =>
+			`  📎 ${attachment.name}${attachment.kind === "image" ? " · image" : ""}${attachment.truncated ? " · truncated" : ""}`,
+	)
+	const sourceLines = [`❯ ${text || (attachments.length > 0 ? "Attached files" : "")}`, ...attachmentLines].flatMap(
+		(line) => line.split("\n"),
+	)
 	const blank = " ".repeat(lineWidth)
 	const output: string[] = [blank]
 	for (const sourceLine of sourceLines) {
@@ -197,7 +204,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 			return (
 				<Box marginTop={1}>
 					<Text color={COLORS.user}>
-						{formatUserBlock(row.text, width)}
+						{formatUserBlock(row.text, width, row.attachments)}
 					</Text>
 				</Box>
 			)

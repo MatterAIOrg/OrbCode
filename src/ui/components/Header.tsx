@@ -2,7 +2,7 @@ import * as os from "node:os"
 import React from "react"
 import { Box, Text } from "ink"
 
-import { COLORS, ORBITAL_MARK, PRODUCT_NAME, TAGLINE, VERSION } from "../../branding.js"
+import { COLORS, ORBITAL_COLORS, ORBITAL_MARK, PRODUCT_NAME, TAGLINE, VERSION } from "../../branding.js"
 
 const MARK_WIDTH = 13
 const META_LABEL_WIDTH = 11
@@ -24,10 +24,10 @@ function OrbitalMark() {
 						if (pixel === " ") return <Text key={index}>{run}</Text>
 						const color =
 							pixel === "o"
-								? COLORS.orbitalOuter
+								? ORBITAL_COLORS.outer
 								: pixel === "i"
-									? COLORS.orbitalInner
-									: COLORS.primary
+									? ORBITAL_COLORS.inner
+									: ORBITAL_COLORS.core
 						const glyph = row === 0 ? "▄" : row === ORBITAL_MARK.length - 1 ? "▀" : "█"
 						return <Text key={index} color={color}>{glyph.repeat(run.length)}</Text>
 					})}

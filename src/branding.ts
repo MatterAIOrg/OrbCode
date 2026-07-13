@@ -29,14 +29,20 @@ export const COLORS = {
   user: undefined,
   inputBorder: "gray",
   inputBorderInactive: "gray",
-  orbitalOuter: "cyan",
-  orbitalInner: "cyanBright",
+} as const;
+
+// Immutable company-logo colors from the OrbCode artwork. Keep these separate
+// from the terminal theme so light/dark palettes can never recolor the logo.
+export const ORBITAL_COLORS = {
+  outer: "#06E1E7",
+  inner: "#8BF4F7",
+  core: "#ffffff",
 } as const;
 
 /**
  * Terminal-sized interpretation of design/orbital.svg. Characters identify
  * its outer cyan field, inner orbit, and white core; Header maps them to
- * solid block cells using the source artwork's colors.
+ * solid block cells using the immutable source-artwork colors above.
  */
 export const ORBITAL_MARK = [
   "    ooooo",

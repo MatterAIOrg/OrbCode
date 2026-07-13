@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hardcoded background colors. Diff rows retain their original 5% alpha-blended
   backgrounds, with OrbCode green (`#3FA266`) and red (`#E34671`) used
   consistently across themes.
+- **The OrbCode company logo is isolated from terminal theming.** Its outer
+  cyan (`#06E1E7`), inner cyan (`#8BF4F7`), and white core (`#ffffff`) remain
+  identical in every terminal theme.
 
 ## [0.4.3] - 2026-07-13
 

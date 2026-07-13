@@ -5,6 +5,7 @@ import {
 	streamText,
 	tool,
 	type AssistantContent,
+	type ImagePart,
 	type LanguageModel,
 	type LanguageModelUsage,
 	type ModelMessage,
@@ -203,9 +204,24 @@ function toModelMessages(
 	const out: ModelMessage[] = []
 	for (const message of messages) {
 		switch (message.role) {
-			case "user":
-				out.push({ role: "user", content: contentToText(message.content) })
+			case "user": {
+				if (typeof message.content === "string") {
+					out.push({ role: "user", content: message.content })
+					break
+				}
+				const parts: Array<TextPart | ImagePart> = []
+				for (const part of message.content) {
+					if (part.type === "text") {
+						parts.push({ type: "text", text: part.text })
+					} else if (part.type === "image_url") {
+						const url = part.image_url.url
+						const mediaType = /^data:([^;,]+)/.exec(url)?.[1]
+						parts.push({ type: "image", image: new URL(url), ...(mediaType ? { mediaType } : {}) })
+					}
+				}
+				out.push({ role: "user", content: parts })
 				break
+			}
 			case "assistant": {
 				const parts: Array<ReasoningPart | TextPart | ToolCallPart> = []
 				if (includeReasoning) parts.push(...storedReasoningParts(message))
