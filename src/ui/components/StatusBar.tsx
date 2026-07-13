@@ -16,6 +16,12 @@ const MODE_LABELS: Record<ApprovalMode, string> = {
   auto: "⏵⏵⏵ auto-approve on",
 };
 
+const MODE_COLORS: Record<ApprovalMode, string> = {
+  ask: COLORS.primary,
+  edits: COLORS.warning,
+  auto: COLORS.success,
+};
+
 function formatRelativeTime(isoStr?: string): string {
   if (!isoStr) return "on session start";
   const now = Date.now();
@@ -40,6 +46,7 @@ interface StatusBarProps {
   state: string;
   approvalMode: ApprovalMode;
   busy: boolean;
+  exitConfirmationActive: boolean;
   title?: string;
   plan?: string;
   usagePercentage?: number;
@@ -88,6 +95,7 @@ export function StatusBar({
   state,
   approvalMode,
   busy,
+  exitConfirmationActive,
   title,
   plan: _plan,
   usagePercentage: _usagePercentage,
@@ -102,22 +110,27 @@ export function StatusBar({
   return (
     <Box flexDirection="column">
       <Box justifyContent="space-between">
-        <Text dimColor>
-          <Text color={approvalMode === "ask" ? undefined : COLORS.warning}>
-            {MODE_LABELS[approvalMode]}
+        {exitConfirmationActive ? (
+          <Text color={COLORS.warning} bold wrap="truncate">
+            Press Ctrl+D again to exit
           </Text>
-          {" (shift+tab to cycle)"}
-          {busy && " · esc to interrupt"}
-          {state ? <Text color={COLORS.thinking}> · {state}</Text> : null}
-        </Text>
-        <Text dimColor>
+        ) : (
+          <Text color={COLORS.dim} wrap="truncate">
+            <Text color={MODE_COLORS[approvalMode]} bold>
+              {MODE_LABELS[approvalMode]}
+            </Text>
+            {" (shift+tab to cycle)"}
+            {busy && " · esc to interrupt"}
+          </Text>
+        )}
+        <Text color={COLORS.dim} wrap="truncate">
           {title ? `${truncate(title, 32)} · ` : ""}
           {model.name} · ctx {contextTokens.toLocaleString()} ({contextPct}%)
         </Text>
       </Box>
       {usageLine && (
         <Box justifyContent="flex-end">
-          <Text dimColor>{usageLine}</Text>
+          <Text color={COLORS.dim} wrap="truncate">{usageLine}</Text>
         </Box>
       )}
     </Box>

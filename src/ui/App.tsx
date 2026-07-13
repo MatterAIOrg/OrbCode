@@ -9,7 +9,13 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import open from "open";
 import * as path from "node:path";
 
-import { COLORS, VERSION } from "../branding.js";
+import {
+  COLORS,
+  ORBITAL_MARK,
+  PRODUCT_NAME,
+  TAGLINE,
+  VERSION,
+} from "../branding.js";
 import {
   BUILTIN_AXON_MODELS,
   getModel,
@@ -53,8 +59,14 @@ import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
-import { RowView, type Row } from "./components/rows.js";
+import {
+  formatToolName,
+  formatUserBlock,
+  RowView,
+  type Row,
+} from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
+import { isMouseInput, mouseScrollDelta } from "./terminal.js";
 import {
   addLink,
   loadLinks,
@@ -117,6 +129,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/version", description: "show the OrbCode CLI version" },
   { name: "/exit", description: "quit OrbCode CLI" },
 ];
+
+const WHEEL_SCROLL_LINES = 3;
+const SCROLL_FRAME_MS = 32;
+const SCROLL_MAX_PENDING_LINES = 24;
+const EXIT_CONFIRM_TIMEOUT_MS = 3000;
+const INTRO_TOP_MARGIN = 2;
 
 function setTerminalTitle(title: string): void {
   if (process.stdout.isTTY) {
@@ -308,8 +326,23 @@ export function App({
 }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const termRows = stdout?.rows ?? 24;
-  const termCols = stdout?.columns ?? 80;
+  // A frame exactly as tall as the real terminal makes Ink use its
+  // clear-and-redraw path instead of log-update's newline-based rendering.
+  // Keep these values tied to the real stream so resize cannot break that
+  // invariant or move the prompt out of the viewport.
+  const [termRows, setTermRows] = useState(() => stdout?.rows ?? 24);
+  const [termCols, setTermCols] = useState(() => stdout?.columns ?? 80);
+
+  useEffect(() => {
+    const onResize = () => {
+      setTermRows(stdout?.rows ?? 24);
+      setTermCols(stdout?.columns ?? 80);
+    };
+    // Ink also listens for resize. Run our state update first so it never
+    // redraws an old, taller frame into an already-shrunken terminal.
+    stdout?.prependListener("resize", onResize);
+    return () => { stdout?.off("resize", onResize); };
+  }, [stdout]);
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
     loadSettings(),
   );
@@ -328,8 +361,14 @@ export function App({
   ]);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Thinking");
+  const [exitConfirmationActive, setExitConfirmationActive] = useState(false);
   const [streamingReasoning, setStreamingReasoning] = useState("");
   const [streamingText, setStreamingText] = useState("");
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const smoothScrollPendingRef = useRef(0);
+  const smoothScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [pendingApproval, setPendingApproval] =
     useState<PendingApproval | null>(null);
   const [pendingFollowup, setPendingFollowup] =
@@ -412,6 +451,10 @@ export function App({
   const deferredPromptRef = useRef<string | null>(null);
   // Guards endAndExit against double-invocation (Ctrl+D spam).
   const exitingRef = useRef(false);
+  const exitConfirmationRef = useRef(false);
+  const exitConfirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   // Mirror of the `-s` override so a fresh agent (created mid-session via
   // /new or /resume) keeps the override instead of falling back to default.
   const systemPromptOverrideRef = useRef<string | undefined>(systemPromptOverride);
@@ -434,6 +477,55 @@ export function App({
     setQueuedMessages([]);
   }, []);
 
+  const scrollTranscriptBy = useCallback((lines: number) => {
+    setScrollOffset((current) => Math.max(0, current + lines));
+  }, []);
+
+  const flushWheelScroll = useCallback(() => {
+    const pending = smoothScrollPendingRef.current;
+    smoothScrollPendingRef.current = 0;
+    if (pending !== 0) scrollTranscriptBy(pending);
+
+    // Ink paints at roughly 30 fps. Hold further wheel events until its next
+    // frame, then apply all of them in one state/layout update.
+    smoothScrollTimerRef.current = setTimeout(() => {
+      smoothScrollTimerRef.current = null;
+      if (smoothScrollPendingRef.current !== 0) flushWheelScroll();
+    }, SCROLL_FRAME_MS);
+  }, [scrollTranscriptBy]);
+
+  const queueSmoothScroll = useCallback(
+    (lines: number) => {
+      const pending = smoothScrollPendingRef.current;
+      // A direction reversal should respond immediately instead of first
+      // draining momentum left over from the previous gesture.
+      const next =
+        pending !== 0 && Math.sign(pending) !== Math.sign(lines)
+          ? lines
+          : pending + lines;
+      smoothScrollPendingRef.current = Math.max(
+        -SCROLL_MAX_PENDING_LINES,
+        Math.min(SCROLL_MAX_PENDING_LINES, next),
+      );
+      if (smoothScrollTimerRef.current === null) {
+        flushWheelScroll();
+      }
+    },
+    [flushWheelScroll],
+  );
+
+  useEffect(
+    () => () => {
+      if (smoothScrollTimerRef.current !== null) {
+        clearTimeout(smoothScrollTimerRef.current);
+      }
+      if (exitConfirmationTimerRef.current !== null) {
+        clearTimeout(exitConfirmationTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const maybeFetchTitle = useCallback(() => {
     const agent = agentRef.current;
     if (!agent || titleTaskRef.current === agent.taskId) return;
@@ -453,12 +545,12 @@ export function App({
     setRows((prev) => [...prev, { ...row, id: rowId() } as Row]);
   }, []);
 
-  // Wipe the visible transcript and remount <Static> with just the header —
-  // a clean slate for /clear, /new and /resume.
+  // Wipe the visible transcript — a clean slate for /clear, /new and /resume.
+  // No manual screen clear is needed because the root always renders one
+  // complete terminal-height frame.
   const resetTranscript = useCallback(() => {
-    if (process.stdout.isTTY) {
-      process.stdout.write("\x1b[2J\x1b[H");
-    }
+    smoothScrollPendingRef.current = 0;
+    setScrollOffset(0);
     setRows([
       {
         kind: "header",
@@ -1001,6 +1093,8 @@ export function App({
 
   const handleSubmit = useCallback(
     (value: string) => {
+      smoothScrollPendingRef.current = 0;
+      setScrollOffset(0);
       if (value.startsWith("/")) {
         handleCommand(value);
         return;
@@ -1224,11 +1318,45 @@ export function App({
   }, [updateCheck]);
 
   useInput((input, key) => {
-    // Ctrl+D quits from any view (chat, login, busy, picker, approval,
-    // followup). InputBox swallows other Ctrl-combos, but this hook is a
-    // sibling of InputBox's hook, so it still sees the key.
+    const wheelDelta = mouseScrollDelta(input);
+    if (wheelDelta !== 0) {
+      if (view === "chat") {
+        queueSmoothScroll(wheelDelta * WHEEL_SCROLL_LINES);
+      }
+      return;
+    }
+    if (isMouseInput(input)) return;
+    if (view === "chat" && key.pageUp) {
+      smoothScrollPendingRef.current = 0;
+      scrollTranscriptBy(Math.max(1, contentHeight - 2));
+      return;
+    }
+    if (view === "chat" && key.pageDown) {
+      smoothScrollPendingRef.current = 0;
+      scrollTranscriptBy(-Math.max(1, contentHeight - 2));
+      return;
+    }
+    // Require two presses so an accidental Ctrl+D cannot discard the session.
+    // The ref makes rapid repeated presses reliable before React re-renders.
     if (key.ctrl && input === "d") {
-      endAndExit("prompt_input_exit");
+      if (exitConfirmationRef.current) {
+        exitConfirmationRef.current = false;
+        setExitConfirmationActive(false);
+        if (exitConfirmationTimerRef.current !== null) {
+          clearTimeout(exitConfirmationTimerRef.current);
+          exitConfirmationTimerRef.current = null;
+        }
+        endAndExit("prompt_input_exit");
+      } else {
+        exitConfirmationRef.current = true;
+        setExitConfirmationActive(true);
+        exitConfirmationTimerRef.current = setTimeout(() => {
+          exitConfirmationRef.current = false;
+          exitConfirmationTimerRef.current = null;
+          setExitConfirmationActive(false);
+        }, EXIT_CONFIRM_TIMEOUT_MS);
+        exitConfirmationTimerRef.current.unref?.();
+      }
       return;
     }
     if (key.escape && busy && !pendingApproval && !pendingFollowup) {
@@ -1258,15 +1386,13 @@ export function App({
       const expanded = !expandReasoningRef.current;
       expandReasoningRef.current = expanded;
       // Re-render the whole transcript (including past thinking) with the
-      // new expansion state: clear the screen and remount <Static>.
+      // new expansion state.
       setRows((prev) =>
         prev.map((row) =>
           row.kind === "reasoning" ? { ...row, expanded } : row,
         ),
       );
-      if (process.stdout.isTTY) {
-        process.stdout.write("\x1b[2J\x1b[H");
-      }
+      // The terminal adapter replaces the retained screen rows in place.
     }
   });
 
@@ -1319,12 +1445,51 @@ export function App({
   // only show the rows that fit above the pinned input box + status bar.
   // This keeps the input box always at the bottom of the terminal.
 
-  // Height of the fixed bottom chrome (input box border + text + status bar +
-  // margins). Intentionally slightly overestimated so we never push the
-  // input box off-screen.
-  let bottomHeight = 8;
-  if (queuedMessages.length > 0)
-    bottomHeight += 2 + Math.min(5, queuedMessages.length);
+  // This is only used for scroll-range/page-size calculations. Layout itself
+  // is handled by flexbox below: the transcript shrinks while this bottom
+  // region never does, which is what actually pins the prompt to the bottom.
+  const hasUsageLine = Boolean(
+    usage?.tieredUsage?.fiveHour ||
+    usage?.tieredUsage?.weekly ||
+    usage?.tieredUsage?.monthly,
+  );
+  let bottomControlsHeight = 4 + (hasUsageLine ? 1 : 0);
+  if (queuedMessages.length > 0) {
+    bottomControlsHeight +=
+      2 + Math.min(5, queuedMessages.length) +
+      (queuedMessages.length > 5 ? 1 : 0);
+  }
+
+  const contentHeight = Math.max(1, termRows - bottomControlsHeight);
+  const wrapWidth = Math.max(20, termCols - 4);
+
+  const rowLayout = useMemo(() => {
+    let top = 0;
+    const items = rows.map((row) => {
+      const height = Math.max(1, estimateRowLines(row, wrapWidth));
+      const item = { row, top, bottom: top + height };
+      top += height;
+      return item;
+    });
+    return { items, height: top };
+  }, [rows, wrapWidth]);
+  const rowsHeight = rowLayout.height;
+
+  let dynamicHeight = 0;
+  if (updateInfo?.updateAvailable && updateInfo.latest) dynamicHeight += 6;
+  const reasoningWrapWidth = Math.max(20, wrapWidth - 2);
+  const streamingReasoningDisplay = streamingReasoning
+    ? tailForHeight(streamingReasoning, 3, reasoningWrapWidth)
+    : "";
+  if (streamingReasoning) {
+    dynamicHeight +=
+      2 + wrapHeight(streamingReasoningDisplay, reasoningWrapWidth);
+  }
+  if (streamingText) {
+    dynamicHeight += 1 + wrapHeight(`● ${streamingText}`, wrapWidth);
+  }
+  if (taskLines.length > 0)
+    dynamicHeight += 2 + Math.min(10, taskLines.length);
   if (
     pendingApproval ||
     pendingFollowup ||
@@ -1337,273 +1502,302 @@ export function App({
     taskPickerSessions ||
     linkManagerOpen
   )
-    bottomHeight += 10;
+    dynamicHeight += 10;
+  if (busy && !streamingText && !streamingReasoning) dynamicHeight += 2;
 
-  // Height of the middle dynamic elements (between rows and input box).
-  let middleHeight = 0;
-  if (streamingReasoning) middleHeight += 4;
-  if (taskLines.length > 0)
-    middleHeight += 1 + Math.min(10, taskLines.length);
-  if (busy && !streamingText && !streamingReasoning) middleHeight += 1;
-  if (updateInfo?.updateAvailable && updateInfo.latest) middleHeight += 4;
+  const transcriptHeight = Math.max(1, rowsHeight + dynamicHeight);
+  const maxScrollOffset = Math.max(0, transcriptHeight - contentHeight);
+  const effectiveScrollOffset = Math.min(scrollOffset, maxScrollOffset);
+  const introHeaderOnly = rows.length === 1 && rows[0]?.kind === "header";
+  const transcriptMarginTop = introHeaderOnly
+    ? INTRO_TOP_MARGIN
+    : transcriptHeight <= contentHeight
+      ? contentHeight - transcriptHeight
+      : -(maxScrollOffset - effectiveScrollOffset);
 
-  // Available height for committed rows + streaming text.
-  const availableHeight = Math.max(3, termRows - bottomHeight - middleHeight);
-
-  // Estimate how many terminal lines a row will occupy.
-  const wrapWidth = Math.max(20, termCols - 4);
-  const visibleRows = useMemo(() => {
-    let used = 0;
-    let start = rows.length;
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const h = estimateRowLines(rows[i], wrapWidth);
-      if (used + h > availableHeight) break;
-      used += h;
-      start = i;
+  const viewportTop =
+    !introHeaderOnly && transcriptHeight > contentHeight
+      ? maxScrollOffset - effectiveScrollOffset
+      : 0;
+  const virtualRows = useMemo(() => {
+    const items = rowLayout.items;
+    if (items.length === 0) {
+      return { rows: [] as Row[], startY: 0, endY: 0 };
     }
-    return rows.slice(start);
-  }, [rows, availableHeight, wrapWidth]);
+    if (introHeaderOnly || transcriptHeight <= contentHeight) {
+      return {
+        rows: items.map((item) => item.row),
+        startY: 0,
+        endY: rowsHeight,
+      };
+    }
 
-  // Cap streaming text to the space left after committed rows.
-  const rowsHeight = useMemo(
-    () => visibleRows.reduce((s, r) => s + estimateRowLines(r, wrapWidth), 0),
-    [visibleRows, wrapWidth],
-  );
-  const streamingMaxLines = Math.max(3, availableHeight - rowsHeight);
-  const streamingDisplay = streamingText
-    ? tailForHeight(streamingText, streamingMaxLines, wrapWidth)
-    : "";
-  const streamingReasoningDisplay = streamingReasoning
-    ? tailForHeight(streamingReasoning, 3, wrapWidth)
-    : "";
+    // Keep a full viewport mounted on either side. The overscan hides small
+    // differences between estimated wrapped heights and Yoga's final layout.
+    const from = Math.max(0, viewportTop - contentHeight);
+    const to = Math.min(rowsHeight, viewportTop + contentHeight * 2);
 
-  // Spacer to push the input box to the bottom when content is short.
-  const streamingHeight = streamingDisplay
-    ? Math.min(streamingMaxLines, wrapHeight(streamingDisplay, wrapWidth))
-    : 0;
-  const spacerHeight = Math.max(
-    0,
-    availableHeight - rowsHeight - streamingHeight,
-  );
+    let low = 0;
+    let high = items.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (items[mid]!.bottom <= from) low = mid + 1;
+      else high = mid;
+    }
+    const start = low;
 
+    low = start;
+    high = items.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (items[mid]!.top < to) low = mid + 1;
+      else high = mid;
+    }
+    const end = low;
+    const startY = items[start]?.top ?? rowsHeight;
+    const endY = end > start ? items[end - 1]!.bottom : startY;
+
+    return {
+      rows: items.slice(start, end).map((item) => item.row),
+      startY,
+      endY,
+    };
+  }, [contentHeight, introHeaderOnly, rowLayout, rowsHeight, transcriptHeight, viewportTop]);
+  const virtualTranscriptMarginTop =
+    transcriptMarginTop + virtualRows.startY;
+  const rowBottomSpacerHeight = Math.max(0, rowsHeight - virtualRows.endY);
+
+  useEffect(() => {
+    setScrollOffset((current) => Math.min(current, maxScrollOffset));
+  }, [maxScrollOffset]);
+
+  // The root is exactly one terminal tall. Ink sees outputHeight >=
+  // stdout.rows and clears/redraws in place on every frame, so no render can
+  // append to terminal scrollback. Only the transcript is clipped/translated;
+  // the prompt and status region never shrink or leave the viewport.
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={termCols} height={termRows} paddingX={2} overflow="hidden">
       {view === "login" ? (
         <LoginSection onLogin={handleLogin} />
       ) : (
-        <Box flexDirection="column">
-          {visibleRows.map((row) => (
-            <RowView key={row.id} row={row} />
-          ))}
-          {updateInfo?.updateAvailable && updateInfo.latest && (
-            <Box
-              marginTop={1}
-              flexDirection="column"
-              borderStyle="round"
-              borderColor={COLORS.warning}
-              paddingX={2}
-              alignSelf="flex-start"
-            >
-              <Text color={COLORS.warning} bold>
-                ↑ Update available: v{updateInfo.current} → v{updateInfo.latest}
-              </Text>
-              <Text>
-                Run <Text color={COLORS.accent}>orbcode update</Text> to install
-                the latest version, then relaunch.
-              </Text>
-            </Box>
-          )}
-          {streamingReasoning && (
-            <Box flexDirection="column" marginTop={1}>
-              <Text color={COLORS.thinking} italic>
-                ✦ Thinking…
-              </Text>
-              <Box paddingLeft={2}>
-                <Text dimColor italic>
-                  {streamingReasoningDisplay}
-                </Text>
-              </Box>
-            </Box>
-          )}
-          {streamingDisplay && (
-            <Box marginTop={1}>
-              <Text>
-                <Text color={COLORS.primary}>● </Text>
-                {streamingDisplay}
-              </Text>
-            </Box>
-          )}
-          {spacerHeight > 0 && <Box height={spacerHeight} />}
-          {taskLines.length > 0 && (
-            <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-              <Text dimColor bold>
-                Tasks
-              </Text>
-              {taskLines.slice(0, 10).map((line, i) => (
-                <Text key={i} dimColor={/^[-*]\s*\[x\]/i.test(line)}>
-                  {line
-                    .replace(/^[-*]\s*\[x\]/i, "  ■")
-                    .replace(/^[-*]\s*\[-\]/, "  ◧")
-                    .replace(/^[-*]\s*\[ \]/, "  □")}
-                </Text>
+        <Box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
+          <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+            <Box flexDirection="column" flexShrink={0} marginTop={virtualTranscriptMarginTop}>
+              {virtualRows.rows.map((row) => (
+                <RowView key={row.id} row={row} width={wrapWidth} />
               ))}
-              {taskLines.length > 10 && (
-                <Text dimColor> … {taskLines.length - 10} more</Text>
+              {rowBottomSpacerHeight > 0 && (
+                <Box height={rowBottomSpacerHeight} flexShrink={0} />
               )}
-            </Box>
-          )}
-          {modelPickerOpen && (
-            <Box marginTop={1}>
-              <ModelPicker
-                currentId={settings.model}
-                onSelect={(modelId) => {
-                  setModelPickerOpen(false);
-                  switchModel(modelId);
-                }}
-                onCancel={() => setModelPickerOpen(false)}
-              />
-            </Box>
-          )}
-          {resumableSessions && (
-            <Box marginTop={1}>
-              <SessionPicker
-                sessions={resumableSessions}
-                onSelect={handleResume}
-                onCancel={() => setResumableSessions(null)}
-              />
-            </Box>
-          )}
-          {taskPickerSessions && (
-            <Box marginTop={1}>
-              <SessionPicker
-                sessions={taskPickerSessions}
-                title="Reference a previous task"
-                onSelect={handleTaskSelect}
-                onCancel={() => setTaskPickerSessions(null)}
-              />
-            </Box>
-          )}
-          {linkManagerOpen && (
-            <Box marginTop={1}>
-              <LinkManager
-                links={links}
-                status={linkStatus}
-                onAdd={(input) => {
-                  const result = addLink(process.cwd(), input);
-                  setLinkStatus(result.message);
-                  if (result.ok) setLinks(loadLinks(process.cwd()));
-                }}
-                onRemove={(link) => {
-                  removeLink(process.cwd(), link.path);
-                  setLinks(loadLinks(process.cwd()));
-                  setLinkStatus(`Unlinked ${path.basename(link.path)}`);
-                }}
-                onClose={() => setLinkManagerOpen(false)}
-              />
-            </Box>
-          )}
-          {pendingHookTrust && (
-            <Box marginTop={1}>
-              <HookTrustPrompt
-                cwd={process.cwd()}
-                commands={pendingHookTrust.commands}
-                onDecision={resolveHookTrust}
-              />
-            </Box>
-          )}
-          {pendingMcpApproval && (
-            <Box marginTop={1}>
-              <McpApprovalPrompt
-                serverNames={pendingMcpApproval}
-                onApprove={resolveMcpApproval}
-              />
-            </Box>
-          )}
-          {mcpPickerOpen && mcpManagerRef.current && (
-            <Box marginTop={1}>
-              <McpPicker
-                manager={mcpManagerRef.current}
-                onChanged={() => {
-                  const m = mcpManagerRef.current;
-                  if (m)
-                    saveMcpApproval(
-                      process.cwd(),
-                      m.getEnabled(),
-                      m.getDisabled(),
-                    );
-                }}
-                onCancel={() => setMcpPickerOpen(false)}
-                onDeleted={handleMcpServerDeleted}
-              />
-            </Box>
-          )}
-          {mcpMigrationEntries && (
-            <Box marginTop={1}>
-              <McpMigrationPicker
-                entries={mcpMigrationEntries}
-                onCancel={() => setMcpMigrationEntries(null)}
-                onConfirm={(selected) => {
-                  setMcpMigrationEntries(null);
-                  resolveMcpMigration(selected);
-                }}
-              />
-            </Box>
-          )}
-          {pendingApproval && (
-            <Box marginTop={1}>
-              <ApprovalPrompt
-                request={pendingApproval.request}
-                onDecision={(decision) => {
-                  pendingApproval.resolve(decision);
-                  setPendingApproval(null);
-                }}
-              />
-            </Box>
-          )}
-          {pendingFollowup && (
-            <Box marginTop={1}>
-              <FollowupPrompt
-                question={pendingFollowup.question}
-                suggestions={pendingFollowup.suggestions}
-                onAnswer={(answer) => {
-                  pushRow({ kind: "user", text: answer });
-                  pendingFollowup.resolve(answer);
-                  setPendingFollowup(null);
-                }}
-              />
-            </Box>
-          )}
-          {busy &&
-            !pendingApproval &&
-            !pendingFollowup &&
-            !pendingHookTrust &&
-            !pendingMcpApproval &&
-            !mcpPickerOpen &&
-            !mcpMigrationEntries &&
-            !streamingText &&
-            !streamingReasoning && (
-              <Box marginTop={1}>
-                <Spinner label={busyLabel} />
+            {updateInfo?.updateAvailable && updateInfo.latest && (
+              <Box
+                marginTop={1}
+                flexDirection="column"
+                borderStyle="round"
+                borderColor={COLORS.warning}
+                paddingX={2}
+                alignSelf="flex-start"
+              >
+                <Text color={COLORS.warning} bold>
+                  ↑ Update available: v{updateInfo.current} → v{updateInfo.latest}
+                </Text>
+                <Text>
+                  Run <Text color={COLORS.accent}>orbcode update</Text> to install
+                  the latest version, then relaunch.
+                </Text>
               </Box>
             )}
-          <Box marginTop={1} flexDirection="column">
+            {streamingReasoning && (
+              <Box flexDirection="column" marginTop={1}>
+                <Spinner label="Thinking" />
+                <Box paddingLeft={2}>
+                  <Text color={COLORS.dim} italic>
+                    {streamingReasoningDisplay}
+                  </Text>
+                </Box>
+              </Box>
+            )}
+            {streamingText && (
+              <Box marginTop={1}>
+                <Text>
+                  <Text color={COLORS.primary}>● </Text>
+                  {streamingText}
+                </Text>
+              </Box>
+            )}
+            {taskLines.length > 0 && (
+              <Box flexDirection="column" marginTop={1} paddingLeft={1}>
+                <Text color={COLORS.dim} bold>
+                  Tasks
+                </Text>
+                {taskLines.slice(0, 10).map((line, i) => (
+                  <Text key={i} color={/^[-*]\s*\[x\]/i.test(line) ? COLORS.dim : COLORS.primary}>
+                    {line
+                      .replace(/^[-*]\s*\[x\]/i, "  ■")
+                      .replace(/^[-*]\s*\[-\]/, "  ◧")
+                      .replace(/^[-*]\s*\[ \]/, "  □")}
+                  </Text>
+                ))}
+                {taskLines.length > 10 && (
+                  <Text color={COLORS.dim}> … {taskLines.length - 10} more</Text>
+                )}
+              </Box>
+            )}
+            {modelPickerOpen && (
+              <Box marginTop={1}>
+                <ModelPicker
+                  currentId={settings.model}
+                  onSelect={(modelId) => {
+                    setModelPickerOpen(false);
+                    switchModel(modelId);
+                  }}
+                  onCancel={() => setModelPickerOpen(false)}
+                />
+              </Box>
+            )}
+            {resumableSessions && (
+              <Box marginTop={1}>
+                <SessionPicker
+                  sessions={resumableSessions}
+                  onSelect={handleResume}
+                  onCancel={() => setResumableSessions(null)}
+                />
+              </Box>
+            )}
+            {taskPickerSessions && (
+              <Box marginTop={1}>
+                <SessionPicker
+                  sessions={taskPickerSessions}
+                  title="Reference a previous task"
+                  onSelect={handleTaskSelect}
+                  onCancel={() => setTaskPickerSessions(null)}
+                />
+              </Box>
+            )}
+            {linkManagerOpen && (
+              <Box marginTop={1}>
+                <LinkManager
+                  links={links}
+                  status={linkStatus}
+                  onAdd={(input) => {
+                    const result = addLink(process.cwd(), input);
+                    setLinkStatus(result.message);
+                    if (result.ok) setLinks(loadLinks(process.cwd()));
+                  }}
+                  onRemove={(link) => {
+                    removeLink(process.cwd(), link.path);
+                    setLinks(loadLinks(process.cwd()));
+                    setLinkStatus(`Unlinked ${path.basename(link.path)}`);
+                  }}
+                  onClose={() => setLinkManagerOpen(false)}
+                />
+              </Box>
+            )}
+            {pendingHookTrust && (
+              <Box marginTop={1}>
+                <HookTrustPrompt
+                  cwd={process.cwd()}
+                  commands={pendingHookTrust.commands}
+                  onDecision={resolveHookTrust}
+                />
+              </Box>
+            )}
+            {pendingMcpApproval && (
+              <Box marginTop={1}>
+                <McpApprovalPrompt
+                  serverNames={pendingMcpApproval}
+                  onApprove={resolveMcpApproval}
+                />
+              </Box>
+            )}
+            {mcpPickerOpen && mcpManagerRef.current && (
+              <Box marginTop={1}>
+                <McpPicker
+                  manager={mcpManagerRef.current}
+                  onChanged={() => {
+                    const m = mcpManagerRef.current;
+                    if (m)
+                      saveMcpApproval(
+                        process.cwd(),
+                        m.getEnabled(),
+                        m.getDisabled(),
+                      );
+                  }}
+                  onCancel={() => setMcpPickerOpen(false)}
+                  onDeleted={handleMcpServerDeleted}
+                />
+              </Box>
+            )}
+            {mcpMigrationEntries && (
+              <Box marginTop={1}>
+                <McpMigrationPicker
+                  entries={mcpMigrationEntries}
+                  onCancel={() => setMcpMigrationEntries(null)}
+                  onConfirm={(selected) => {
+                    setMcpMigrationEntries(null);
+                    resolveMcpMigration(selected);
+                  }}
+                />
+              </Box>
+            )}
+            {pendingApproval && (
+              <Box marginTop={1}>
+                <ApprovalPrompt
+                  request={pendingApproval.request}
+                  onDecision={(decision) => {
+                    pendingApproval.resolve(decision);
+                    setPendingApproval(null);
+                  }}
+                />
+              </Box>
+            )}
+            {pendingFollowup && (
+              <Box marginTop={1}>
+                <FollowupPrompt
+                  question={pendingFollowup.question}
+                  suggestions={pendingFollowup.suggestions}
+                  onAnswer={(answer) => {
+                    pushRow({ kind: "user", text: answer });
+                    pendingFollowup.resolve(answer);
+                    setPendingFollowup(null);
+                  }}
+                />
+              </Box>
+            )}
+            {busy &&
+              !pendingApproval &&
+              !pendingFollowup &&
+              !pendingHookTrust &&
+              !pendingMcpApproval &&
+              !mcpPickerOpen &&
+              !mcpMigrationEntries &&
+              !streamingText &&
+              !streamingReasoning && (
+                <Box marginTop={1}>
+                  <Spinner label={busyLabel} />
+                </Box>
+              )}
+            </Box>
+          </Box>
+          <Box flexDirection="column" flexShrink={0}>
             {queuedMessages.length > 0 && (
               <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
-                <Text dimColor bold>
+                <Text color={COLORS.dim} bold>
                   Queue ({queuedMessages.length})
                 </Text>
                 {queuedMessages.slice(0, 5).map((msg, i) => (
-                  <Text key={i} dimColor>
+                  <Text key={i} color={COLORS.dim}>
                     {i + 1}. {truncateForQueue(msg).replace(/\n/g, "↵")}
                   </Text>
                 ))}
                 {queuedMessages.length > 5 && (
-                  <Text dimColor> … {queuedMessages.length - 5} more</Text>
+                  <Text color={COLORS.dim}> … {queuedMessages.length - 5} more</Text>
                 )}
               </Box>
             )}
             <InputBox
               active={inputActive}
+              width={wrapWidth}
               slashCommands={SLASH_COMMANDS}
               onSubmit={handleSubmit}
             />
@@ -1614,6 +1808,7 @@ export function App({
               state={busy ? busyLabel : ""}
               approvalMode={approvalMode}
               busy={busy}
+              exitConfirmationActive={exitConfirmationActive}
               title={sessionTitle}
               plan={usage?.plan}
               usagePercentage={usage?.usagePercentage}
@@ -1671,29 +1866,63 @@ function estimateRowLines(row: Row, width: number): number {
     );
   }
   switch (row.kind) {
-    case "header":
-      return 9;
+    case "header": {
+      const panelWidth = Math.max(20, w - 4);
+      const infoWidth = Math.max(10, panelWidth - 17);
+      const firstCellWidth = Math.min(30, panelWidth);
+      const secondCellWidth = Math.max(10, panelWidth - firstCellWidth - 2);
+      const wrappedAt = (text: string, lineWidth: number) =>
+        text.split("\n").reduce(
+          (sum, line) =>
+            sum +
+            Math.max(1, Math.ceil(Math.max(1, line.length) / lineWidth)),
+          0,
+        );
+      const heroTextHeight =
+        wrappedAt(`${PRODUCT_NAME} / v${VERSION}`, infoWidth) +
+        wrappedAt(TAGLINE, infoWidth) +
+        1 +
+        wrappedAt(`MODEL      ${row.modelName}`, infoWidth) +
+        wrappedAt(`WORKSPACE  ${row.cwd}`, infoWidth);
+      const heroHeight = Math.max(ORBITAL_MARK.length, heroTextHeight);
+      const firstActionRow = Math.max(
+        wrappedAt("/new      fresh conversation", firstCellWidth),
+        wrappedAt("/resume   continue a session", secondCellWidth),
+      );
+      const secondActionRow = Math.max(
+        wrappedAt("/model    switch active model", firstCellWidth),
+        wrappedAt("/help     all commands", secondCellWidth),
+      );
+      const shortcuts = wrappedAt(
+        "shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d exit",
+        panelWidth,
+      );
+      // Action/footer top margins plus Header's bottom margin add three rows.
+      return heroHeight + firstActionRow + secondActionRow + shortcuts + 3;
+    }
     case "user":
-      return 1 + wrapped(row.text);
+      return 1 + formatUserBlock(row.text, w).split("\n").length;
     case "assistant":
-      return 1 + wrapped(row.text);
+      return 1 + wrapped(`● ${row.text}`);
     case "reasoning":
-      return row.expanded ? 1 + wrapped(row.text) : 1;
+      return row.expanded ? 2 + wrapped(row.text) : 2;
     case "tool": {
-      let h = 1;
+      const heading = `${formatToolName(row.name)} ${row.summary}`;
+      let h = 1 + wrapped(heading);
       if (row.diff) {
-        h += Math.min(62, row.diff.split("\n").length) + 1;
+        const diffLines = row.diff.split("\n").length;
+        h += 1 + Math.min(60, diffLines) + (diffLines > 60 ? 1 : 0);
       } else if (row.resultPreview) {
         h += wrapped(row.resultPreview);
       }
       return h;
     }
     case "info":
-      return Math.max(1, wrapped(row.text));
+      return 1 + wrapped(row.text);
     case "error":
-      return Math.max(1, wrapped(row.text));
+      return 1 + wrapped(`✗ ${row.text}`);
     case "completion":
-      return 2 + wrapped(row.text);
+      return 4 + wrapped(row.text);
     default:
       return 1;
   }

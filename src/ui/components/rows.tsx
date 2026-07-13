@@ -40,8 +40,8 @@ export function formatToolName(name: string): string {
 }
 
 const MAX_DIFF_LINES = 60
-const ADDED_BG = "#1C4428"
-const REMOVED_BG = "#5C1A1A"
+const ADDED_BG = COLORS.success
+const REMOVED_BG = COLORS.error
 
 type DiffRow =
 	| { kind: "file"; text: string }
@@ -98,20 +98,20 @@ export function DiffView({ diff }: { diff: string }) {
 	return (
 		<Box flexDirection="column">
 			<Text>
-				<Text dimColor>└ </Text>
+				<Text color={COLORS.dim}>└ </Text>
 				Added {plural(added, "line")}, removed {plural(removed, "line")}
 			</Text>
 			{visible.map((row, i) => {
 				if (row.kind === "file") {
 					return (
-						<Text key={i} bold dimColor>
+						<Text key={i} bold color={COLORS.dim}>
 							{row.text}
 						</Text>
 					)
 				}
 				if (row.kind === "gap") {
 					return (
-						<Text key={i} dimColor>
+						<Text key={i} color={COLORS.dim}>
 							{" ".repeat(numWidth)} ⋯
 						</Text>
 					)
@@ -119,27 +119,27 @@ export function DiffView({ diff }: { diff: string }) {
 				const num = String(row.num).padStart(numWidth)
 				if (row.type === "add") {
 					return (
-						<Text key={i} backgroundColor={ADDED_BG}>
+						<Text key={i} backgroundColor={ADDED_BG} color={COLORS.primary}>
 							{num} + {row.text}
 						</Text>
 					)
 				}
 				if (row.type === "del") {
 					return (
-						<Text key={i} backgroundColor={REMOVED_BG}>
+						<Text key={i} backgroundColor={REMOVED_BG} color={COLORS.primary}>
 							{num} - {row.text}
 						</Text>
 					)
 				}
 				return (
 					<Text key={i}>
-						<Text dimColor>{num}</Text>
+						<Text color={COLORS.dim}>{num}</Text>
 						{"   "}
 						{row.text}
 					</Text>
 				)
 			})}
-			{rows.length > MAX_DIFF_LINES && <Text dimColor>… {rows.length - MAX_DIFF_LINES} more lines</Text>}
+			{rows.length > MAX_DIFF_LINES && <Text color={COLORS.dim}>… {rows.length - MAX_DIFF_LINES} more lines</Text>}
 		</Box>
 	)
 }
@@ -149,17 +149,46 @@ export function formatDuration(durationMs: number): string {
 	return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`
 }
 
-export function RowView({ row }: { row: Row }) {
+/** Build a background-filled user block exactly as wide as the transcript. */
+export function formatUserBlock(text: string, width: number): string {
+	const lineWidth = Math.max(1, width)
+	const paddingX = Math.min(2, Math.floor((lineWidth - 1) / 2))
+	const contentWidth = Math.max(1, lineWidth - paddingX * 2)
+	const sourceLines = (`❯ ${text}`).split("\n")
+	const blank = " ".repeat(lineWidth)
+	const output: string[] = [blank]
+	for (const sourceLine of sourceLines) {
+		if (sourceLine.length === 0) {
+			output.push(blank)
+			continue
+		}
+		for (let offset = 0; offset < sourceLine.length; offset += contentWidth) {
+			output.push(
+				" ".repeat(paddingX) +
+					sourceLine.slice(offset, offset + contentWidth).padEnd(contentWidth) +
+					" ".repeat(paddingX),
+			)
+		}
+	}
+	output.push(blank)
+	return output.join("\n")
+}
+
+/**
+ * Completed transcript rows are immutable. Keeping their rendered Ink tree
+ * around avoids re-running markdown and diff parsing when only the viewport
+ * offset changes.
+ */
+export const RowView = React.memo(function RowView({ row, width }: { row: Row; width: number }) {
 	switch (row.kind) {
 		case "header":
 			return <Header cwd={row.cwd} modelName={row.modelName} />
 		case "user":
 			return (
 				<Box marginTop={1}>
-					<Text color={COLORS.user} bold>
-						{"❯ "}
+					<Text color={COLORS.user} backgroundColor={COLORS.userBg}>
+						{formatUserBlock(row.text, width)}
 					</Text>
-					<Text color={COLORS.user}>{row.text}</Text>
 				</Box>
 			)
 		case "assistant":
@@ -176,11 +205,11 @@ export function RowView({ row }: { row: Row }) {
 				<Box marginTop={1} flexDirection="column">
 					<Text color={COLORS.thinking} italic>
 						✦ Thought for {formatDuration(row.durationMs)}
-						{!row.expanded && <Text dimColor> (ctrl+o to show thinking)</Text>}
+						{!row.expanded && <Text color={COLORS.dim}> (ctrl+o to show thinking)</Text>}
 					</Text>
 					{row.expanded && (
 						<Box paddingLeft={2}>
-							<Text dimColor italic>
+							<Text color={COLORS.dim} italic>
 								{row.text.trim()}
 							</Text>
 						</Box>
@@ -195,7 +224,7 @@ export function RowView({ row }: { row: Row }) {
 							{row.isError ? "✗" : "✓"}{" "}
 						</Text>
 						<Text bold>{formatToolName(row.name)}</Text>
-						<Text dimColor> {row.summary}</Text>
+						<Text color={COLORS.dim}> {row.summary}</Text>
 					</Text>
 					{row.diff ? (
 						<Box paddingLeft={2}>
@@ -204,7 +233,7 @@ export function RowView({ row }: { row: Row }) {
 					) : (
 						row.resultPreview && (
 							<Box paddingLeft={2}>
-								<Text dimColor>{row.resultPreview}</Text>
+								<Text color={COLORS.dim}>{row.resultPreview}</Text>
 							</Box>
 						)
 					)}
@@ -213,7 +242,7 @@ export function RowView({ row }: { row: Row }) {
 		case "info":
 			return (
 				<Box marginTop={1}>
-					<Text dimColor>{row.text}</Text>
+					<Text color={COLORS.dim}>{row.text}</Text>
 				</Box>
 			)
 		case "error":
@@ -232,4 +261,4 @@ export function RowView({ row }: { row: Row }) {
 				</Box>
 			)
 	}
-}
+})
