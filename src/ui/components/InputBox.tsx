@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text, useInput } from "ink"
 import chalk from "chalk"
 
 import { COLORS } from "../../branding.js"
 import { walkFiles } from "../../tools/executors/listFiles.js"
 import { appendPromptHistory, loadPromptHistory } from "../../config/promptHistory.js"
+import { isMouseInput } from "../terminal.js"
 
 export interface SlashCommand {
 	name: string
@@ -13,11 +14,49 @@ export interface SlashCommand {
 
 interface InputBoxProps {
 	active: boolean
+	width: number
 	slashCommands: SlashCommand[]
 	onSubmit: (value: string) => void
 }
 
 const MAX_FILE_MATCHES = 8
+const POPUP_PADDING_X = 2
+
+function fitText(text: string, maxWidth: number): string {
+	if (text.length <= maxWidth) return text
+	if (maxWidth <= 1) return text.slice(0, Math.max(0, maxWidth))
+	return text.slice(0, maxWidth - 1) + "…"
+}
+
+function PopupEdge({ width, position }: { width: number; position: "top" | "bottom" }) {
+	const innerWidth = Math.max(0, width - 2)
+	return (
+		<Text color={COLORS.popupBg}>
+			{position === "top"
+				? `▗${"▄".repeat(innerWidth)}▖`
+				: `▝${"▀".repeat(innerWidth)}▘`}
+		</Text>
+	)
+}
+
+function PopupRow({
+	width,
+	contentWidth,
+	children,
+}: {
+	width: number
+	contentWidth: number
+	children: React.ReactNode
+}) {
+	const trailing = Math.max(0, width - POPUP_PADDING_X * 2 - contentWidth)
+	return (
+		<Text backgroundColor={COLORS.popupBg}>
+			{" ".repeat(POPUP_PADDING_X)}
+			{children}
+			{" ".repeat(trailing + POPUP_PADDING_X)}
+		</Text>
+	)
+}
 
 /** Higher is better; -1 means no match. Prefers basename prefix > basename > path > subsequence. */
 function fuzzyScore(target: string, query: string): number {
@@ -45,7 +84,7 @@ function findAtToken(value: string, cursor: number): { query: string; start: num
 	return { query: match[1], start: cursor - match[1].length - 1 }
 }
 
-export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
+export function InputBox({ active, width, slashCommands, onSubmit }: InputBoxProps) {
 	const [value, setValue] = useState("")
 	const [cursor, setCursor] = useState(0)
 	// Terminal-style prompt history: persisted across sessions in ~/.orbcode.
@@ -55,18 +94,24 @@ export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
 	const [slashIndex, setSlashIndex] = useState(0)
 	const [dismissedValue, setDismissedValue] = useState<string | null>(null)
 
-	// Workspace file list for @-references, computed once per session.
-	const files = useMemo(
-		() => walkFiles(process.cwd(), true, 3000).filter((f) => !f.endsWith("/")),
-		[],
-	)
-
 	const showSlashMenu = active && value.startsWith("/") && !value.includes(" ")
 	const slashMatches = showSlashMenu
 		? slashCommands.filter((c) => c.name.startsWith(value)).slice(0, 8)
 		: []
 
 	const atToken = active ? findAtToken(value, cursor) : null
+
+	// Workspace file list for @-references, re-scanned each time the popup opens.
+	// Files created during the session (by editing or manually) become visible.
+	const [files, setFiles] = useState<string[]>([])
+	const wasClosed = useRef(true)
+	if (atToken && wasClosed.current) {
+		wasClosed.current = false
+		setFiles(walkFiles(process.cwd(), true, 3000).filter((f) => !f.endsWith("/")))
+	} else if (!atToken) {
+		wasClosed.current = true
+	}
+
 	const fileMatches = useMemo(() => {
 		if (!atToken || value === dismissedValue) return []
 		return files
@@ -112,6 +157,16 @@ export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
 
 	useInput(
 		(input, key) => {
+			if (isMouseInput(input)) return
+			if (key.escape && value.length > 0) {
+				setValue("")
+				setCursor(0)
+				setHistoryIndex(-1)
+				setFileIndex(0)
+				setSlashIndex(0)
+				setDismissedValue(null)
+				return
+			}
 			// While actively browsing history, arrows keep navigating history even
 			// if a recalled entry opened the slash/file menu.
 			if ((key.upArrow || key.downArrow) && historyIndex !== -1) {
@@ -135,10 +190,6 @@ export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
 				}
 				if (key.return || (key.tab && !key.shift)) {
 					insertFile(fileMatches[Math.min(fileIndex, fileMatches.length - 1)])
-					return
-				}
-				if (key.escape) {
-					setDismissedValue(value)
 					return
 				}
 			}
@@ -242,43 +293,72 @@ export function InputBox({ active, slashCommands, onSubmit }: InputBoxProps) {
 
 	return (
 		<Box flexDirection="column">
+			{slashMatches.length > 0 && (
+				<Box flexDirection="column">
+					<PopupEdge width={width} position="top" />
+					{slashMatches.map((c, i) => {
+						const prefix = i === slashIndex ? "❯ " : "  "
+						const descriptionWidth = Math.max(
+							0,
+							width - POPUP_PADDING_X * 2 - prefix.length - c.name.length - 3,
+						)
+						const description = fitText(c.description, descriptionWidth)
+						const contentWidth = prefix.length + c.name.length + 3 + description.length
+						return (
+							<PopupRow key={c.name} width={width} contentWidth={contentWidth}>
+								<Text color={i === slashIndex ? COLORS.primary : COLORS.accent} bold={i === slashIndex}>
+									{prefix}{c.name}
+								</Text>
+								<Text color={COLORS.dim}> — {description}</Text>
+							</PopupRow>
+						)
+					})}
+					{(() => {
+						const hint = fitText("↑/↓ select · enter run · tab complete", width - POPUP_PADDING_X * 2)
+						return (
+							<PopupRow width={width} contentWidth={hint.length}>
+								<Text color={COLORS.dim}>{hint}</Text>
+							</PopupRow>
+						)
+					})()}
+					<PopupEdge width={width} position="bottom" />
+				</Box>
+			)}
+			{fileMatches.length > 0 && (
+				<Box flexDirection="column">
+					<PopupEdge width={width} position="top" />
+					{fileMatches.map((file, i) => {
+						const prefix = i === fileIndex ? "❯ " : "  "
+						const displayFile = fitText(file, width - POPUP_PADDING_X * 2 - prefix.length)
+						return (
+							<PopupRow key={file} width={width} contentWidth={prefix.length + displayFile.length}>
+								<Text color={i === fileIndex ? COLORS.primary : COLORS.accent} bold={i === fileIndex}>
+									{prefix}{displayFile}
+								</Text>
+							</PopupRow>
+						)
+					})}
+					{(() => {
+						const hint = fitText("↑/↓ select · enter/tab insert · esc dismiss", width - POPUP_PADDING_X * 2)
+						return (
+							<PopupRow width={width} contentWidth={hint.length}>
+								<Text color={COLORS.dim}>{hint}</Text>
+							</PopupRow>
+						)
+					})()}
+					<PopupEdge width={width} position="bottom" />
+				</Box>
+			)}
 			<Box
 				borderStyle="round"
-				borderColor={active ? COLORS.primary : "gray"}
-				borderLeft={false}
-				borderRight={false}
+				borderColor={active ? COLORS.inputBorder : COLORS.inputBorderInactive}
 				paddingX={1}
 			>
 				<Text color={COLORS.user} bold>
 					{"❯ "}
 				</Text>
-				{active ? <Text>{display}</Text> : <Text dimColor>{value || "waiting…"}</Text>}
+				{active ? <Text>{display}</Text> : <Text color={COLORS.dim}>{value || "waiting…"}</Text>}
 			</Box>
-			{slashMatches.length > 0 && (
-				<Box flexDirection="column" paddingLeft={2}>
-					{slashMatches.map((c, i) => (
-						<Text key={c.name}>
-							<Text color={i === slashIndex ? COLORS.accent : undefined}>
-								{i === slashIndex ? "❯ " : "  "}
-								{c.name}
-							</Text>
-							<Text dimColor> — {c.description}</Text>
-						</Text>
-					))}
-					<Text dimColor>↑/↓ select · enter run · tab complete</Text>
-				</Box>
-			)}
-			{fileMatches.length > 0 && (
-				<Box flexDirection="column" paddingLeft={2}>
-					{fileMatches.map((file, i) => (
-						<Text key={file} color={i === fileIndex ? COLORS.accent : undefined}>
-							{i === fileIndex ? "❯ " : "  "}
-							{file}
-						</Text>
-					))}
-					<Text dimColor>↑/↓ select · enter/tab insert · esc dismiss</Text>
-				</Box>
-			)}
 		</Box>
 	)
 }

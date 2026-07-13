@@ -77,12 +77,12 @@ export function McpMigrationPicker({
         <Text bold color={COLORS.primary}>
           Migrate MCP servers
         </Text>
-        <Text dimColor>No MCP servers found on this machine to migrate.</Text>
-        <Text dimColor>
+        <Text color={COLORS.dim}>No MCP servers found on this machine to migrate.</Text>
+        <Text color={COLORS.dim}>
           Install Claude Code or Claude Desktop, or add servers with `orbcode
           mcp add`.
         </Text>
-        <Text dimColor>esc to close</Text>
+        <Text color={COLORS.dim}>esc to close</Text>
       </Box>
     );
   }
@@ -108,11 +108,11 @@ export function McpMigrationPicker({
       <Text bold color={COLORS.primary}>
         Migrate MCP servers from Claude Code / Desktop
       </Text>
-      <Text dimColor>
+      <Text color={COLORS.dim}>
         Servers will be copied to ~/.orbcode/settings.json. Conflicts (same name
         already exists) are skipped.
       </Text>
-      {windowStart > 0 && <Text dimColor> ↑ {windowStart} more</Text>}
+      {windowStart > 0 && <Text color={COLORS.dim}> ↑ {windowStart} more</Text>}
       {visible.map((entry, i) => {
         const isSelected = windowStart + i === selected;
         return (
@@ -120,18 +120,18 @@ export function McpMigrationPicker({
             <Text color={isSelected ? COLORS.accent : undefined}>
               {isSelected ? "❯ " : "  "}
               {checked.has(entry.key) ? "☑" : "☐"} {entry.name}
-              <Text dimColor> · {describeEntry(entry)}</Text>
+              <Text color={COLORS.dim}> · {describeEntry(entry)}</Text>
             </Text>
             <Box paddingLeft={5}>
-              <Text dimColor>{entry.sourceLabel}</Text>
+              <Text color={COLORS.dim}>{entry.sourceLabel}</Text>
             </Box>
           </Box>
         );
       })}
       {windowStart + VISIBLE_ROWS < count && (
-        <Text dimColor> ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
+        <Text color={COLORS.dim}> ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
       )}
-      <Text dimColor>
+      <Text color={COLORS.dim}>
         space toggle · enter confirm ({checkedCount}/{count}) · esc cancel
       </Text>
     </Box>

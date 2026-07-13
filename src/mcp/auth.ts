@@ -232,7 +232,7 @@ function callbackPage(kind: "success" | "error" | "not-found", detail?: string):
 			? "This page was not found."
 			: detail ?? "An unexpected error occurred during authentication."
 	const icon = isSuccess ? "&#10003;" : "&#10007;"
-	const accent = isSuccess ? "#43df94" : "#e86464"
+	const accent = isSuccess ? "#3FA266" : "#E34671"
 
 	return `<!DOCTYPE html>
 <html lang="en">

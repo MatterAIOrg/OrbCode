@@ -62,7 +62,7 @@ export function FollowupPrompt({ question, suggestions, onAnswer }: FollowupProm
 				type your own: {custom}
 				{isCustomSelected && <Text inverse> </Text>}
 			</Text>
-			<Text dimColor>↑/↓ select · enter confirm · 1-{Math.min(suggestions.length, 9)} quick pick</Text>
+			<Text color={COLORS.dim}>↑/↓ select · enter confirm · 1-{Math.min(suggestions.length, 9)} quick pick</Text>
 		</Box>
 	)
 }

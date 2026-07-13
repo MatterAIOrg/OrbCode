@@ -34,7 +34,7 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 				⚠ This project defines {commands.length} hook command{commands.length === 1 ? "" : "s"}
 			</Text>
 			<Box paddingLeft={2} flexDirection="column">
-				<Text dimColor>{cwd}/.orbcode/settings.json</Text>
+				<Text color={COLORS.dim}>{cwd}/.orbcode/settings.json</Text>
 				<Text>Project hooks run these shell commands automatically during the session:</Text>
 				{shown.map((command, i) => (
 					<Text key={i} color={COLORS.warning}>
@@ -42,9 +42,9 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 						{command.length > 100 ? command.slice(0, 99) + "…" : command}
 					</Text>
 				))}
-				{extra > 0 && <Text dimColor> … {extra} more</Text>}
+				{extra > 0 && <Text color={COLORS.dim}> … {extra} more</Text>}
 			</Box>
-			<Text dimColor>
+			<Text color={COLORS.dim}>
 				Only trust hooks from a repository you trust. (y) trust &amp; enable · (n or Enter) keep disabled
 			</Text>
 		</Box>

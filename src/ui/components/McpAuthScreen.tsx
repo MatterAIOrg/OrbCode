@@ -78,7 +78,7 @@ export function McpAuthScreen({ serverName, authUrl, onPasteCode, onCancel }: Mc
 			<Text> </Text>
 			{authUrl ? (
 				<Box flexDirection="column">
-					<Text dimColor>
+					<Text color={COLORS.dim}>
 						If your browser doesn't open automatically, copy this URL manually (c to copy)
 					</Text>
 					<Box paddingLeft={1} marginTop={0}>
@@ -89,26 +89,26 @@ export function McpAuthScreen({ serverName, authUrl, onPasteCode, onCancel }: Mc
 					{copied && <Text color={COLORS.success}>✓ Copied to clipboard</Text>}
 				</Box>
 			) : (
-				<Text dimColor>Waiting for the authorization URL…</Text>
+				<Text color={COLORS.dim}>Waiting for the authorization URL…</Text>
 			)}
 			<Text> </Text>
 			{mode === "paste" ? (
 				<Box flexDirection="column">
-					<Text dimColor>If the redirect page shows a connection error, paste the URL from your browser's address bar:</Text>
+					<Text color={COLORS.dim}>If the redirect page shows a connection error, paste the URL from your browser's address bar:</Text>
 					<Text>
-						<Text dimColor>URL&gt; </Text>
+						<Text color={COLORS.dim}>URL&gt; </Text>
 						{pasted}
 						<Text inverse> </Text>
 					</Text>
-					<Text dimColor>enter to submit · esc to go back</Text>
+					<Text color={COLORS.dim}>enter to submit · esc to go back</Text>
 				</Box>
 			) : (
-				<Text dimColor>
+				<Text color={COLORS.dim}>
 					Press enter to paste a redirect URL manually · esc to go back
 				</Text>
 			)}
 			<Text> </Text>
-			<Text dimColor>Return here after authenticating in your browser. Press Esc to go back.</Text>
+			<Text color={COLORS.dim}>Return here after authenticating in your browser. Press Esc to go back.</Text>
 		</Box>
 	)
 }

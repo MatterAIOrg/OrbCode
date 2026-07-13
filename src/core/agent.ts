@@ -15,13 +15,19 @@ import {
 } from "../tools/index.js"
 import { walkFiles } from "../tools/executors/listFiles.js"
 import { previewFileChange } from "../tools/executors/files.js"
-import type { AgentCallbacks, ApprovalDecision } from "./events.js"
-import { getSessionFilePath, saveSession, type SessionData } from "./sessions.js"
+import type { AgentCallbacks, AgentEvent, ApprovalDecision } from "./events.js"
+import {
+	getSessionFilePath,
+	saveSession,
+	type SessionData,
+	type SessionTranscriptEntry,
+} from "./sessions.js"
 import { HookRunner, type HooksConfig } from "./hooks.js"
 import { McpManager } from "../mcp/manager.js"
 import { loadMemoryFiles } from "../memory/loader.js"
 import { loadSkills } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
+import { unifiedDiff } from "../utils/diff.js"
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
@@ -142,11 +148,159 @@ function wrapHookContext(source: string, text: string): string {
 	return `<hook_context source="${source}">\n${text}\n</hook_context>`
 }
 
+function contentToText(content: unknown): string {
+	if (typeof content === "string") return content
+	if (!Array.isArray(content)) return ""
+	return content
+		.map((part) =>
+			part && typeof part === "object" && "text" in part
+				? String((part as { text?: unknown }).text ?? "")
+				: "",
+		)
+		.join("")
+}
+
+function resultPreview(text: string): string {
+	const lines = text.split("\n")
+	return (
+		lines.slice(0, RESULT_PREVIEW_LINES).join("\n") +
+		(lines.length > RESULT_PREVIEW_LINES ? `\n… (${lines.length} lines)` : "")
+	)
+}
+
+/**
+ * Sessions written before display transcripts did not store the full-file diff
+ * produced immediately before an edit. The requested old/new fragments are
+ * still present in the tool arguments, so use those as an honest best-effort
+ * fallback instead of dropping the diff entirely.
+ */
+function legacyEditDiff(toolName: string, args: Record<string, unknown>): string | undefined {
+	const fragment = (filePath: string, oldText: string, newText: string, label: string): string | undefined => {
+		const diff = unifiedDiff(oldText, newText)
+		return diff ? `${filePath} (${label})\n${diff}` : undefined
+	}
+
+	if (toolName === "file_edit") {
+		return fragment(
+			String(args.file_path ?? "unknown file"),
+			String(args.old_string ?? ""),
+			String(args.new_string ?? ""),
+			"restored edit fragment",
+		)
+	}
+
+	if (toolName === "file_write") {
+		return fragment(
+			String(args.file_path ?? "unknown file"),
+			"",
+			String(args.content ?? ""),
+			"restored write; previous contents unavailable",
+		)
+	}
+
+	if (toolName === "multi_file_edit") {
+		const parts = (Array.isArray(args.edits) ? args.edits : []).flatMap((value) => {
+			if (!value || typeof value !== "object") return []
+			const edit = value as Record<string, unknown>
+			const diff = fragment(
+				String(edit.file_path ?? "unknown file"),
+				String(edit.old_string ?? ""),
+				String(edit.new_string ?? ""),
+				"restored edit fragment",
+			)
+			return diff ? [diff] : []
+		})
+		return parts.length > 0 ? parts.join("\n") : undefined
+	}
+
+	return undefined
+}
+
+/** Best-effort visible history for sessions written before `transcript`. */
+function legacyTranscript(messages: OpenAI.Chat.ChatCompletionMessageParam[]): SessionTranscriptEntry[] {
+	const entries: SessionTranscriptEntry[] = []
+	const pendingTools = new Map<
+		string,
+		{ name: string; summary: string; diff?: string }
+	>()
+
+	for (const message of messages) {
+		if (message.role === "user") {
+			const text = contentToText(message.content)
+			const match = /<user_query>\n?([\s\S]*?)\n?<\/user_query>/.exec(text)
+			if (match) entries.push({ kind: "user", text: match[1] })
+			continue
+		}
+
+		if (message.role === "assistant") {
+			const details = (message as unknown as Record<string, unknown>)[REASONING_DETAILS_FIELD]
+			if (Array.isArray(details)) {
+				const reasoning = details
+					.map((part) =>
+						part && typeof part === "object" && "text" in part
+							? String((part as { text?: unknown }).text ?? "")
+							: "",
+					)
+					.join("")
+				if (reasoning.trim()) entries.push({ kind: "reasoning", text: reasoning, durationMs: 0 })
+			}
+
+			const text = contentToText(message.content)
+			if (text.trim()) entries.push({ kind: "assistant", text })
+			for (const call of message.tool_calls ?? []) {
+				if (call.type !== "function") continue
+				let args: Record<string, unknown> = {}
+				try {
+					args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>
+				} catch {
+					// Keep an empty argument object; the call name is still useful history.
+				}
+				if (call.function.name === "attempt_completion") {
+					entries.push({ kind: "completion", text: String(args.result ?? "") })
+					continue
+				}
+				pendingTools.set(call.id, {
+					name: call.function.name,
+					summary: describeToolCall(call.function.name, args),
+					diff: legacyEditDiff(call.function.name, args),
+				})
+			}
+			continue
+		}
+
+		if (message.role === "tool") {
+			const tool = pendingTools.get(message.tool_call_id)
+			if (!tool) continue
+			pendingTools.delete(message.tool_call_id)
+			const text = contentToText(message.content)
+			if (tool.name === "ask_followup_question") {
+				const answer = /<answer>\n?([\s\S]*?)\n?<\/answer>/.exec(text)?.[1]
+				if (answer) entries.push({ kind: "user", text: answer })
+				continue
+			}
+			const isError = /^(error|failed|tool error|the user denied)\b/i.test(text.trim())
+			entries.push({
+				kind: "tool",
+				name: tool.name,
+				summary: tool.summary,
+				resultPreview: resultPreview(text),
+				isError,
+				diff: isError ? undefined : tool.diff,
+			})
+		}
+	}
+
+	return entries
+}
+
 export class Agent {
 	private options: AgentOptions
 	private client: LLMClient
 	private systemPrompt: string
 	private messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
+	private transcript: SessionTranscriptEntry[] = []
+	private transcriptReasoning = ""
+	private transcriptText = ""
 	private todos = ""
 	private firstMessageSent = false
 	private sessionApproveEdits: boolean
@@ -175,7 +329,20 @@ export class Agent {
 	readonly taskId: string
 
 	constructor(options: AgentOptions) {
-		this.options = options
+		this.transcript = options.resume?.transcript
+			? options.resume.transcript.map((entry) => ({ ...entry }))
+			: legacyTranscript(options.resume?.messages ?? [])
+		const onEvent = options.callbacks.onEvent
+		this.options = {
+			...options,
+			callbacks: {
+				...options.callbacks,
+				onEvent: (event) => {
+					this.recordTranscriptEvent(event)
+					onEvent(event)
+				},
+			},
+		}
 		this.taskId = options.resume?.id ?? randomUUID()
 		this.hooks = new HookRunner({
 			cwd: options.cwd,
@@ -183,7 +350,7 @@ export class Agent {
 			transcriptPath: getSessionFilePath(this.taskId),
 			config: options.hooks,
 			onSystemMessage: (message, isError) =>
-				options.callbacks.onEvent({ type: "system", message, isError }),
+				this.options.callbacks.onEvent({ type: "system", message, isError }),
 			getSignal: () => this.abortController?.signal,
 		})
 		if (options.resume) {
@@ -242,6 +409,78 @@ export class Agent {
 		return this.contextTokens
 	}
 
+	/** Visible history restored by the TUI, including reasoning and tools. */
+	get displayTranscript(): SessionTranscriptEntry[] {
+		return this.transcript.map((entry) => ({ ...entry }))
+	}
+
+	private recordTranscriptEvent(event: AgentEvent): void {
+		switch (event.type) {
+			case "reasoning-delta":
+				this.transcriptReasoning += event.text
+				break
+			case "reasoning-done":
+				if (this.transcriptReasoning) {
+					this.transcript.push({
+						kind: "reasoning",
+						text: this.transcriptReasoning,
+						durationMs: event.durationMs,
+					})
+				}
+				this.transcriptReasoning = ""
+				break
+			case "text-delta":
+				this.transcriptText += event.text
+				break
+			case "text-done":
+				if (this.transcriptText) {
+					this.transcript.push({ kind: "assistant", text: this.transcriptText })
+				}
+				this.transcriptText = ""
+				break
+			case "stream-reset":
+				this.transcriptReasoning = ""
+				this.transcriptText = ""
+				break
+			case "tool-end":
+				this.transcript.push({
+					kind: "tool",
+					name: event.name,
+					summary: event.summary,
+					resultPreview: event.resultPreview,
+					isError: event.isError,
+					diff: event.diff,
+				})
+				break
+			case "completion":
+				this.transcript.push({ kind: "completion", text: event.result })
+				break
+			case "system":
+				this.transcript.push({
+					kind: event.isError ? "error" : "info",
+					text: event.message,
+				})
+				break
+			case "error":
+				this.transcript.push({ kind: "error", text: event.message })
+				break
+			case "turn-end":
+				if (this.transcriptText) {
+					this.transcript.push({ kind: "assistant", text: this.transcriptText })
+					this.transcriptText = ""
+				}
+				if (this.transcriptReasoning) {
+					this.transcript.push({
+						kind: "reasoning",
+						text: this.transcriptReasoning,
+						durationMs: 0,
+					})
+					this.transcriptReasoning = ""
+				}
+				break
+		}
+	}
+
 	/** Replace the prompt-derived title with the backend-generated one. */
 	setTitle(title: string): void {
 		this.title = title
@@ -264,6 +503,9 @@ export class Agent {
 
 	clear(): void {
 		this.messages = []
+		this.transcript = []
+		this.transcriptReasoning = ""
+		this.transcriptText = ""
 		this.todos = ""
 		this.firstMessageSent = false
 		this.totalCost = 0
@@ -289,6 +531,7 @@ export class Agent {
 				contextTokens: this.contextTokens,
 				todos: this.todos,
 				messages: this.messages,
+				transcript: this.transcript,
 			})
 		} catch {
 			// persistence is best-effort; never break the session over it
@@ -350,6 +593,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	async runTurn(userText: string): Promise<void> {
 		const { onEvent } = this.options.callbacks
 		this.abortController = new AbortController()
+		this.transcript.push({ kind: "user", text: userText })
 
 		await this.maybeFireSessionStart()
 
@@ -410,6 +654,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		} finally {
 			this.abortController = undefined
+			this.recordTranscriptEvent({ type: "turn-end" })
 			this.persist()
 			onEvent({ type: "turn-end" })
 		}
@@ -564,6 +809,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		} finally {
 			this.abortController = undefined
+			this.recordTranscriptEvent({ type: "turn-end" })
 			this.persist()
 			onEvent({ type: "turn-end" })
 		}
@@ -786,6 +1032,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				}))
 			}
 			const answer = await requestFollowup(question, suggestions)
+			this.transcript.push({ kind: "user", text: answer })
 			return `<answer>\n${answer}\n</answer>`
 		}
 

@@ -22,7 +22,7 @@ export function Spinner({ label }: { label: string }) {
 	return (
 		<Text color={COLORS.thinking}>
 			{FRAMES[frame]} {label}
-			<Text dimColor> ({seconds}s · esc to interrupt)</Text>
+			<Text color={COLORS.dim}> ({seconds}s · esc to interrupt)</Text>
 		</Text>
 	)
 }

@@ -1,7 +1,7 @@
 import React from "react"
 import { render } from "ink"
 
-import { PRODUCT_NAME, VERSION } from "./branding.js"
+import { COLORS, PRODUCT_NAME, VERSION } from "./branding.js"
 import { App } from "./ui/App.js"
 import { runHeadless } from "./headless.js"
 import { runMcpCommand } from "./commands/mcp.js"
@@ -17,6 +17,86 @@ import {
 } from "./utils/updateCheck.js"
 
 const PACKAGE_NAME = "@matterailab/orbcode"
+const INK_CLEAR_TERMINAL = "\x1b[2J\x1b[3J\x1b[H"
+const BEGIN_SYNCHRONIZED_UPDATE = "\x1b[?2026h"
+const END_SYNCHRONIZED_UPDATE = "\x1b[?2026l"
+// Match OpenTUI's mouse capture: button events, drag events, all movement,
+// and SGR coordinates. Capturing all four modes prevents the terminal itself
+// from interpreting a wheel/trackpad gesture as scrollback navigation.
+const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h"
+const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l"
+
+function terminalRows(stdout: NodeJS.WriteStream): number {
+	return stdout.rows ?? process.stderr.rows ?? 24
+}
+
+function terminalColumns(stdout: NodeJS.WriteStream): number {
+	return stdout.columns ?? process.stderr.columns ?? 80
+}
+
+/**
+ * Ink normally serializes a frame as newline-delimited text. Even when the
+ * frame is terminal-height, some terminals can treat those linefeeds as
+ * scrollable output. OpenTUI avoids that class of bug by drawing at explicit
+ * screen coordinates. This adapter keeps Ink's real dimensions/event stream,
+ * but converts every full redraw into cursor-addressed rows with no linefeeds.
+ */
+function createFullscreenStdout(stdout: NodeJS.WriteStream): NodeJS.WriteStream {
+	let previousLines: string[] = []
+	let previousRows = 0
+
+	const writeFrame = (frame: string): boolean => {
+		const rows = Math.max(1, terminalRows(stdout))
+		const lines = frame.split("\n").slice(0, rows)
+		while (lines.length < rows) lines.push("")
+		if (rows !== previousRows) previousLines = []
+
+		let output = BEGIN_SYNCHRONIZED_UPDATE
+		// Do not clear the display here. Several terminals preserve each ED 2
+		// operation as scrollback even in the alternate buffer. OpenTUI keeps a
+		// retained screen and replaces cells in place; replacing every row with
+		// EL 2 gives Ink the same behavior and cannot advance terminal history.
+		let changed = false
+		for (let row = 0; row < rows; row++) {
+			if (lines[row] === previousLines[row]) continue
+			changed = true
+			output += `\x1b[${row + 1};1H\x1b[2K${lines[row]}`
+		}
+		previousLines = lines
+		previousRows = rows
+		if (!changed) return true
+		output += END_SYNCHRONIZED_UPDATE
+		return stdout.write(output)
+	}
+
+	return new Proxy(stdout, {
+		get(target, property) {
+			// Ink uses these properties to choose its renderer and compute layout.
+			// Integrated terminal wrappers do not always expose them on stdout even
+			// though stdin/stderr are attached to the same interactive terminal.
+			if (property === "rows") return terminalRows(stdout)
+			if (property === "columns") return terminalColumns(stdout)
+			if (property === "isTTY") return true
+			if (property === "write") {
+				return (
+					chunk: string | Uint8Array,
+					encoding?: BufferEncoding | ((error?: Error | null) => void),
+					callback?: (error?: Error | null) => void,
+				) => {
+					if (typeof chunk === "string" && chunk.startsWith(INK_CLEAR_TERMINAL)) {
+						const written = writeFrame(chunk.slice(INK_CLEAR_TERMINAL.length))
+						const done = typeof encoding === "function" ? encoding : callback
+						if (done) process.nextTick(done)
+						return written
+					}
+					return stdout.write(chunk, encoding as BufferEncoding, callback)
+				}
+			}
+			const value = Reflect.get(target, property, target) as unknown
+			return typeof value === "function" ? value.bind(target) : value
+		},
+	})
+}
 
 function printHelp(): void {
 	console.log(`${PRODUCT_NAME} v${VERSION}
@@ -183,12 +263,46 @@ async function main(): Promise<void> {
 	// Any other bare argument starts the TUI with that text as the first prompt.
 	const initialPrompt = initialView ? undefined : args.find((a) => !a.startsWith("-"))
 
-	// Take over the full terminal: clear the visible screen and home the cursor
-	// so the TUI always starts at the top (prior output stays in scrollback).
-	if (process.stdout.isTTY) {
-		process.stdout.write("\x1b[2J\x1b[H")
+	// OpenTUI treats its TUI command as a terminal application regardless of
+	// stdout.isTTY. Some integrated/wrapped terminals expose TTY only on stdin
+	// or stderr; gating on stdout alone leaves the app in the primary buffer.
+	const isInteractiveTerminal = Boolean(
+		process.stdin.isTTY || process.stdout.isTTY || process.stderr.isTTY,
+	)
+
+	// Take over the full terminal as an independent surface:
+	//   1. Enter the alternate screen buffer (\x1b[?1049h) so the TUI owns
+	//      the full terminal and prior output stays untouched in the primary
+	//      buffer — the terminal scrollback is not affected.
+	//   2. Set default foreground / background via OSC 10/11 to our greyscale
+	//      palette so text without an explicit color prop still follows the
+	//      theme instead of falling back to the terminal's default colors.
+	// OpenTUI relies on 1049 to create the clean alternate buffer and then
+	// updates retained rows; do not issue ED 2 here because some terminals save
+	// cleared displays into history even while switching buffers.
+	if (isInteractiveTerminal) {
+		process.stdout.write("\x1b[?25l\x1b[s\x1b[?1049h")
+		process.stdout.write(`\x1b]10;${COLORS.primary}\x07`)
+		process.stdout.write(`\x1b]11;${COLORS.bg}\x07`)
+		process.stdout.write(ENABLE_MOUSE_TRACKING)
 		process.stdout.write("\x1b]0;orbcode\x07")
 	}
+
+	// Restore the terminal on exit: reset default colors and leave the
+	// alternate screen buffer so the user's prior terminal state is restored.
+	function restoreTerminal(): void {
+		if (isInteractiveTerminal && process.stdout.writable) {
+			process.stdout.write(DISABLE_MOUSE_TRACKING)
+			process.stdout.write("\x1b]110\x07")
+			process.stdout.write("\x1b]111\x07")
+			process.stdout.write("\x1b[?1049l")
+		}
+	}
+	process.on("exit", restoreTerminal)
+	const fullscreenStdout = isInteractiveTerminal
+		? createFullscreenStdout(process.stdout)
+		: process.stdout
+
 	// Fire-and-forget: a stale or no-network state just means the header shows
 	// the "current version" line instead of an upgrade prompt.
 	const updateCheckPromise = getUpdateInfo(PACKAGE_NAME, VERSION)
@@ -200,6 +314,7 @@ async function main(): Promise<void> {
 			systemPromptOverride={systemPromptOverride}
 			updateCheck={updateCheckPromise}
 		/>,
+		{ stdout: fullscreenStdout },
 	)
 }
 

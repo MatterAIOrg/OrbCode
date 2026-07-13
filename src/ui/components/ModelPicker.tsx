@@ -57,7 +57,7 @@ export function ModelPicker({ currentId, onSelect, onCancel }: ModelPickerProps)
 			<Text bold color={COLORS.primary}>
 				Select a model
 			</Text>
-			{windowStart > 0 && <Text dimColor>  ↑ {windowStart} more</Text>}
+			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
 			{visible.map((model, i) => {
 				const index = windowStart + i
 				const isSelected = index === selected
@@ -68,11 +68,11 @@ export function ModelPicker({ currentId, onSelect, onCancel }: ModelPickerProps)
 							{isSelected ? "❯ " : "  "}
 							{index + 1}. {model.name}
 							{isCurrent && <Text color={COLORS.success}> ✓ current</Text>}
-							<Text dimColor> · {formatPrice(model)}</Text>
+							<Text color={COLORS.dim}> · {formatPrice(model)}</Text>
 						</Text>
 						{isSelected && (
 							<Box paddingLeft={5}>
-								<Text dimColor wrap="wrap">
+								<Text color={COLORS.dim} wrap="wrap">
 									{model.description}
 								</Text>
 							</Box>
@@ -81,9 +81,9 @@ export function ModelPicker({ currentId, onSelect, onCancel }: ModelPickerProps)
 				)
 			})}
 			{windowStart + VISIBLE_ROWS < models.length && (
-				<Text dimColor>  ↓ {models.length - windowStart - VISIBLE_ROWS} more</Text>
+				<Text color={COLORS.dim}>  ↓ {models.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text dimColor>↑/↓ select · enter confirm · esc cancel</Text>
+			<Text color={COLORS.dim}>↑/↓ select · enter confirm · esc cancel</Text>
 		</Box>
 	)
 }
