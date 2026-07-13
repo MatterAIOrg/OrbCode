@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-13
+
+### Changed
+
+- **Default theme now uses a neutral base with consistent semantic accents.**
+  The explicit palette uses `#ffffff` primary, `#d0d0d0` accent,
+  `#a8a8a8` thinking, `#7a7a7a` dim, and `#1a1a1a` background, while errors
+  and removals use `#E34671`, successes and additions use `#3FA266`, and
+  approval warnings use `#E2CE76`. All `<Text dimColor>` usages were replaced
+  with explicit `color={COLORS.dim}`. Code blocks follow `COLORS.accent`, and
+  edit-tool diff backgrounds now use the shared error/success colors.
+- **TUI now runs in the alternate screen buffer as an independent surface.**
+  On startup the app enters `\x1b[?1049h` (alternate screen) and sets the
+  terminal's default foreground/background via OSC 10/11 to the greyscale
+  palette, so every cell — including text without an explicit color prop —
+  follows the theme. The terminal scrollback is no longer affected; on
+  exit the original screen and colors are restored (`\x1b]110\x07`,
+  `\x1b]111\x07`, `\x1b[?1049l`).
+- **All content has horizontal margin.** The root container in `App.tsx`
+  now carries `marginX={2}` so the header, conversation rows, pickers,
+  prompts, input box, and status bar all sit inset from the terminal edge
+  consistently. The per-component `marginX` that was previously on the
+  input box was removed to avoid double margin.
+- **Input box is now a fully-bordered rounded box with quieter chrome.** The
+  previous chrome drew only top/bottom rules (`borderLeft/Right={false}`); it
+  now draws all four sides with `borderStyle="round"`, using a 50%-brightness
+  border so the input remains visually anchored without dominating the chat.
+- **The initial OrbCode header is top-anchored with a stable margin.** The
+  borderless intro uses a half-size cyan/white ASCII interpretation of the
+  `orbital.svg` brand mark alongside a metadata column, followed by a compact
+  two-column command grid and shortcut row. Temporary command and picker UI
+  grows below it without recentering or shifting the brand surface.
+- **User messages render as full-width borderless highlighted blocks.** A
+  subtle neutral background spans the transcript width inside the global
+  margins with two-cell horizontal and one-row vertical padding,
+  distinguishing prompts without adding more terminal chrome.
+- **Command and file-completion popups use padded rounded surfaces.** Slash
+  commands and `@file` results now share a solid neutral background with
+  same-color half-cell corner caps and padded content, without a contrasting
+  border.
+- **Approval modes have semantic highlighting again.** Ask mode is white,
+  edit approval is yellow, and auto-approval is green.
+
+### Fixed
+
+- **Diff add/remove lines now render with explicit foreground color.**
+  Previously the added/removed lines in `DiffView` set only
+  `backgroundColor`, leaving the text color at the terminal default — on
+  some terminals the text was invisible against the dark green/red
+  backgrounds. Both now set `color={COLORS.primary}` so the text is
+  always readable.
+- **Spinner no longer causes the input box to flicker.** The spinner is
+  wrapped in `<Box marginTop={1}>` (2 terminal lines), but the viewport
+  budget only reserved 1 line for it. This made the spacer over-allocate
+  by one line, so every time the spinner's second counter changed width
+  the input box shifted up and back down. The middle-height estimate now
+  correctly accounts for 2 lines.
+- **Fullscreen TUI no longer leaves duplicate frames in the scrollback.**
+  The root now always matches the real terminal dimensions, forcing Ink's
+  full-redraw path. Full frames are converted from newline-delimited output
+  to retained, cursor-addressed row replacements inside a synchronized
+  terminal update. Neither linefeeds nor per-frame display clears are emitted,
+  so renders cannot advance or archive terminal history. Fullscreen activation
+  also follows any interactive stdin/stdout/stderr stream instead of relying
+  only on `stdout.isTTY`, which is absent in some terminal wrappers. The TUI
+  captures the same complete set of mouse modes as
+  OpenTUI (`1000`, `1002`, `1003`, and `1006`), preventing wheel/trackpad
+  gestures from scrolling the terminal itself. Only the clipped chat
+  transcript handles wheel and page scrolling; login and other non-chat views
+  ignore it. The transcript is the sole shrinking region while the input and
+  status controls remain fixed at the bottom, including during terminal
+  resizes.
+- **Scrolling is smoother and fixed controls no longer flicker.** Wheel input
+  is coalesced to Ink's render cadence instead of creating a backlog of tiny
+  animated steps. Completed transcript rows are memoized, and long histories
+  mount only the visible rows plus overscan instead of re-rendering and laying
+  out the entire conversation on every wheel event. The terminal adapter also
+  keeps a retained row cache and only writes rows whose rendered content
+  changed, so spinner/streaming timers do not repaint the input or status area.
+- **The thinking animation remains visible during reasoning streams.** The
+  first reasoning token no longer replaces the animated activity indicator
+  with a static label; the spinner stays mounted above the live preview until
+  reasoning completes.
+- **Ctrl+D now requires confirmation.** The first press shows a three-second
+  `Press Ctrl+D again to exit` warning in the status bar; only a second press
+  exits the session. Escape now clears a non-empty chat input, including any
+  open slash-command or file-completion state.
+- **Live AI output is no longer clipped in resumed or narrow-terminal chats.**
+  Transcript virtualization now accounts for every committed row's margins
+  and borders, while status-bar fields remain single-line. Streaming text
+  therefore retains its reserved viewport rows and paints before completion.
+
 ## [0.4.1] - 2026-07-08
 
 ### Fixed
