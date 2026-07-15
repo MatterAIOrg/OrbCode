@@ -9,9 +9,12 @@ export interface Skill {
 	/** The full markdown body (without frontmatter). */
 	content: string
 	/** Where this skill was loaded from. */
-	source: "user" | "project"
+	source: "user" | "project" | "plugin"
 	/** Absolute path to the skill's directory (for ${SKILL_DIR} substitution). */
 	dir: string
+	/** Plugin namespace/root when this skill was installed as part of a plugin. */
+	plugin?: string
+	pluginDir?: string
 }
 
 /** Minimal frontmatter parser: extracts a top-level YAML block + the body. */

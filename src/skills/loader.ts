@@ -2,6 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { getConfigDir } from "../config/settings.js"
+import { installedPluginDirs } from "../plugins/manager.js"
 import type { ParsedFrontmatter, Skill } from "./types.js"
 
 /**
@@ -45,16 +46,21 @@ function descriptionFromBody(content: string): string {
 }
 
 /** Load a single skill from a `<dir>/SKILL.md` path. */
-function loadSkill(skillDir: string, source: "user" | "project"): Skill | undefined {
-	const skillFile = path.join(skillDir, "SKILL.md")
+function loadSkill(
+	skillDir: string,
+	source: "user" | "project" | "plugin",
+	options: { skillFile?: string; name?: string; plugin?: string; pluginDir?: string } = {},
+): Skill | undefined {
+	const skillFile = options.skillFile ?? path.join(skillDir, "SKILL.md")
 	let raw: string
 	try {
 		raw = fs.readFileSync(skillFile, "utf8")
 	} catch {
 		return undefined
 	}
-	const name = path.basename(skillDir)
 	const { frontmatter, content } = parseFrontmatter(raw)
+	const baseName = options.name || frontmatter.name || path.basename(skillDir)
+	const name = options.plugin ? `${options.plugin}:${baseName}` : baseName
 	return {
 		name,
 		description: frontmatter.description || descriptionFromBody(content),
@@ -62,6 +68,8 @@ function loadSkill(skillDir: string, source: "user" | "project"): Skill | undefi
 		content,
 		source,
 		dir: skillDir,
+		plugin: options.plugin,
+		pluginDir: options.pluginDir,
 	}
 }
 
@@ -82,13 +90,18 @@ function loadSkillsDir(skillsDir: string, source: "user" | "project"): Skill[] {
 	return skills
 }
 
-/** Walk from cwd up to root, collecting `.orbcode/skills` dirs (root last). */
+/** Walk from cwd up to root, collecting `.orbcode/skills` and `.orb/skills`
+ *  dirs (root last). `.orbcode` is pushed before `.orb` at each level so
+ *  `.orb` wins on same-level name collisions. */
 function projectSkillsDirs(cwd: string): string[] {
 	const dirs: string[] = []
 	let current = path.resolve(cwd)
 	const root = path.parse(current).root
 	while (current !== root) {
+		// .orbcode/skills is legacy; .orb/skills is the current convention.
+		// Push legacy first so .orb wins on same-level name collisions.
 		dirs.push(path.join(current, ".orbcode", "skills"))
+		dirs.push(path.join(current, ".orb", "skills"))
 		const parent = path.dirname(current)
 		if (parent === current) break
 		current = parent
@@ -115,6 +128,14 @@ export function loadSkills(cwd = process.cwd()): Map<string, Skill> {
 		}
 	}
 
+	// Marketplace plugins are self-contained bundles. Their skills and legacy
+	// commands are exposed under a plugin namespace to prevent collisions.
+	for (const pluginDir of installedPluginDirs(cwd)) {
+		for (const skill of loadPluginSkills(pluginDir)) {
+			skills.set(skill.name, skill)
+		}
+	}
+
 	return skills
 }
 
@@ -133,5 +154,108 @@ export function renderSkillCatalog(skills: Map<string, Skill>): string {
 
 /** Substitute ${SKILL_DIR} in a skill's content with its directory path. */
 export function renderSkillContent(skill: Skill): string {
-	return skill.content.replace(/\$\{SKILL_DIR\}/g, skill.dir)
+	return skill.content
+		.replace(/\$\{SKILL_DIR\}/g, skill.dir)
+		.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, skill.pluginDir ?? skill.dir)
+		.replace(/\$\{ORB_PLUGIN_ROOT\}/g, skill.pluginDir ?? skill.dir)
+}
+
+function readJson(filePath: string): Record<string, unknown> | undefined {
+	try {
+		return JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>
+	} catch {
+		return undefined
+	}
+}
+
+function stringPaths(value: unknown): string[] {
+	if (typeof value === "string") return [value]
+	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
+function safePluginPath(pluginDir: string, relativePath: string): string | undefined {
+	const root = path.resolve(pluginDir)
+	const target = path.resolve(root, relativePath)
+	return target === root || target.startsWith(root + path.sep) ? target : undefined
+}
+
+function findFiles(root: string, predicate: (filePath: string) => boolean): string[] {
+	let entries: fs.Dirent[]
+	try {
+		entries = fs.readdirSync(root, { withFileTypes: true })
+	} catch {
+		return []
+	}
+	const files: string[] = []
+	for (const entry of entries) {
+		const item = path.join(root, entry.name)
+		if (entry.isDirectory()) files.push(...findFiles(item, predicate))
+		else if (entry.isFile() && predicate(item)) files.push(item)
+	}
+	return files
+}
+
+/** Load skills and legacy command files from one installed plugin bundle. */
+function loadPluginSkills(pluginDir: string): Skill[] {
+	const metadata = readJson(path.join(pluginDir, ".orb-plugin.json"))
+	const manifest = readJson(path.join(pluginDir, ".claude-plugin", "plugin.json"))
+	const pluginName =
+		(typeof metadata?.name === "string" && metadata.name) ||
+		(typeof manifest?.name === "string" && manifest.name) ||
+		path.basename(pluginDir)
+	const skillFiles = new Set<string>()
+	const commandFiles = new Set<string>()
+
+	const rootSkill = path.join(pluginDir, "SKILL.md")
+	if (fs.existsSync(rootSkill)) skillFiles.add(rootSkill)
+	for (const file of findFiles(path.join(pluginDir, "skills"), (item) => path.basename(item) === "SKILL.md")) {
+		skillFiles.add(file)
+	}
+
+	// Marketplace and manifest skill paths add to the default skills scan.
+	for (const relative of [...stringPaths(metadata?.skills), ...stringPaths(manifest?.skills)]) {
+		const target = safePluginPath(pluginDir, relative)
+		if (!target) continue
+		try {
+			if (fs.statSync(target).isFile() && path.basename(target) === "SKILL.md") skillFiles.add(target)
+			else if (fs.statSync(target).isDirectory()) {
+				for (const file of findFiles(target, (item) => path.basename(item) === "SKILL.md")) skillFiles.add(file)
+			}
+		} catch {
+			// Invalid optional component paths do not prevent other skills loading.
+		}
+	}
+
+	for (const file of findFiles(path.join(pluginDir, "commands"), (item) => item.toLowerCase().endsWith(".md"))) {
+		commandFiles.add(file)
+	}
+	for (const relative of [...stringPaths(metadata?.commands), ...stringPaths(manifest?.commands)]) {
+		const target = safePluginPath(pluginDir, relative)
+		if (!target) continue
+		try {
+			if (fs.statSync(target).isFile() && target.toLowerCase().endsWith(".md")) commandFiles.add(target)
+			else if (fs.statSync(target).isDirectory()) {
+				for (const file of findFiles(target, (item) => item.toLowerCase().endsWith(".md"))) commandFiles.add(file)
+			}
+		} catch {
+			// Ignore invalid optional command paths.
+		}
+	}
+
+	const skills: Skill[] = []
+	for (const file of skillFiles) {
+		const skill = loadSkill(path.dirname(file), "plugin", { skillFile: file, plugin: pluginName, pluginDir })
+		if (skill) skills.push(skill)
+	}
+	for (const file of commandFiles) {
+		const name = path.basename(file, path.extname(file))
+		const skill = loadSkill(path.dirname(file), "plugin", {
+			skillFile: file,
+			name,
+			plugin: pluginName,
+			pluginDir,
+		})
+		if (skill) skills.push(skill)
+	}
+	return skills
 }
