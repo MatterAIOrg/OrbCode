@@ -64,7 +64,7 @@ Your system prompt may include an "Project & User Instructions (AGENTS.md)" sect
 
 # Skills
 
-Your system prompt may include an "Available Skills" section listing skills by name with a description and when-to-use hint. Skills are reusable instruction sets stored in ~/.orbcode/skills/ and .orbcode/skills/. When a task matches a skill's when-to-use condition, invoke the \`use_skill\` tool with the skill's name to load its full instructions, then follow them for the current task.
+Your system prompt may include an "Available Skills" section listing skills by name with a description and when-to-use hint. Skills are reusable instruction sets from standalone skill directories or installed plugin bundles. When a task matches a skill's when-to-use condition, invoke the \`use_skill\` tool with the skill's name to load its full instructions, then follow them for the current task.
 
 # MCP Tools
 

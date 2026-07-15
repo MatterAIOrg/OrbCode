@@ -70,6 +70,7 @@ import {
   type Row,
 } from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
+import { PluginManager } from "./components/PluginManager.js";
 import { isMouseInput, mouseScrollDelta } from "./terminal.js";
 import {
   addLink,
@@ -110,6 +111,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/link",
     description: "link other repos so changes here are checked against them",
+  },
+  {
+    name: "/plugins",
+    description: "manage plugins from the official marketplace",
   },
   {
     name: "/mcp",
@@ -398,6 +403,7 @@ export function App({
     SessionData[] | null
   >(null);
   const [linkManagerOpen, setLinkManagerOpen] = useState(false);
+  const [skillManagerOpen, setSkillManagerOpen] = useState(false);
   const [links, setLinks] = useState<LinkedRepo[]>([]);
   const [linkStatus, setLinkStatus] = useState("");
   // MCP manager (created once, shared across agents in this process). Null until
@@ -1007,6 +1013,11 @@ export function App({
           setLinkStatus("");
           setLinkManagerOpen(true);
           break;
+        case "/plugin":
+        case "/plugins":
+        case "/skills": // legacy alias
+          setSkillManagerOpen(true);
+          break;
         case "/mcp": {
           const manager = mcpManagerRef.current;
           if (!manager) {
@@ -1459,7 +1470,21 @@ export function App({
     !mcpMigrationEntries &&
     !resumableSessions &&
     !taskPickerSessions &&
-    !linkManagerOpen;
+    !linkManagerOpen &&
+    !skillManagerOpen;
+
+  const popoverOpen =
+    !!pendingApproval ||
+    !!pendingFollowup ||
+    !!pendingHookTrust ||
+    !!pendingMcpApproval ||
+    modelPickerOpen ||
+    mcpPickerOpen ||
+    !!mcpMigrationEntries ||
+    !!resumableSessions ||
+    !!taskPickerSessions ||
+    linkManagerOpen ||
+    skillManagerOpen;
 
   // ── Viewport management ─────────────────────────────────────────────
   // Instead of <Static> (which permanently writes to stdout and causes
@@ -1532,19 +1557,6 @@ export function App({
         .reduce((height, line) => height + wrapHeight(line, taskWidth), 0) +
       (taskLines.length > 10 ? 1 : 0);
   }
-  if (
-    pendingApproval ||
-    pendingFollowup ||
-    pendingHookTrust ||
-    pendingMcpApproval ||
-    modelPickerOpen ||
-    mcpPickerOpen ||
-    mcpMigrationEntries ||
-    resumableSessions ||
-    taskPickerSessions ||
-    linkManagerOpen
-  )
-    dynamicHeight += 10;
   if (busy && !streamingText && !streamingReasoning) dynamicHeight += 2;
 
   const transcriptHeight = Math.max(1, rowsHeight + dynamicHeight);
@@ -1618,7 +1630,7 @@ export function App({
   // append to terminal scrollback. Only the transcript is clipped/translated;
   // the prompt and status region never shrink or leave the viewport.
   return (
-    <Box flexDirection="column" width={termCols} height={termRows} paddingX={2} overflow="hidden">
+    <Box flexDirection="column" width={termCols} height={termRows} paddingX={2} overflow="hidden" position="relative">
       {view === "login" ? (
         <LoginSection onLogin={handleLogin} />
       ) : (
@@ -1685,127 +1697,6 @@ export function App({
                 )}
               </Box>
             )}
-            {modelPickerOpen && (
-              <Box marginTop={1}>
-                <ModelPicker
-                  currentId={settings.model}
-                  onSelect={(modelId) => {
-                    setModelPickerOpen(false);
-                    switchModel(modelId);
-                  }}
-                  onCancel={() => setModelPickerOpen(false)}
-                />
-              </Box>
-            )}
-            {resumableSessions && (
-              <Box marginTop={1}>
-                <SessionPicker
-                  sessions={resumableSessions}
-                  onSelect={handleResume}
-                  onCancel={() => setResumableSessions(null)}
-                />
-              </Box>
-            )}
-            {taskPickerSessions && (
-              <Box marginTop={1}>
-                <SessionPicker
-                  sessions={taskPickerSessions}
-                  title="Reference a previous task"
-                  onSelect={handleTaskSelect}
-                  onCancel={() => setTaskPickerSessions(null)}
-                />
-              </Box>
-            )}
-            {linkManagerOpen && (
-              <Box marginTop={1}>
-                <LinkManager
-                  links={links}
-                  status={linkStatus}
-                  onAdd={(input) => {
-                    const result = addLink(process.cwd(), input);
-                    setLinkStatus(result.message);
-                    if (result.ok) setLinks(loadLinks(process.cwd()));
-                  }}
-                  onRemove={(link) => {
-                    removeLink(process.cwd(), link.path);
-                    setLinks(loadLinks(process.cwd()));
-                    setLinkStatus(`Unlinked ${path.basename(link.path)}`);
-                  }}
-                  onClose={() => setLinkManagerOpen(false)}
-                />
-              </Box>
-            )}
-            {pendingHookTrust && (
-              <Box marginTop={1}>
-                <HookTrustPrompt
-                  cwd={process.cwd()}
-                  commands={pendingHookTrust.commands}
-                  onDecision={resolveHookTrust}
-                />
-              </Box>
-            )}
-            {pendingMcpApproval && (
-              <Box marginTop={1}>
-                <McpApprovalPrompt
-                  serverNames={pendingMcpApproval}
-                  onApprove={resolveMcpApproval}
-                />
-              </Box>
-            )}
-            {mcpPickerOpen && mcpManagerRef.current && (
-              <Box marginTop={1}>
-                <McpPicker
-                  manager={mcpManagerRef.current}
-                  onChanged={() => {
-                    const m = mcpManagerRef.current;
-                    if (m)
-                      saveMcpApproval(
-                        process.cwd(),
-                        m.getEnabled(),
-                        m.getDisabled(),
-                      );
-                  }}
-                  onCancel={() => setMcpPickerOpen(false)}
-                  onDeleted={handleMcpServerDeleted}
-                />
-              </Box>
-            )}
-            {mcpMigrationEntries && (
-              <Box marginTop={1}>
-                <McpMigrationPicker
-                  entries={mcpMigrationEntries}
-                  onCancel={() => setMcpMigrationEntries(null)}
-                  onConfirm={(selected) => {
-                    setMcpMigrationEntries(null);
-                    resolveMcpMigration(selected);
-                  }}
-                />
-              </Box>
-            )}
-            {pendingApproval && (
-              <Box marginTop={1}>
-                <ApprovalPrompt
-                  request={pendingApproval.request}
-                  onDecision={(decision) => {
-                    pendingApproval.resolve(decision);
-                    setPendingApproval(null);
-                  }}
-                />
-              </Box>
-            )}
-            {pendingFollowup && (
-              <Box marginTop={1}>
-                <FollowupPrompt
-                  question={pendingFollowup.question}
-                  suggestions={pendingFollowup.suggestions}
-                  onAnswer={(answer) => {
-                    pushRow({ kind: "user", text: answer });
-                    pendingFollowup.resolve(answer);
-                    setPendingFollowup(null);
-                  }}
-                />
-              </Box>
-            )}
             {busy &&
               !pendingApproval &&
               !pendingFollowup &&
@@ -1859,6 +1750,123 @@ export function App({
               usagePercentage={usage?.usagePercentage}
               tieredUsage={usage?.tieredUsage}
             />
+          </Box>
+        </Box>
+      )}
+      {popoverOpen && (
+        <Box
+          position="absolute"
+          width={termCols - 4}
+          height={termRows}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Box flexDirection="column" width={Math.min(90, termCols - 8)}>
+            {modelPickerOpen && (
+              <ModelPicker
+                currentId={settings.model}
+                onSelect={(modelId) => {
+                  setModelPickerOpen(false);
+                  switchModel(modelId);
+                }}
+                onCancel={() => setModelPickerOpen(false)}
+              />
+            )}
+            {resumableSessions && (
+              <SessionPicker
+                sessions={resumableSessions}
+                onSelect={handleResume}
+                onCancel={() => setResumableSessions(null)}
+              />
+            )}
+            {taskPickerSessions && (
+              <SessionPicker
+                sessions={taskPickerSessions}
+                title="Reference a previous task"
+                onSelect={handleTaskSelect}
+                onCancel={() => setTaskPickerSessions(null)}
+              />
+            )}
+            {linkManagerOpen && (
+              <LinkManager
+                links={links}
+                status={linkStatus}
+                onAdd={(input) => {
+                  const result = addLink(process.cwd(), input);
+                  setLinkStatus(result.message);
+                  if (result.ok) setLinks(loadLinks(process.cwd()));
+                }}
+                onRemove={(link) => {
+                  removeLink(process.cwd(), link.path);
+                  setLinks(loadLinks(process.cwd()));
+                  setLinkStatus(`Unlinked ${path.basename(link.path)}`);
+                }}
+                onClose={() => setLinkManagerOpen(false)}
+              />
+            )}
+            {skillManagerOpen && (
+              <PluginManager onClose={() => setSkillManagerOpen(false)} />
+            )}
+            {pendingHookTrust && (
+              <HookTrustPrompt
+                cwd={process.cwd()}
+                commands={pendingHookTrust.commands}
+                onDecision={resolveHookTrust}
+              />
+            )}
+            {pendingMcpApproval && (
+              <McpApprovalPrompt
+                serverNames={pendingMcpApproval}
+                onApprove={resolveMcpApproval}
+              />
+            )}
+            {mcpPickerOpen && mcpManagerRef.current && (
+              <McpPicker
+                manager={mcpManagerRef.current}
+                onChanged={() => {
+                  const m = mcpManagerRef.current;
+                  if (m)
+                    saveMcpApproval(
+                      process.cwd(),
+                      m.getEnabled(),
+                      m.getDisabled(),
+                    );
+                }}
+                onCancel={() => setMcpPickerOpen(false)}
+                onDeleted={handleMcpServerDeleted}
+              />
+            )}
+            {mcpMigrationEntries && (
+              <McpMigrationPicker
+                entries={mcpMigrationEntries}
+                onCancel={() => setMcpMigrationEntries(null)}
+                onConfirm={(selected) => {
+                  setMcpMigrationEntries(null);
+                  resolveMcpMigration(selected);
+                }}
+              />
+            )}
+            {pendingApproval && (
+              <ApprovalPrompt
+                request={pendingApproval.request}
+                onDecision={(decision) => {
+                  pendingApproval.resolve(decision);
+                  setPendingApproval(null);
+                }}
+              />
+            )}
+            {pendingFollowup && (
+              <FollowupPrompt
+                question={pendingFollowup.question}
+                suggestions={pendingFollowup.suggestions}
+                onAnswer={(answer) => {
+                  pushRow({ kind: "user", text: answer });
+                  pendingFollowup.resolve(answer);
+                  setPendingFollowup(null);
+                }}
+              />
+            )}
           </Box>
         </Box>
       )}

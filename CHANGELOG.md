@@ -5,9 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.8] - 2026-07-15
+
+### Added
+
+- **Plugin marketplace browser (`/plugins`).** A new tabbed UI lists installed
+  plugins and browses the complete Anthropic `claude-plugins-official`
+  marketplace. Installation downloads the pinned plugin source as one bundle
+  into `.orb/plugins/<name>/`, preserving skills, commands, agents, MCP config,
+  hooks, scripts, rules, and other supporting files. Search filters by name,
+  description, or author. `/plugin` and the former `/skills` command remain as
+  aliases.
+- **Non-interactive plugin management.** `orbcode plugin install
+clickhouse@claude-plugins-official`, `orbcode plugin list`, and `orbcode
+plugin uninstall <name>` provide the same install flow outside the TUI.
+
+### Fixed
+
+- **Marketplace installation no longer depends on GitHub tree scans.** The
+  previous per-repository `SKILL.md` scan quickly exhausted GitHub's anonymous
+  API limit and incorrectly reported that plugins such as ClickHouse had no
+  skills. OrbCode now installs `git-subdir`, `url`, `github`, and official
+  relative-path sources through git at the marketplace-pinned revision.
+- **Plugin components are loaded from the installed bundle.** Skills and legacy
+  commands are exposed as `<plugin>:<skill>`, bundled reference files remain
+  available, and `.mcp.json`/manifest MCP servers are namespaced and discovered
+  as project-scoped servers with `${CLAUDE_PLUGIN_ROOT}` substitution.
+- **Standalone project skills use `.orb/skills/`.** The skill loader discovers
+  that directory alongside the legacy `.orbcode/skills/` location.
 
 ### Changed
+
+- **All popovers are now centered on screen.** Pickers, prompts, and
+  managers (model picker, session picker, link manager, plugin manager, MCP
+  picker, approval prompts, follow-up prompts, hook trust, MCP approval,
+  migration picker) render as an absolutely-positioned overlay centered
+  vertically and horizontally instead of flowing inline with the
+  transcript.
 
 - **The TUI now preserves the terminal's configured colors.** Startup and
   cleanup no longer emit OSC 10/11 or OSC 110/111 sequences that override or
@@ -192,8 +226,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **System prompt rewritten for speed and editing discipline.** The `always
-  gather exhaustive context` guidance is replaced with a `gather enough context,
-  then act` principle. The model is now told that a small, localized change
+gather exhaustive context` guidance is replaced with a `gather enough context,
+then act` principle. The model is now told that a small, localized change
   typically needs about 3-6 tool calls and that further exploration after the
   edit point is identified is waste. The TODO list rule is tightened to
   multi-step tasks (3+ steps). A new editing discipline block instructs the
@@ -212,7 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drops before the first chunk (DNS/socket reset/TLS, plus 5xx, 408, 429) are
   retried up to 3 times with exponential backoff capped at 8s. Real 4xx client
   errors and user aborts are not retried. A `Connection to the model failed
-  (...). Retrying n/3 in Ns…` message is emitted so the user sees progress.
+(...). Retrying n/3 in Ns…` message is emitted so the user sees progress.
   The backoff is interruptible so Ctrl+C never gets stuck.
 - **Reasoning phase timing now reflects only the thinking time.** Previously a
   single `hadReasoning` flag caused the `Thought for Ns` timer to span the
@@ -264,7 +298,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MatterAI inference routed to the wrong backend.** `AxonClient` was
   building the OpenAI `baseURL` by running `API_GATEWAY_PATH`
   (`https://api2.matterai.so/v1/web/`) through `getUrlFromToken`, which
-  rehosts *any* `api.matterai.so` target onto the control-plane host
+  rehosts _any_ `api.matterai.so` target onto the control-plane host
   resolved from the JWT — so every inference request silently hit
   `https://api.matterai.so/v1/web/` instead of the gateway at
   `https://api2.matterai.so/v1/web/`. The gateway URL is now used

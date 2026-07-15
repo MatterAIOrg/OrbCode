@@ -16,8 +16,8 @@ import webSearch from "./web_search.js"
 
 // Native tool schemas ported from the Orbital extension. IDE-only tools
 // (codebase_search, lsp, check_past_chat_memories, browser_action, …) are not
-// active in the CLI. use_skill is now active: skills are loaded from
-// ~/.orbcode/skills/ and .orbcode/skills/ (see src/skills/loader.ts).
+// active in the CLI. use_skill is now active: standalone and installed-plugin
+// skills are loaded by src/skills/loader.ts.
 export const nativeTools = [
 	fileEdit,
 	multiFileEdit,

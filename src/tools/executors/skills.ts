@@ -5,9 +5,9 @@ import { loadSkills, renderSkillContent } from "../../skills/loader.js"
  * `use_skill` executor: loads a skill's full markdown instructions and returns
  * them to the model so it can follow the skill's guidance for the current task.
  *
- * Skills are discovered from ~/.orbcode/skills/ and .orbcode/skills/ (see the
- * skills loader). The model sees the catalog in the system prompt and invokes
- * this tool with a `skill_name`.
+ * Skills are discovered from standalone skill directories and installed
+ * plugin bundles (see the skills loader). The model sees the catalog in the
+ * system prompt and invokes this tool with a `skill_name`.
  */
 export async function useSkill(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
 	const skillName = String(args.skill_name ?? "").trim()

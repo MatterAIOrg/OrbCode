@@ -729,6 +729,32 @@ only connected if they were previously approved (via an interactive `/mcp`
 session). Unapproved project servers are skipped with a stderr note. User/local
 servers connect as usual.
 
+## Plugins
+
+Run `/plugins` to browse Anthropic's official Claude plugin marketplace, or
+install directly from the shell:
+
+```bash
+orbcode plugin install clickhouse@claude-plugins-official
+orbcode plugin list
+orbcode plugin uninstall clickhouse
+```
+
+OrbCode installs the complete pinned bundle under `.orb/plugins/<name>/`, just
+like a plugin cache rather than extracting individual `SKILL.md` files. Skills
+and legacy command files are loaded with a `<plugin>:<skill>` namespace, and
+bundled MCP servers appear as project-scoped servers that require the normal
+one-time MCP approval. Supporting files such as rules and scripts stay beside
+the skill so plugin-relative references continue to work. Restart OrbCode after
+installing or uninstalling so every runtime component is reloaded.
+
+Agent, hook, LSP, and other component files are retained in the installed
+bundle and shown in the plugin inventory. OrbCode currently activates the
+skill/command and MCP components; components that require a subagent, plugin
+hook, or LSP runtime remain installed for future runtime support.
+
+`/plugin` and `/skills` are accepted as aliases for `/plugins`.
+
 ## Skills
 
 Skills are reusable instruction sets the model can load on demand. A skill is a
@@ -738,7 +764,8 @@ markdown body of specialized instructions.
 ### Creating a skill
 
 Place a directory under `~/.orbcode/skills/` (user, applies everywhere) or
-`.orbcode/skills/` (project, checked into the repo):
+`.orb/skills/` (project, checked into the repo). The legacy project path
+`.orbcode/skills/` is still discovered:
 
 ```
 ~/.orbcode/skills/
@@ -843,7 +870,10 @@ src/
     manager.ts       McpManager: connection lifecycle, enable/disable, tool routing
   skills/
     types.ts         Skill + frontmatter types
-    loader.ts        ~/.orbcode/skills + .orbcode/skills discovery (SKILL.md format)
+    loader.ts        standalone + installed-plugin skill discovery
+  plugins/
+    types.ts         marketplace and installed-plugin metadata types
+    manager.ts       official catalog fetch, pinned git install, inventory
   memory/
     types.ts         MemoryFile type
     loader.ts        AGENTS.md discovery (user/project/local) + @include resolution
@@ -905,7 +935,7 @@ Active in the CLI (schemas byte-identical to the extension's `native-tools`):
 | `execute_command`          | user's shell, 120s timeout, 30k output cap, optional cwd                                     |
 | `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
 | `update_todo_list`         | drives the TUI todo panel                                                                    |
-| `use_skill`                | loads a skill's full instructions from ~/.orbcode/skills or .orbcode/skills                  |
+| `use_skill`                | loads standalone or namespaced plugin skill instructions                                    |
 | `ask_followup_question`    | interactive menu in the TUI                                                                  |
 | `attempt_completion`       | ends the turn with a completion card                                                         |
 | `mcp__<server>__<tool>`    | any tool exposed by a connected MCP server (see [MCP servers](#mcp-servers))                 |

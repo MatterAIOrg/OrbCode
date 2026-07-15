@@ -227,25 +227,26 @@ export class McpManager {
 
 	/** Route an `mcp__<server>__<tool>` call to the right connection. */
 	async callTool(toolName: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }> {
-		const match = /^mcp__([^_]+)__(.+)$/.exec(toolName)
-		if (!match) {
+		if (!toolName.startsWith("mcp__")) {
 			return { text: `Invalid MCP tool name: ${toolName}`, isError: true }
 		}
-		const [, server, originalName] = match
-		const connection = this.connections.get(server)
-		if (!connection) {
-			return { text: `MCP server "${server}" is not connected.`, isError: true }
+		for (const connection of this.connections.values()) {
+			const tool = connection.tools.find((candidate) => candidate.name === toolName)
+			if (!tool) continue
+			try {
+				return await callMcpTool(connection, tool.originalName, args)
+			} catch (error) {
+				return { text: `MCP tool ${toolName} failed: ${(error as Error).message}`, isError: true }
+			}
 		}
-		try {
-			return await callMcpTool(connection, originalName, args)
-		} catch (error) {
-			return { text: `MCP tool ${toolName} failed: ${(error as Error).message}`, isError: true }
-		}
+		return { text: `MCP tool "${toolName}" is not connected.`, isError: true }
 	}
 
 	/** True if `toolName` is an MCP tool managed by this manager. */
 	hasTool(toolName: string): boolean {
-		return /^mcp__[^_]+__/.test(toolName)
+		return [...this.connections.values()].some((connection) =>
+			connection.tools.some((tool) => tool.name === toolName),
+		)
 	}
 
 	/** Current snapshot for the TUI / status display. */
