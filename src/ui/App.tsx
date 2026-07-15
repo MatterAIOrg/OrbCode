@@ -70,6 +70,7 @@ import {
   type Row,
 } from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
+import { PluginManager } from "./components/PluginManager.js";
 import { isMouseInput, mouseScrollDelta } from "./terminal.js";
 import {
   addLink,
@@ -110,6 +111,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/link",
     description: "link other repos so changes here are checked against them",
+  },
+  {
+    name: "/plugins",
+    description: "manage plugins from the official marketplace",
   },
   {
     name: "/mcp",
@@ -398,6 +403,7 @@ export function App({
     SessionData[] | null
   >(null);
   const [linkManagerOpen, setLinkManagerOpen] = useState(false);
+  const [skillManagerOpen, setSkillManagerOpen] = useState(false);
   const [links, setLinks] = useState<LinkedRepo[]>([]);
   const [linkStatus, setLinkStatus] = useState("");
   // MCP manager (created once, shared across agents in this process). Null until
@@ -1007,6 +1013,11 @@ export function App({
           setLinkStatus("");
           setLinkManagerOpen(true);
           break;
+        case "/plugin":
+        case "/plugins":
+        case "/skills": // legacy alias
+          setSkillManagerOpen(true);
+          break;
         case "/mcp": {
           const manager = mcpManagerRef.current;
           if (!manager) {
@@ -1459,7 +1470,8 @@ export function App({
     !mcpMigrationEntries &&
     !resumableSessions &&
     !taskPickerSessions &&
-    !linkManagerOpen;
+    !linkManagerOpen &&
+    !skillManagerOpen;
 
   const popoverOpen =
     !!pendingApproval ||
@@ -1471,7 +1483,8 @@ export function App({
     !!mcpMigrationEntries ||
     !!resumableSessions ||
     !!taskPickerSessions ||
-    linkManagerOpen;
+    linkManagerOpen ||
+    skillManagerOpen;
 
   // ── Viewport management ─────────────────────────────────────────────
   // Instead of <Static> (which permanently writes to stdout and causes
@@ -1791,6 +1804,9 @@ export function App({
                 }}
                 onClose={() => setLinkManagerOpen(false)}
               />
+            )}
+            {skillManagerOpen && (
+              <PluginManager onClose={() => setSkillManagerOpen(false)} />
             )}
             {pendingHookTrust && (
               <HookTrustPrompt

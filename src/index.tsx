@@ -5,6 +5,7 @@ import { PRODUCT_NAME, VERSION } from "./branding.js"
 import { App } from "./ui/App.js"
 import { runHeadless } from "./headless.js"
 import { runMcpCommand } from "./commands/mcp.js"
+import { runPluginCommand } from "./commands/plugin.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
 import {
 	clearUpdateCache,
@@ -111,6 +112,9 @@ Usage:
   orbcode mcp remove ...  remove an MCP server
   orbcode mcp list        list configured MCP servers
   orbcode mcp migrate     import MCP servers from Claude Code / Claude Desktop
+  orbcode plugin install clickhouse@claude-plugins-official
+                          install a complete plugin from the official marketplace
+  orbcode plugin list     list plugins installed for this project
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
   orbcode --model <id>    use a specific model for this run
@@ -224,6 +228,11 @@ async function main(): Promise<void> {
 	// `orbcode mcp ...` — manage MCP servers from the command line (add/remove/list).
 	if (args[0] === "mcp") {
 		const code = await runMcpCommand(args.slice(1))
+		process.exit(code)
+	}
+
+	if (args[0] === "plugin" || args[0] === "plugins") {
+		const code = await runPluginCommand(args.slice(1))
 		process.exit(code)
 	}
 
