@@ -2,6 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { getConfigDir } from "../config/settings.js"
+import { installedPluginDirs } from "../plugins/manager.js"
 import type {
 	McpHttpServerConfig,
 	McpJsonConfig,
@@ -35,10 +36,10 @@ function readJson(filePath: string): Record<string, unknown> | undefined {
 }
 
 /** Expand ${VAR} and $VAR references in a string using process.env. */
-function expandEnv(value: string): string {
+function expandEnv(value: string, overrides: Record<string, string> = {}): string {
 	return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, braced, bare) => {
 		const name = braced ?? bare
-		return process.env[name] ?? ""
+		return overrides[name] ?? process.env[name] ?? ""
 	})
 }
 
@@ -78,24 +79,24 @@ function normalizeOAuth(raw: unknown): McpOAuthConfig | undefined {
 }
 
 /** Validate + normalize a single server config object from disk. */
-function normalizeServerConfig(raw: unknown): McpServerConfig | undefined {
+function normalizeServerConfig(raw: unknown, variables: Record<string, string> = {}): McpServerConfig | undefined {
 	if (!isPlainObject(raw)) return undefined
 	const type = typeof raw.type === "string" ? raw.type : "stdio"
 
 	if (type === "stdio") {
 		if (typeof raw.command !== "string" || !raw.command.trim()) return undefined
-		const config: McpStdioServerConfig = { type: "stdio", command: expandEnv(raw.command) }
+		const config: McpStdioServerConfig = { type: "stdio", command: expandEnv(raw.command, variables) }
 		if (Array.isArray(raw.args)) {
-			config.args = raw.args.map((a) => expandEnv(String(a)))
+			config.args = raw.args.map((a) => expandEnv(String(a), variables))
 		}
 		if (isPlainObject(raw.env)) {
 			const env: Record<string, string> = {}
 			for (const [k, v] of Object.entries(raw.env)) {
-				if (typeof v === "string") env[k] = expandEnv(v)
+				if (typeof v === "string") env[k] = expandEnv(v, variables)
 			}
 			config.env = env
 		}
-		if (typeof raw.cwd === "string") config.cwd = expandEnv(raw.cwd)
+		if (typeof raw.cwd === "string") config.cwd = expandEnv(raw.cwd, variables)
 		return config
 	}
 
@@ -103,12 +104,12 @@ function normalizeServerConfig(raw: unknown): McpServerConfig | undefined {
 		if (typeof raw.url !== "string" || !raw.url.trim()) return undefined
 		const config: McpHttpServerConfig | McpSseServerConfig = {
 			type,
-			url: expandEnv(raw.url),
+			url: expandEnv(raw.url, variables),
 		} as McpHttpServerConfig | McpSseServerConfig
 		if (isPlainObject(raw.headers)) {
 			const headers: Record<string, string> = {}
 			for (const [k, v] of Object.entries(raw.headers)) {
-				if (typeof v === "string") headers[k] = expandEnv(v)
+				if (typeof v === "string") headers[k] = expandEnv(v, variables)
 			}
 			;(config as McpHttpServerConfig).headers = headers
 		}
@@ -123,12 +124,13 @@ function normalizeServerConfig(raw: unknown): McpServerConfig | undefined {
 /** Validate + normalize a whole `mcpServers` record. */
 function normalizeServers(
 	raw: unknown,
+	variables: Record<string, string> = {},
 ): Record<string, McpServerConfig> {
 	if (!isPlainObject(raw)) return {}
 	const servers: Record<string, McpServerConfig> = {}
 	for (const [name, cfg] of Object.entries(raw)) {
 		if (!/^[A-Za-z0-9_-]+$/.test(name)) continue
-		const normalized = normalizeServerConfig(cfg)
+		const normalized = normalizeServerConfig(cfg, variables)
 		if (normalized) servers[name] = normalized
 	}
 	return servers
@@ -146,6 +148,34 @@ function readMcpJson(filePath: string): Record<string, McpServerConfig> {
 	const json = readJson(filePath)
 	if (!json || !isPlainObject(json.mcpServers)) return {}
 	return normalizeServers(json.mcpServers)
+}
+
+function pluginMcpServers(pluginDir: string): Record<string, McpServerConfig> {
+	const metadata = readJson(path.join(pluginDir, ".orb-plugin.json"))
+	const manifest = readJson(path.join(pluginDir, ".claude-plugin", "plugin.json"))
+	const variables = {
+		CLAUDE_PLUGIN_ROOT: pluginDir,
+		ORB_PLUGIN_ROOT: pluginDir,
+	}
+	const merged: Record<string, McpServerConfig> = {}
+	const mergeCandidate = (candidate: unknown): void => {
+		let raw = candidate
+		if (typeof candidate === "string") {
+			const target = path.resolve(pluginDir, candidate)
+			const root = path.resolve(pluginDir)
+			if (target !== root && !target.startsWith(root + path.sep)) return
+			const json = readJson(target)
+			raw = json?.mcpServers ?? json
+		}
+		if (isPlainObject(raw) && isPlainObject(raw.mcpServers)) raw = raw.mcpServers
+		Object.assign(merged, normalizeServers(raw, variables))
+	}
+
+	const defaultConfig = readJson(path.join(pluginDir, ".mcp.json"))
+	if (defaultConfig) mergeCandidate(defaultConfig)
+	mergeCandidate(manifest?.mcpServers)
+	mergeCandidate(metadata?.mcpServers)
+	return merged
 }
 
 /** Walk from cwd up to the filesystem root, collecting directories (root last). */
@@ -178,6 +208,15 @@ export function loadMcpConfig(cwd = process.cwd()): ResolvedMcpConfig {
 	const userServers = readSettingsServers(path.join(getConfigDir(), "settings.json"))
 	for (const [name, cfg] of Object.entries(userServers)) {
 		servers[name] = { ...cfg, scope: "user" as McpScope }
+	}
+
+	// Installed plugins contribute project-scoped MCP servers. Namespace them
+	// like Claude Code so plugins cannot collide with each other or user config.
+	for (const pluginDir of installedPluginDirs(cwd)) {
+		const pluginName = path.basename(pluginDir).replace(/[^A-Za-z0-9_-]/g, "_")
+		for (const [name, cfg] of Object.entries(pluginMcpServers(pluginDir))) {
+			servers[`plugin_${pluginName}_${name}`] = { ...cfg, scope: "project" as McpScope }
+		}
 	}
 
 	// 2. Project scope (.mcp.json, root -> cwd so cwd wins)
