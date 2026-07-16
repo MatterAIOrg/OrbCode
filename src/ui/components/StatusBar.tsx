@@ -61,7 +61,7 @@ function truncate(text: string, max: number): string {
  * Picks the usage window that currently constrains the agent and formats it as
  * "<window> limit XX% · resets <relative>".
  *
- * The smallest window (5hr) is the one actively in use, so we show it by
+ * The smallest window (weekly) is the one actively in use, so we show it by
  * default. We only escalate to a larger window once it has hit its cap (100%):
  * a capped larger window is the real blocker, since a smaller window resetting
  * won't unblock you until the larger one does. When several are capped, the
@@ -75,7 +75,6 @@ function usageSummary(tu: AxonCodeTieredUsage | undefined): string | null {
   const windows: Array<{ label: string; usage?: AxonCodeWindowUsage }> = [
     { label: "monthly limit", usage: tu.monthly },
     { label: "weekly limit", usage: tu.weekly },
-    { label: "5hr limit", usage: tu.fiveHour },
   ];
   const available = windows.filter(
     (w): w is { label: string; usage: AxonCodeWindowUsage } => Boolean(w.usage),
@@ -130,7 +129,9 @@ export function StatusBar({
       </Box>
       {usageLine && (
         <Box justifyContent="flex-end">
-          <Text color={COLORS.dim} wrap="truncate">{usageLine}</Text>
+          <Text color={COLORS.dim} wrap="truncate">
+            {usageLine}
+          </Text>
         </Box>
       )}
     </Box>

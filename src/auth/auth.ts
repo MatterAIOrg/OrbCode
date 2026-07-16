@@ -123,7 +123,6 @@ export interface AxonCodeWindowUsage {
 export interface AxonCodeTieredUsage {
   plan: string;
   monthlyLimit: number;
-  fiveHour: AxonCodeWindowUsage;
   weekly: AxonCodeWindowUsage;
   monthly: AxonCodeWindowUsage;
 }
@@ -136,7 +135,7 @@ export interface ProfileData {
   remainingReviews?: number;
   usagePercentage?: number;
   creditsResetDate?: string;
-  // Tiered usage windows (5hr / weekly / monthly).
+  // Tiered usage windows (weekly / monthly).
   tieredUsage?: AxonCodeTieredUsage;
   [key: string]: unknown;
 }
