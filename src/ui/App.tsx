@@ -1520,9 +1520,7 @@ export function App({
   // is handled by flexbox below: the transcript shrinks while this bottom
   // region never does, which is what actually pins the prompt to the bottom.
   const hasUsageLine = Boolean(
-    usage?.tieredUsage?.fiveHour ||
-    usage?.tieredUsage?.weekly ||
-    usage?.tieredUsage?.monthly,
+    usage?.tieredUsage?.weekly || usage?.tieredUsage?.monthly,
   );
   // InputBox reports its real height because multiline input and autocomplete
   // popups make the bottom stack taller than the normal three-row prompt.
