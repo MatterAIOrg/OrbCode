@@ -1,7 +1,9 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 8
 
@@ -62,7 +64,7 @@ export function McpApprovalPrompt({ serverNames, onApprove }: McpApprovalPromptP
 	const visible = serverNames.slice(windowStart, windowStart + VISIBLE_ROWS)
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.warning} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.warning} paddingX={1}>
 			<Text bold color={COLORS.warning}>
 				{count} MCP server{count === 1 ? "" : "s"} found in .mcp.json
 			</Text>
@@ -83,6 +85,6 @@ export function McpApprovalPrompt({ serverNames, onApprove }: McpApprovalPromptP
 				<Text color={COLORS.dim}>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
 			)}
 			<Text color={COLORS.dim}>space toggle · enter confirm · esc reject all</Text>
-		</Box>
+		</PopoverBox>
 	)
 }

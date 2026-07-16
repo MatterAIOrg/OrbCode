@@ -34,6 +34,7 @@ import { loadMemoryFiles } from "../memory/loader.js"
 import { loadSkills } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
 import { unifiedDiff } from "../utils/diff.js"
+import { countDiffLines, getLanguageFromPath, reportLineMetrics } from "../api/metrics.js"
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
@@ -1189,6 +1190,26 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		}
 		if (extras.length) resultText += `\n\n${extras.join("\n\n")}`
+
+		// Report accepted code metrics for successful file edits. This covers
+		// both user-approved and auto-approved edits — the call only happens
+		// after the write has landed on disk. Best-effort; never blocks.
+		if (!result.isError && approvalKind === "edit" && diff) {
+			const filePath = toolCall.name === "multi_file_edit"
+				? String((Array.isArray(args.edits) ? args.edits[0] : args)?.file_path ?? "")
+			: String(args.file_path ?? "")
+			const { linesAdded, linesDeleted } = countDiffLines(diff)
+			if (linesAdded > 0 || linesDeleted > 0) {
+				this.trackBackground(reportLineMetrics({
+					taskId: this.taskId,
+					token: this.options.token,
+					repo: detectRepo(this.options.cwd),
+					language: getLanguageFromPath(filePath),
+					linesAdded,
+					linesDeleted,
+				}))
+			}
+		}
 
 		const previewLines = resultText.split("\n")
 		const resultPreview =

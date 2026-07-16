@@ -1,11 +1,13 @@
 import React, { useRef, useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import type { AuthIntercept } from "../../mcp/auth.js"
 import type { McpManager } from "../../mcp/manager.js"
 import type { McpServerState } from "../../mcp/types.js"
 import { McpAuthScreen } from "./McpAuthScreen.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 8
 
@@ -312,7 +314,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 
 	if (count === 0) {
 		return (
-			<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+			<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 				<Text bold color={COLORS.primary}>
 					MCP servers
 				</Text>
@@ -321,7 +323,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 					Add servers with: orbcode mcp add &lt;name&gt; &lt;command&gt; [args...]
 				</Text>
 				<Text color={COLORS.dim}>esc to close</Text>
-			</Box>
+			</PopoverBox>
 		)
 	}
 
@@ -338,13 +340,13 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 
 	if (pendingConfirm) {
 		return (
-			<Box flexDirection="column" borderStyle="round" borderColor={COLORS.error} paddingX={1}>
+			<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.error} paddingX={1}>
 				<Text bold color={COLORS.error}>
 					{pendingConfirm.title}
 				</Text>
 				<Text>{pendingConfirm.body}</Text>
 				<Text color={COLORS.dim}>y confirm · n / esc cancel</Text>
-			</Box>
+			</PopoverBox>
 		)
 	}
 
@@ -352,7 +354,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 	const visible = servers.slice(windowStart, windowStart + VISIBLE_ROWS)
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
 				Manage MCP servers ({count})
 			</Text>
@@ -391,7 +393,7 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 						? "↑/↓ select action · enter execute · esc back"
 						: "↑/↓ select server · enter open actions · esc close"}
 			</Text>
-		</Box>
+		</PopoverBox>
 	)
 }
 

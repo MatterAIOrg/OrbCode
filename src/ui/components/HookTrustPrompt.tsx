@@ -1,7 +1,9 @@
 import React from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 interface HookTrustPromptProps {
 	/** the workspace whose `.orbcode/settings.json` defines the hooks */
@@ -29,7 +31,7 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 	const extra = commands.length - shown.length
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.error} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.error} paddingX={1}>
 			<Text bold color={COLORS.error}>
 				⚠ This project defines {commands.length} hook command{commands.length === 1 ? "" : "s"}
 			</Text>
@@ -47,6 +49,6 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 			<Text color={COLORS.dim}>
 				Only trust hooks from a repository you trust. (y) trust &amp; enable · (n or Enter) keep disabled
 			</Text>
-		</Box>
+		</PopoverBox>
 	)
 }

@@ -65,6 +65,7 @@ import { ModelPicker } from "./components/ModelPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
 import {
+  diffViewHeight,
   formatToolName,
   formatUserBlock,
   RowView,
@@ -1498,7 +1499,6 @@ export function App({
     !skillManagerOpen;
 
   const popoverOpen =
-    !!pendingApproval ||
     !!pendingFollowup ||
     !!pendingHookTrust ||
     !!pendingMcpApproval ||
@@ -1535,6 +1535,10 @@ export function App({
 
   const contentHeight = Math.max(1, termRows - bottomControlsHeight);
   const wrapWidth = Math.max(20, termCols - 4);
+  const approvalMaxDiffLines = Math.max(
+    1,
+    Math.min(60, contentHeight - 6),
+  );
 
   const rowLayout = useMemo(() => {
     let top = 0;
@@ -1580,7 +1584,38 @@ export function App({
         .reduce((height, line) => height + wrapHeight(line, taskWidth), 0) +
       (taskLines.length > 10 ? 1 : 0);
   }
-  if (busy && !streamingText && !streamingReasoning) dynamicHeight += 2;
+  if (pendingApproval) {
+    const approval = pendingApproval.request;
+    const nestedWidth = Math.max(1, wrapWidth - 2);
+    const question =
+      approval.kind === "command" && approval.isDangerous
+        ? "Run this command? (marked as potentially dangerous)"
+        : approval.kind === "command"
+          ? "Run this command?"
+          : "Apply this change?";
+    const choices = `(y) yes · (n) no${approval.isDangerous ? "" : " · (a) always for this session"}`;
+    dynamicHeight +=
+      1 +
+      wrapHeight(`◆ ${formatToolName(approval.toolName)} ${approval.summary}`, wrapWidth) +
+      wrapHeight(question, nestedWidth) +
+      (approval.diff
+        ? diffViewHeight(approval.diff, approvalMaxDiffLines)
+        : wrapHeight(approval.detail, nestedWidth)) +
+      wrapHeight(choices, nestedWidth);
+  }
+  if (
+    busy &&
+    !pendingApproval &&
+    !pendingFollowup &&
+    !pendingHookTrust &&
+    !pendingMcpApproval &&
+    !mcpPickerOpen &&
+    !mcpMigrationEntries &&
+    !streamingText &&
+    !streamingReasoning
+  ) {
+    dynamicHeight += 2;
+  }
 
   const transcriptHeight = Math.max(1, rowsHeight + dynamicHeight);
   const maxScrollOffset = Math.max(0, transcriptHeight - contentHeight);
@@ -1759,6 +1794,17 @@ export function App({
                   )}
                 </Box>
               )}
+              {pendingApproval && (
+                <ApprovalPrompt
+                  request={pendingApproval.request}
+                  width={wrapWidth}
+                  maxDiffLines={approvalMaxDiffLines}
+                  onDecision={(decision) => {
+                    pendingApproval.resolve(decision);
+                    setPendingApproval(null);
+                  }}
+                />
+              )}
               {busy &&
                 !pendingApproval &&
                 !pendingFollowup &&
@@ -1915,15 +1961,6 @@ export function App({
                 onConfirm={(selected) => {
                   setMcpMigrationEntries(null);
                   resolveMcpMigration(selected);
-                }}
-              />
-            )}
-            {pendingApproval && (
-              <ApprovalPrompt
-                request={pendingApproval.request}
-                onDecision={(decision) => {
-                  pendingApproval.resolve(decision);
-                  setPendingApproval(null);
                 }}
               />
             )}

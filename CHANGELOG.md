@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.0] - 2026-07-16
+
+### Added
+
+- **Accepted code metrics reporting.** Successful `file_edit`, `file_write`,
+  and `multi_file_edit` calls now POST line counters (added/deleted, language)
+  to `/axoncode/meta/<taskId>/lines`, matching the extension's behavior. Works
+  for both user-approved and auto-approved edits; reporting is best-effort and
+  never blocks the session.
+
 ## [0.4.8] - 2026-07-15
 
 ### Added
@@ -679,7 +691,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.4.8...v0.5.0
 [0.4.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.4
 [0.3.3]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.3

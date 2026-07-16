@@ -1,8 +1,10 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, useInput } from "ink";
 
 import { COLORS } from "../../branding.js";
 import { describeEntry, type MigrationEntry } from "../../commands/migrate.js";
+import { PopoverBox } from "./PopoverBox.js";
+import { PopoverText as Text } from "./PopoverText.js";
 
 const VISIBLE_ROWS = 10;
 
@@ -68,7 +70,7 @@ export function McpMigrationPicker({
 
   if (entries.length === 0) {
     return (
-      <Box
+      <PopoverBox
         flexDirection="column"
         borderStyle="round"
         borderColor={COLORS.primary}
@@ -83,7 +85,7 @@ export function McpMigrationPicker({
           mcp add`.
         </Text>
         <Text color={COLORS.dim}>esc to close</Text>
-      </Box>
+      </PopoverBox>
     );
   }
 
@@ -99,7 +101,7 @@ export function McpMigrationPicker({
   );
 
   return (
-    <Box
+    <PopoverBox
       flexDirection="column"
       borderStyle="round"
       borderColor={COLORS.primary}
@@ -134,6 +136,6 @@ export function McpMigrationPicker({
       <Text color={COLORS.dim}>
         space toggle · enter confirm ({checkedCount}/{count}) · esc cancel
       </Text>
-    </Box>
+    </PopoverBox>
   );
 }

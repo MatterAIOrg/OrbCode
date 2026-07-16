@@ -1,8 +1,10 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import type { LinkedRepo } from "../../config/links.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 interface LinkManagerProps {
 	links: LinkedRepo[]
@@ -66,7 +68,7 @@ export function LinkManager({ links, status, onAdd, onRemove, onClose }: LinkMan
 	})
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
 				Linked repositories
 			</Text>
@@ -95,6 +97,6 @@ export function LinkManager({ links, status, onAdd, onRemove, onClose }: LinkMan
 			)}
 			{status && <Text color={COLORS.dim}>{status}</Text>}
 			<Text color={COLORS.dim}>↑/↓ select · enter add/remove · d remove · esc done</Text>
-		</Box>
+		</PopoverBox>
 	)
 }
