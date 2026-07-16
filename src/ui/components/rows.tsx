@@ -1,5 +1,5 @@
 import React from "react"
-import { Box, Text } from "ink"
+import { Box, Text } from "../primitives.js"
 
 import type { AttachmentSummary } from "../../attachments.js"
 import { COLORS } from "../../branding.js"
@@ -40,19 +40,9 @@ export function formatToolName(name: string): string {
 	)
 }
 
-/** Alpha-blend a foreground hex color against the terminal background (#1a1a1a). */
-function blendWithBg(hex: string, alpha: number): string {
-	const r = parseInt(hex.slice(1, 3), 16)
-	const g = parseInt(hex.slice(3, 5), 16)
-	const b = parseInt(hex.slice(5, 7), 16)
-	const bgR = 0x1a, bgG = 0x1a, bgB = 0x1a
-	const blend = (c: number, bg: number) => Math.round(c * alpha + bg * (1 - alpha))
-	return `#${[r, g, b].map((c, i) => blend(c, [bgR, bgG, bgB][i]).toString(16).padStart(2, "0")).join("")}`
-}
-
 const MAX_DIFF_LINES = 60
-const ADDED_BG = blendWithBg(COLORS.success, 0.05)
-const REMOVED_BG = blendWithBg(COLORS.error, 0.05)
+const ADDED_BG = COLORS.diffAddedBackground
+const REMOVED_BG = COLORS.diffRemovedBackground
 
 type DiffRow =
 	| { kind: "file"; text: string }
@@ -217,7 +207,7 @@ export function formatUserBlock(text: string, width: number, attachments: Attach
 }
 
 /**
- * Completed transcript rows are immutable. Keeping their rendered Ink tree
+ * Completed transcript rows are immutable. Keeping their rendered React tree
  * around avoids re-running markdown and diff parsing when only the viewport
  * offset changes.
  */

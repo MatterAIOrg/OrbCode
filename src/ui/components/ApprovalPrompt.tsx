@@ -1,5 +1,5 @@
 import React from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
 import type { ApprovalDecision, ApprovalRequest } from "../../core/events.js"

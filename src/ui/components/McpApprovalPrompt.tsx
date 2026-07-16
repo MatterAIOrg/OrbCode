@@ -1,9 +1,7 @@
 import React, { useState } from "react"
-import { Box, useInput } from "ink"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
-import { PopoverBox } from "./PopoverBox.js"
-import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 8
 
@@ -64,27 +62,32 @@ export function McpApprovalPrompt({ serverNames, onApprove }: McpApprovalPromptP
 	const visible = serverNames.slice(windowStart, windowStart + VISIBLE_ROWS)
 
 	return (
-		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.warning} paddingX={1}>
-			<Text bold color={COLORS.warning}>
-				{count} MCP server{count === 1 ? "" : "s"} found in .mcp.json
+		<Box flexDirection="column" marginTop={1}>
+			<Text>
+				<Text color={COLORS.warning}>◆ </Text>
+				<Text bold>MCP Servers</Text>
+				<Text color={COLORS.dim}> {count} project server{count === 1 ? "" : "s"} require approval</Text>
 			</Text>
-			<Text color={COLORS.dim}>Select any you wish to enable for this project.</Text>
-			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
-			{visible.map((name, i) => {
-				const index = windowStart + i
-				const isSelected = index === selected
-				const isChecked = checked.has(name)
-				return (
-					<Text key={name} color={isSelected ? COLORS.accent : undefined}>
-						{isSelected ? "❯ " : "  "}
-						{isChecked ? "☑" : "☐"} {name}
-					</Text>
-				)
-			})}
-			{windowStart + VISIBLE_ROWS < count && (
-				<Text color={COLORS.dim}>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
-			)}
-			<Text color={COLORS.dim}>space toggle · enter confirm · esc reject all</Text>
-		</PopoverBox>
+			<Box paddingLeft={2} flexDirection="column">
+				<Text bold color={COLORS.warning}>Enable servers from this project's .mcp.json?</Text>
+				<Text color={COLORS.dim}>Select only servers you trust.</Text>
+				{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
+				{visible.map((name, i) => {
+					const index = windowStart + i
+					const isSelected = index === selected
+					const isChecked = checked.has(name)
+					return (
+						<Text key={name} color={isSelected ? COLORS.accent : undefined}>
+							{isSelected ? "❯ " : "  "}
+							{isChecked ? "☑" : "☐"} {name}
+						</Text>
+					)
+				})}
+				{windowStart + VISIBLE_ROWS < count && (
+					<Text color={COLORS.dim}>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
+				)}
+				<Text color={COLORS.dim}>space toggle · enter confirm · esc reject all</Text>
+			</Box>
+		</Box>
 	)
 }

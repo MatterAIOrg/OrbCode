@@ -1,12 +1,9 @@
-import React from "react"
-import { render } from "ink"
-
 import { PRODUCT_NAME, VERSION } from "./branding.js"
-import { App } from "./ui/App.js"
 import { runHeadless } from "./headless.js"
 import { runMcpCommand } from "./commands/mcp.js"
 import { runPluginCommand } from "./commands/plugin.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
+import { loadSettings } from "./config/settings.js"
 import {
 	clearUpdateCache,
 	compareVersions,
@@ -18,86 +15,6 @@ import {
 } from "./utils/updateCheck.js"
 
 const PACKAGE_NAME = "@matterailab/orbcode"
-const INK_CLEAR_TERMINAL = "\x1b[2J\x1b[3J\x1b[H"
-const BEGIN_SYNCHRONIZED_UPDATE = "\x1b[?2026h"
-const END_SYNCHRONIZED_UPDATE = "\x1b[?2026l"
-// Match OpenTUI's mouse capture: button events, drag events, all movement,
-// and SGR coordinates. Capturing all four modes prevents the terminal itself
-// from interpreting a wheel/trackpad gesture as scrollback navigation.
-const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h"
-const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l"
-
-function terminalRows(stdout: NodeJS.WriteStream): number {
-	return stdout.rows ?? process.stderr.rows ?? 24
-}
-
-function terminalColumns(stdout: NodeJS.WriteStream): number {
-	return stdout.columns ?? process.stderr.columns ?? 80
-}
-
-/**
- * Ink normally serializes a frame as newline-delimited text. Even when the
- * frame is terminal-height, some terminals can treat those linefeeds as
- * scrollable output. OpenTUI avoids that class of bug by drawing at explicit
- * screen coordinates. This adapter keeps Ink's real dimensions/event stream,
- * but converts every full redraw into cursor-addressed rows with no linefeeds.
- */
-function createFullscreenStdout(stdout: NodeJS.WriteStream): NodeJS.WriteStream {
-	let previousLines: string[] = []
-	let previousRows = 0
-
-	const writeFrame = (frame: string): boolean => {
-		const rows = Math.max(1, terminalRows(stdout))
-		const lines = frame.split("\n").slice(0, rows)
-		while (lines.length < rows) lines.push("")
-		if (rows !== previousRows) previousLines = []
-
-		let output = BEGIN_SYNCHRONIZED_UPDATE
-		// Do not clear the display here. Several terminals preserve each ED 2
-		// operation as scrollback even in the alternate buffer. OpenTUI keeps a
-		// retained screen and replaces cells in place; replacing every row with
-		// EL 2 gives Ink the same behavior and cannot advance terminal history.
-		let changed = false
-		for (let row = 0; row < rows; row++) {
-			if (lines[row] === previousLines[row]) continue
-			changed = true
-			output += `\x1b[${row + 1};1H\x1b[2K${lines[row]}`
-		}
-		previousLines = lines
-		previousRows = rows
-		if (!changed) return true
-		output += END_SYNCHRONIZED_UPDATE
-		return stdout.write(output)
-	}
-
-	return new Proxy(stdout, {
-		get(target, property) {
-			// Ink uses these properties to choose its renderer and compute layout.
-			// Integrated terminal wrappers do not always expose them on stdout even
-			// though stdin/stderr are attached to the same interactive terminal.
-			if (property === "rows") return terminalRows(stdout)
-			if (property === "columns") return terminalColumns(stdout)
-			if (property === "isTTY") return true
-			if (property === "write") {
-				return (
-					chunk: string | Uint8Array,
-					encoding?: BufferEncoding | ((error?: Error | null) => void),
-					callback?: (error?: Error | null) => void,
-				) => {
-					if (typeof chunk === "string" && chunk.startsWith(INK_CLEAR_TERMINAL)) {
-						const written = writeFrame(chunk.slice(INK_CLEAR_TERMINAL.length))
-						const done = typeof encoding === "function" ? encoding : callback
-						if (done) process.nextTick(done)
-						return written
-					}
-					return stdout.write(chunk, encoding as BufferEncoding, callback)
-				}
-			}
-			const value = Reflect.get(target, property, target) as unknown
-			return typeof value === "function" ? value.bind(target) : value
-		},
-	})
-}
 
 function printHelp(): void {
 	console.log(`${PRODUCT_NAME} v${VERSION}
@@ -282,56 +199,71 @@ async function main(): Promise<void> {
 	// Any other bare argument starts the TUI with that text as the first prompt.
 	const initialPrompt = initialView ? undefined : args.find((a) => !a.startsWith("-"))
 
-	// OpenTUI treats its TUI command as a terminal application regardless of
-	// stdout.isTTY. Some integrated/wrapped terminals expose TTY only on stdin
-	// or stderr; gating on stdout alone leaves the app in the primary buffer.
-	const isInteractiveTerminal = Boolean(
-		process.stdin.isTTY || process.stdout.isTTY || process.stderr.isTTY,
-	)
-
-	// Take over the full terminal as an independent surface by entering the
-	// alternate screen buffer (\x1b[?1049h). Keep the terminal's configured
-	// foreground and background untouched; terminals differ in how they handle
-	// dynamic-color OSC sequences, and the TUI's semantic text colors are set
-	// explicitly by its components.
-	// OpenTUI relies on 1049 to create the clean alternate buffer and then
-	// updates retained rows; do not issue ED 2 here because some terminals save
-	// cleared displays into history even while switching buffers.
-	if (isInteractiveTerminal) {
-		process.stdout.write("\x1b[?25l\x1b[s\x1b[?1049h")
-		process.stdout.write(ENABLE_MOUSE_TRACKING)
-		process.stdout.write("\x1b]0;orbcode\x07")
-	}
-
-	// Restore terminal interaction modes and leave the alternate screen buffer.
-	function restoreTerminal(): void {
-		if (isInteractiveTerminal && process.stdout.writable) {
-			process.stdout.write(DISABLE_MOUSE_TRACKING)
-			process.stdout.write("\x1b[?1049l")
-		}
-		if (process.env.ORBCODE_LAST_SESSION_ID) {
-			console.log(`\nSession saved. To resume: orbcode --resume ${process.env.ORBCODE_LAST_SESSION_ID}\n`)
-		}
-	}
-	process.on("exit", restoreTerminal)
-	const fullscreenStdout = isInteractiveTerminal
-		? createFullscreenStdout(process.stdout)
-		: process.stdout
-
 	// Fire-and-forget: a stale or no-network state just means the header shows
 	// the "current version" line instead of an upgrade prompt.
 	const updateCheckPromise = getUpdateInfo(PACKAGE_NAME, VERSION)
-	render(
-		<App
-			initialView={initialView}
-			initialAction={initialAction}
-			initialPrompt={initialPrompt}
-			initialSession={initialSession}
-			systemPromptOverride={systemPromptOverride}
-			updateCheck={updateCheckPromise}
-		/>,
-		{ stdout: fullscreenStdout },
+
+	const bunVersion = (process.versions as Record<string, string | undefined>).bun
+	const [bunMajor = 0, bunMinor = 0] = (bunVersion ?? "").split(".").map(Number)
+	if (!bunVersion || bunMajor < 1 || (bunMajor === 1 && bunMinor < 3)) {
+		throw new Error(
+			"OrbCode's interactive UI requires Bun 1.3 or newer. Launch it through the installed orbcode command to use the bundled runtime.",
+		)
+	}
+
+	// Load the native UI only for interactive commands. Headless and management
+	// commands remain usable under Node through the small launcher in bin/.
+	const [
+		{ createCliRenderer },
+		{ createRoot, createElement },
+		{ App },
+		{ ThemeProvider, DARK_THEME, LIGHT_THEME },
+	] =
+		await Promise.all([
+			import("@opentui/core"),
+			import("@opentui/react"),
+			import("./ui/App.js"),
+			import("./ui/theme.js"),
+		])
+
+	let markDestroyed: () => void = () => {}
+	const destroyed = new Promise<void>((resolve) => {
+		markDestroyed = resolve
+	})
+	const initialMode = loadSettings().theme
+	const initialTheme = initialMode === "light" ? LIGHT_THEME : DARK_THEME
+	const renderer = await createCliRenderer({
+		targetFps: 60,
+		gatherStats: false,
+		exitOnCtrlC: false,
+		useKittyKeyboard: {},
+		openConsoleOnError: false,
+		useMouse: true,
+		screenMode: "alternate-screen",
+		backgroundColor: initialTheme.background,
+		onDestroy: markDestroyed,
+	})
+	renderer.setTerminalTitle("orbcode")
+	const root = createRoot(renderer)
+	root.render(
+		createElement(
+			ThemeProvider,
+			{ initialMode },
+			createElement(App, {
+				initialView,
+				initialAction,
+				initialPrompt,
+				initialSession,
+				systemPromptOverride,
+				updateCheck: updateCheckPromise,
+			}),
+		),
 	)
+	await destroyed
+
+	if (process.env.ORBCODE_LAST_SESSION_ID) {
+		console.log(`\nSession saved. To resume: orbcode --resume ${process.env.ORBCODE_LAST_SESSION_ID}\n`)
+	}
 }
 
 main().catch((error) => {

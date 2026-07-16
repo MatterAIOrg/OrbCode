@@ -1,6 +1,6 @@
 import * as os from "node:os"
 import React from "react"
-import { Box, Text } from "ink"
+import { Box, Text } from "../primitives.js"
 
 import { COLORS, ORBITAL_COLORS, ORBITAL_MARK, PRODUCT_NAME, TAGLINE, VERSION } from "../../branding.js"
 

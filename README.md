@@ -71,7 +71,8 @@ npx @matterailab/orbcode
 
 ## Install
 
-Requires **Node.js >= 20**.
+Requires **Node.js >= 20**. The package carries the compatible Bun runtime used
+by its native TUI, so a separate Bun installation is not required.
 
 ```bash
 npm install -g @matterailab/orbcode
@@ -251,8 +252,12 @@ MatterAI gateway untouched.
  \___/ |_|   |_.__/  \____| \___/  \__,_| \___|
 ```
 
+- **Native OpenTUI surface** with OrbCode-owned dark/light palettes, retained
+  full-screen rendering, mouse input, and truly opaque panels.
+  Use `/theme` to choose dark or light. OrbCode saves the choice and paints
+  every terminal cell itself, so terminal theme detection cannot override it.
 - **Streaming responses** rendered as markdown (headers, lists, code fences,
-  inline code, links) via a lightweight ANSI renderer.
+  inline code, links) with native styled text nodes.
 - **Thinking**: reasoning streams live under `✦ Thinking…` (last few lines,
   dimmed) and collapses to `✦ Thought for Ns` when done. `ctrl+o` toggles
   expanded thinking for subsequent turns. Reasoning arrives from the API as
@@ -296,6 +301,7 @@ MatterAI gateway untouched.
 | `/help`      | list commands                                                                                         |
 | `/attach`    | open the native file picker and add one or more attachments                                           |
 | `/model`     | scrollable model picker (`/model pro` / `/model mini` / full id selects directly)                     |
+| `/theme`     | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
 | `/clear`     | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
 | `/new`       | start a fresh conversation/session with a clean slate                                                 |
 | `/resume`    | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
@@ -359,7 +365,7 @@ judgment".
 Two kinds of files under `~/.orbcode/`:
 
 - **`config.json`** — state written by the app itself (login token, chosen
-  model, approval defaults). Created on first save, mode 0600.
+  model, theme, approval defaults). Created on first save, mode 0600.
 - **`settings.json`** — user-managed configuration, Claude-Code style. Created
   automatically as an empty `{}` on first run so it's easy to find. A
   project-level `.orbcode/settings.json` in the working directory layers on
@@ -839,6 +845,13 @@ analyzing the codebase.
 
 ## Architecture
 
+Interactive sessions run on OpenTUI's native retained renderer with the React
+reconciler. The small Node launcher keeps management/headless commands cheap and
+starts the package's pinned Bun runtime only for the TUI; OpenTUI owns alternate
+screen setup, cell painting, input, resize, and terminal restoration. OrbCode
+selects and persists its own dark/light palette; terminal theme reports are
+intentionally ignored.
+
 ```
 src/
   index.tsx          entry: arg parsing, interactive vs -p (headless) mode
@@ -878,12 +891,14 @@ src/
     types.ts         MemoryFile type
     loader.ts        AGENTS.md discovery (user/project/local) + @include resolution
   ui/
-    App.tsx          main Ink app: static finalized rows + dynamic streaming area
+    App.tsx          main OpenTUI React app: transcript, composer, overlays
+    primitives.tsx   OpenTUI box/text/input primitives used by the UI
+    theme.tsx        OrbCode-owned dark and light palettes
     LoginView.tsx    device-flow login screen with paste fallback
     components/      Header, InputBox, rows, ApprovalPrompt, FollowupPrompt,
                      HookTrustPrompt, McpApprovalPrompt, McpPicker, ModelPicker,
                      SessionPicker, Spinner, StatusBar
-    markdown.ts      markdown → ANSI renderer
+    markdown.tsx     markdown → native styled text nodes
 ```
 
 **MCP integration**: the `McpManager` (owned by the agent) loads the merged
@@ -967,7 +982,7 @@ recorded in the conversation as a `<system_reminder>` so the model knows.
 ## Development
 
 ```bash
-npm run dev         # run from source (tsx)
+npm run dev         # run from source with the bundled Bun runtime
 npm run build       # compile to dist/
 npm run typecheck   # tsc --noEmit
 ```
@@ -987,19 +1002,11 @@ Backend/web pieces of the device-auth flow live in:
 ## Tests
 
 ```bash
-node test-ui.mjs           # in-process TUI test with a fake TTY
-node test-device-auth.mjs  # device-auth polling flow against a local mock
 npm run test:attachments   # attachment path detection and safe extraction limits
+npm run test:mcp           # MCP result bounding and tool dispatch
+npm run test:plugins       # marketplace plugin install/load flow
+npm run typecheck          # OpenTUI React and application types
 ```
-
-- `test-ui.mjs` drives the real App (ink-testing-library technique): header,
-  slash menu, `/help`, `/model` switching, message submission, and a **live**
-  round-trip to the API gateway — the bundled fake token yields a clean 401
-  error row. Self-contained: writes its own config fixture to
-  `/tmp/orbcode-test-config`.
-- `test-device-auth.mjs` spins up a local HTTP mock of the backend endpoints
-  and verifies: code issuance, pending polls, authorization, one-time token
-  pickup, and expiry semantics.
 
 ## Troubleshooting
 
