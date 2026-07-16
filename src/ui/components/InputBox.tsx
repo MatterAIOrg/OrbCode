@@ -1,6 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { Box, Text, useInput } from "ink"
-import chalk from "chalk"
+import { Box, Text, useInput } from "../primitives.js"
 
 import {
 	type Attachment,
@@ -12,7 +11,6 @@ import {
 import { COLORS } from "../../branding.js"
 import { walkFiles } from "../../tools/executors/listFiles.js"
 import { appendPromptHistory, loadPromptHistory } from "../../config/promptHistory.js"
-import { isMouseInput } from "../terminal.js"
 
 export interface SlashCommand {
 	name: string
@@ -99,6 +97,8 @@ function findAtToken(value: string, cursor: number): { query: string; start: num
 export function InputBox({ active, width, slashCommands, onSubmit, supportsImages, onHeightChange }: InputBoxProps) {
 	const [value, setValue] = useState("")
 	const [cursor, setCursor] = useState(0)
+	const valueRef = useRef("")
+	const cursorRef = useRef(0)
 	const [attachments, setAttachments] = useState<Attachment[]>([])
 	const attachmentsRef = useRef<Attachment[]>([])
 	const parseQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -111,6 +111,13 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	const [fileIndex, setFileIndex] = useState(0)
 	const [slashIndex, setSlashIndex] = useState(0)
 	const [dismissedValue, setDismissedValue] = useState<string | null>(null)
+
+	const setEditor = (nextValue: string, nextCursor: number) => {
+		valueRef.current = nextValue
+		cursorRef.current = nextCursor
+		setValue(nextValue)
+		setCursor(nextCursor)
+	}
 
 	const showSlashMenu = active && value.startsWith("/") && !value.includes(" ")
 	const slashMatches = showSlashMenu
@@ -151,8 +158,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	const submit = (text: string) => {
 		const trimmed = text.trim()
 		if (trimmed === "/attach") {
-			setValue("")
-			setCursor(0)
+			setEditor("", 0)
 			setHistoryIndex(-1)
 			openAttachmentPicker()
 			return
@@ -163,8 +169,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 			appendPromptHistory(trimmed)
 		}
 		setHistoryIndex(-1)
-		setValue("")
-		setCursor(0)
+		setEditor("", 0)
 		const submittedAttachments = attachmentsRef.current
 		composerGenerationRef.current++
 		attachmentsRef.current = []
@@ -175,8 +180,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 
 	const clearComposer = () => {
 		composerGenerationRef.current++
-		setValue("")
-		setCursor(0)
+		setEditor("", 0)
 		attachmentsRef.current = []
 		setAttachments([])
 		setAttachmentMessage(null)
@@ -246,21 +250,20 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	const recallHistory = (index: number) => {
 		setHistoryIndex(index)
 		const entry = index === -1 ? "" : history[index]
-		setValue(entry)
-		setCursor(entry.length)
+		setEditor(entry, entry.length)
 	}
 
 	const insertFile = (file: string) => {
 		if (!atToken) return
 		const next = `${value.slice(0, atToken.start)}@${file} ${value.slice(cursor)}`
-		setValue(next)
-		setCursor(atToken.start + file.length + 2)
+		setEditor(next, atToken.start + file.length + 2)
 	}
 
 	useInput(
 		(input, key) => {
-			if (isMouseInput(input)) return
-			if (key.escape && (value.length > 0 || attachmentsRef.current.length > 0)) {
+			const currentValue = valueRef.current
+			const currentCursor = cursorRef.current
+			if (key.escape && (currentValue.length > 0 || attachmentsRef.current.length > 0)) {
 				clearComposer()
 				return
 			}
@@ -307,21 +310,19 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				}
 				if (key.tab && !key.shift) {
 					// Tab completes the highlighted match without submitting.
-					setValue(selected.name)
-					setCursor(selected.name.length)
+					setEditor(selected.name, selected.name.length)
 					return
 				}
 			}
 			if (key.shift && key.return) {
 				// Shift+Enter inserts a literal newline without submitting.
 				setHistoryIndex(-1)
-				const next = value.slice(0, cursor) + "\n" + value.slice(cursor)
-				setValue(next)
-				setCursor((c) => c + 1)
+				const next = currentValue.slice(0, currentCursor) + "\n" + currentValue.slice(currentCursor)
+				setEditor(next, currentCursor + 1)
 				return
 			}
 			if (key.return) {
-				submit(value)
+				submit(currentValue)
 				return
 			}
 			if (key.upArrow) {
@@ -336,19 +337,23 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				return
 			}
 			if (key.leftArrow) {
-				setCursor((c) => Math.max(0, c - 1))
+				const nextCursor = Math.max(0, currentCursor - 1)
+				cursorRef.current = nextCursor
+				setCursor(nextCursor)
 				return
 			}
 			if (key.rightArrow) {
-				setCursor((c) => Math.min(value.length, c + 1))
+				const nextCursor = Math.min(currentValue.length, currentCursor + 1)
+				cursorRef.current = nextCursor
+				setCursor(nextCursor)
 				return
 			}
 			if (key.backspace || key.delete) {
-				if (cursor > 0) {
+				if (currentCursor > 0) {
 					setHistoryIndex(-1)
-					setValue((v) => v.slice(0, cursor - 1) + v.slice(cursor))
-					setCursor((c) => c - 1)
-				} else if (value.length === 0 && attachmentsRef.current.length > 0) {
+					const next = currentValue.slice(0, currentCursor - 1) + currentValue.slice(currentCursor)
+					setEditor(next, currentCursor - 1)
+				} else if (currentValue.length === 0 && attachmentsRef.current.length > 0) {
 					const next = attachmentsRef.current.slice(0, -1)
 					attachmentsRef.current = next
 					setAttachments(next)
@@ -357,17 +362,18 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				return
 			}
 			if (key.ctrl && input === "a") {
+				cursorRef.current = 0
 				setCursor(0)
 				return
 			}
 			if (key.ctrl && input === "e") {
-				setCursor(value.length)
+				cursorRef.current = currentValue.length
+				setCursor(currentValue.length)
 				return
 			}
 			if (key.ctrl && input === "u") {
 				setHistoryIndex(-1)
-				setValue("")
-				setCursor(0)
+				setEditor("", 0)
 				return
 			}
 			if (key.ctrl && input === "f") {
@@ -387,20 +393,14 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				// the chunk are literal newlines, not a submit signal — press
 				// Enter when you're ready to send.
 				const clean = input.replace(/\r\n?/g, "\n")
-				const next = value.slice(0, cursor) + clean + value.slice(cursor)
+				const next = currentValue.slice(0, currentCursor) + clean + currentValue.slice(currentCursor)
 				setHistoryIndex(-1)
-				setValue(next)
-				setCursor((c) => c + clean.length)
+				setEditor(next, currentCursor + clean.length)
 			}
 		},
 		{ isActive: active },
 	)
 
-	// The cursor marker is baked into one string with chalk: nested <Text>
-	// siblings around an underlined space make Ink's layout momentarily wrap the
-	// cursor to the next line on short values.
-	const display =
-		value.slice(0, cursor) + chalk.underline(value[cursor] ?? " ") + value.slice(cursor + 1)
 	const plainDisplay = active
 		? value.slice(0, cursor) + (value[cursor] ?? " ") + value.slice(cursor + 1)
 		: value || "waiting…"
@@ -417,7 +417,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	const renderedHeight = 2 + promptHeight + attachmentRows + slashPopupHeight + filePopupHeight
 
 	// Parent viewport calculations must use the real bottom-stack height. A
-	// layout effect updates it before Ink paints the next frame, preventing a
+	// layout effect updates it before OpenTUI paints the next frame, preventing a
 	// multiline prompt or popup from covering the live response above it.
 	useLayoutEffect(() => {
 		onHeightChange?.(renderedHeight)
@@ -501,10 +501,18 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 					</Text>
 				)}
 				<Box>
-					<Text color={COLORS.user} bold>
-						{"❯ "}
+					<Text wrap="wrap">
+						<Text color={COLORS.user} bold>{"❯ "}</Text>
+						{active ? (
+							<>
+							{value.slice(0, cursor)}
+							<Text underline>{value[cursor] ?? " "}</Text>
+							{value.slice(cursor + 1)}
+							</>
+						) : (
+							<Text color={COLORS.dim}>{value || "waiting…"}</Text>
+						)}
 					</Text>
-					{active ? <Text>{display}</Text> : <Text color={COLORS.dim}>{value || "waiting…"}</Text>}
 				</Box>
 			</Box>
 		</Box>

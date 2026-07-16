@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, Text, useInput } from "./primitives.js"
 import open from "open"
 
 import { COLORS, PRODUCT_NAME } from "../branding.js"

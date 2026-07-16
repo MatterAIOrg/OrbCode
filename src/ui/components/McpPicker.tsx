@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react"
-import { Box, useInput } from "ink"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
 import type { AuthIntercept } from "../../mcp/auth.js"
@@ -7,7 +7,6 @@ import type { McpManager } from "../../mcp/manager.js"
 import type { McpServerState } from "../../mcp/types.js"
 import { McpAuthScreen } from "./McpAuthScreen.js"
 import { PopoverBox } from "./PopoverBox.js"
-import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 8
 

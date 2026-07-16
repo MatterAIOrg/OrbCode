@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
-import { Box, useInput } from "ink"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
 import {
@@ -11,7 +11,6 @@ import {
 } from "../../plugins/manager.js"
 import type { InstalledPlugin, MarketplacePlugin, PluginInventory } from "../../plugins/types.js"
 import { PopoverBox } from "./PopoverBox.js"
-import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 12
 

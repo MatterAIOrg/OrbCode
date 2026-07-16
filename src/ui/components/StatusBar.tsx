@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../primitives.js";
 
 import { COLORS } from "../../branding.js";
 import { getModel } from "../../api/models.js";
@@ -107,28 +107,38 @@ export function StatusBar({
   );
   const usageLine = usageSummary(tieredUsage);
   return (
-    <Box flexDirection="column">
-      <Box justifyContent="space-between">
-        {exitConfirmationActive ? (
-          <Text color={COLORS.warning} bold wrap="truncate">
-            Press Ctrl+D again to exit
-          </Text>
-        ) : (
-          <Text color={COLORS.dim} wrap="truncate">
-            <Text color={MODE_COLORS[approvalMode]} bold>
-              {MODE_LABELS[approvalMode]}
+    <Box flexDirection="column" width="100%">
+      <Box flexDirection="row" width="100%">
+        <Box flexGrow={1} minWidth={0} overflow="hidden">
+          {exitConfirmationActive ? (
+            <Text color={COLORS.warning} bold wrap="truncate">
+              Press Ctrl+D again to exit
             </Text>
-            {" (shift+tab to cycle)"}
-            {busy && " · esc to interrupt"}
+          ) : (
+            <Text color={COLORS.dim} wrap="truncate">
+              <Text color={MODE_COLORS[approvalMode]} bold>
+                {MODE_LABELS[approvalMode]}
+              </Text>
+              {" (shift+tab to cycle)"}
+              {busy && " · esc to interrupt"}
+            </Text>
+          )}
+        </Box>
+        <Box
+          flexShrink={0}
+          maxWidth="60%"
+          marginLeft={2}
+          justifyContent="flex-end"
+          overflow="hidden"
+        >
+          <Text color={COLORS.dim} wrap="truncate">
+            {title ? `${truncate(title, 32)} · ` : ""}
+            {model.name} · ctx {contextTokens.toLocaleString()} ({contextPct}%)
           </Text>
-        )}
-        <Text color={COLORS.dim} wrap="truncate">
-          {title ? `${truncate(title, 32)} · ` : ""}
-          {model.name} · ctx {contextTokens.toLocaleString()} ({contextPct}%)
-        </Text>
+        </Box>
       </Box>
       {usageLine && (
-        <Box justifyContent="flex-end">
+        <Box flexDirection="row" width="100%" justifyContent="flex-end">
           <Text color={COLORS.dim} wrap="truncate">
             {usageLine}
           </Text>

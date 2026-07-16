@@ -1,9 +1,7 @@
 import React from "react"
-import { Box, useInput } from "ink"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
-import { PopoverBox } from "./PopoverBox.js"
-import { PopoverText as Text } from "./PopoverText.js"
 
 interface HookTrustPromptProps {
 	/** the workspace whose `.orbcode/settings.json` defines the hooks */
@@ -31,11 +29,14 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 	const extra = commands.length - shown.length
 
 	return (
-		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.error} paddingX={1}>
-			<Text bold color={COLORS.error}>
-				⚠ This project defines {commands.length} hook command{commands.length === 1 ? "" : "s"}
+		<Box flexDirection="column" marginTop={1}>
+			<Text>
+				<Text color={COLORS.error}>◆ </Text>
+				<Text bold>Project Hooks</Text>
+				<Text color={COLORS.dim}> {commands.length} command{commands.length === 1 ? "" : "s"} require trust</Text>
 			</Text>
 			<Box paddingLeft={2} flexDirection="column">
+				<Text bold color={COLORS.error}>Trust and enable these project hooks?</Text>
 				<Text color={COLORS.dim}>{cwd}/.orbcode/settings.json</Text>
 				<Text>Project hooks run these shell commands automatically during the session:</Text>
 				{shown.map((command, i) => (
@@ -49,6 +50,6 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 			<Text color={COLORS.dim}>
 				Only trust hooks from a repository you trust. (y) trust &amp; enable · (n or Enter) keep disabled
 			</Text>
-		</PopoverBox>
+		</Box>
 	)
 }

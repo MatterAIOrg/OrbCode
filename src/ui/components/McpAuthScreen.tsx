@@ -1,10 +1,9 @@
 import React, { useState } from "react"
-import { Box, useInput } from "ink"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
 import { copyToClipboard } from "../../utils/clipboard.js"
 import { PopoverBox } from "./PopoverBox.js"
-import { PopoverText as Text } from "./PopoverText.js"
 
 interface McpAuthScreenProps {
 	/** The server name being authenticated. */

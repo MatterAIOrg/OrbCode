@@ -5,7 +5,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { useTerminalDimensions } from "@opentui/react";
+import { Box, Text, useApp, useInput } from "./primitives.js";
+import { useTheme } from "./theme.js";
 import open from "open";
 import * as path from "node:path";
 
@@ -73,7 +75,6 @@ import {
 } from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
 import { PluginManager } from "./components/PluginManager.js";
-import { isMouseInput, mouseScrollDelta } from "./terminal.js";
 import {
   addLink,
   loadLinks,
@@ -338,26 +339,8 @@ export function App({
   updateCheck?: Promise<UpdateInfo>;
 }) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  // A frame exactly as tall as the real terminal makes Ink use its
-  // clear-and-redraw path instead of log-update's newline-based rendering.
-  // Keep these values tied to the real stream so resize cannot break that
-  // invariant or move the prompt out of the viewport.
-  const [termRows, setTermRows] = useState(() => stdout?.rows ?? 24);
-  const [termCols, setTermCols] = useState(() => stdout?.columns ?? 80);
-
-  useEffect(() => {
-    const onResize = () => {
-      setTermRows(stdout?.rows ?? 24);
-      setTermCols(stdout?.columns ?? 80);
-    };
-    // Ink also listens for resize. Run our state update first so it never
-    // redraws an old, taller frame into an already-shrunken terminal.
-    stdout?.prependListener("resize", onResize);
-    return () => {
-      stdout?.off("resize", onResize);
-    };
-  }, [stdout]);
+  const theme = useTheme();
+  const { width: termCols, height: termRows } = useTerminalDimensions();
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
     loadSettings(),
   );
@@ -507,8 +490,7 @@ export function App({
     smoothScrollPendingRef.current = 0;
     if (pending !== 0) scrollTranscriptBy(pending);
 
-    // Ink paints at roughly 30 fps. Hold further wheel events until its next
-    // frame, then apply all of them in one state/layout update.
+    // Coalesce wheel events to one state/layout update per rendered frame.
     smoothScrollTimerRef.current = setTimeout(() => {
       smoothScrollTimerRef.current = null;
       if (smoothScrollPendingRef.current !== 0) flushWheelScroll();
@@ -1376,14 +1358,6 @@ export function App({
   }, [updateCheck]);
 
   useInput((input, key) => {
-    const wheelDelta = mouseScrollDelta(input);
-    if (wheelDelta !== 0) {
-      if (view === "chat") {
-        queueSmoothScroll(wheelDelta * WHEEL_SCROLL_LINES);
-      }
-      return;
-    }
-    if (isMouseInput(input)) return;
     if (view === "chat" && key.pageUp) {
       smoothScrollPendingRef.current = 0;
       scrollTranscriptBy(Math.max(1, contentHeight - 2));
@@ -1500,8 +1474,6 @@ export function App({
 
   const popoverOpen =
     !!pendingFollowup ||
-    !!pendingHookTrust ||
-    !!pendingMcpApproval ||
     modelPickerOpen ||
     mcpPickerOpen ||
     !!mcpMigrationEntries ||
@@ -1603,6 +1575,12 @@ export function App({
         : wrapHeight(approval.detail, nestedWidth)) +
       wrapHeight(choices, nestedWidth);
   }
+  if (pendingHookTrust) {
+    dynamicHeight += 6 + Math.min(8, pendingHookTrust.commands.length);
+  }
+  if (pendingMcpApproval) {
+    dynamicHeight += 5 + Math.min(8, pendingMcpApproval.length);
+  }
   if (
     busy &&
     !pendingApproval &&
@@ -1689,10 +1667,9 @@ export function App({
     setScrollOffset((current) => Math.min(current, maxScrollOffset));
   }, [maxScrollOffset]);
 
-  // The root is exactly one terminal tall. Ink sees outputHeight >=
-  // stdout.rows and clears/redraws in place on every frame, so no render can
-  // append to terminal scrollback. Only the transcript is clipped/translated;
-  // the prompt and status region never shrink or leave the viewport.
+  // OpenTUI owns an alternate-screen surface. The root and every overlay use
+  // native filled boxes, so their backgrounds are real terminal cells rather
+  // than ANSI spans behind only the text glyphs.
   return (
     <Box
       flexDirection="column"
@@ -1701,6 +1678,16 @@ export function App({
       paddingX={2}
       overflow="hidden"
       position="relative"
+      backgroundColor={theme.background}
+      shouldFill
+      onMouseScroll={(event) => {
+        if (view !== "chat" || !event.scroll) return;
+        const direction = event.scroll.direction;
+        if (direction !== "up" && direction !== "down") return;
+        const sign = direction === "up" ? 1 : -1;
+        queueSmoothScroll(sign * Math.max(1, event.scroll.delta) * WHEEL_SCROLL_LINES);
+        event.preventDefault();
+      }}
     >
       {view === "login" ? (
         <LoginSection onLogin={handleLogin} />
@@ -1805,6 +1792,19 @@ export function App({
                   }}
                 />
               )}
+              {pendingHookTrust && (
+                <HookTrustPrompt
+                  cwd={process.cwd()}
+                  commands={pendingHookTrust.commands}
+                  onDecision={resolveHookTrust}
+                />
+              )}
+              {pendingMcpApproval && (
+                <McpApprovalPrompt
+                  serverNames={pendingMcpApproval}
+                  onApprove={resolveMcpApproval}
+                />
+              )}
               {busy &&
                 !pendingApproval &&
                 !pendingFollowup &&
@@ -1873,13 +1873,21 @@ export function App({
       {popoverOpen && (
         <Box
           position="absolute"
-          width={termCols - 4}
-          height={termRows}
+          top={0}
+          left={0}
+          width="100%"
+          height="100%"
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          zIndex={100}
         >
-          <Box flexDirection="column" width={Math.min(90, termCols - 8)}>
+          <Box
+            flexDirection="column"
+            width={Math.max(24, Math.min(90, termCols - 8))}
+            backgroundColor={theme.panel}
+            shouldFill
+          >
             {modelPickerOpen && (
               <ModelPicker
                 currentId={settings.model}
@@ -1924,19 +1932,6 @@ export function App({
             )}
             {skillManagerOpen && (
               <PluginManager onClose={() => setSkillManagerOpen(false)} />
-            )}
-            {pendingHookTrust && (
-              <HookTrustPrompt
-                cwd={process.cwd()}
-                commands={pendingHookTrust.commands}
-                onDecision={resolveHookTrust}
-              />
-            )}
-            {pendingMcpApproval && (
-              <McpApprovalPrompt
-                serverNames={pendingMcpApproval}
-                onApprove={resolveMcpApproval}
-              />
             )}
             {mcpPickerOpen && mcpManagerRef.current && (
               <McpPicker

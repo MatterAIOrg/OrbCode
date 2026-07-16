@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { Text } from "ink"
+import { Text } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
 

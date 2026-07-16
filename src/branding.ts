@@ -15,20 +15,22 @@ export const VERSION = (() => {
 })();
 export const TAGLINE = "powered by Axon models by MatterAI";
 
-// Theme-neutral terminal palette. Neutral content inherits the terminal's
-// foreground. Success and error retain OrbCode's brand colors consistently
-// across themes; the remaining accents use the terminal's named ANSI palette.
+// Semantic color tokens. The OpenTUI primitives resolve these against the
+// active OrbCode theme, so components never inherit terminal-defined colors.
+// Keeping these as tokens also lets the complete UI switch themes atomically.
 export const COLORS = {
-  primary: undefined,
-  accent: "cyan",
-  dim: "gray",
-  error: "#E34671",
-  warning: "yellow",
-  success: "#3FA266",
-  thinking: "cyan",
-  user: undefined,
-  inputBorder: "gray",
-  inputBorderInactive: "gray",
+  primary: "$orbcode.primary",
+  accent: "$orbcode.accent",
+  dim: "$orbcode.dim",
+  error: "$orbcode.error",
+  warning: "$orbcode.warning",
+  success: "$orbcode.success",
+  thinking: "$orbcode.thinking",
+  user: "$orbcode.user",
+  inputBorder: "$orbcode.inputBorder",
+  inputBorderInactive: "$orbcode.inputBorderInactive",
+  diffAddedBackground: "$orbcode.diffAddedBackground",
+  diffRemovedBackground: "$orbcode.diffRemovedBackground",
 } as const;
 
 // Immutable company-logo colors from the OrbCode artwork. Keep these separate
