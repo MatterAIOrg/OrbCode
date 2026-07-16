@@ -9,10 +9,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import open from "open";
 import * as path from "node:path";
 
-import {
-  type SubmittedPrompt,
-  attachmentSummary,
-} from "../attachments.js";
+import { type SubmittedPrompt, attachmentSummary } from "../attachments.js";
 import {
   COLORS,
   ORBITAL_MARK,
@@ -58,7 +55,11 @@ import { HookTrustPrompt } from "./components/HookTrustPrompt.js";
 import { McpApprovalPrompt } from "./components/McpApprovalPrompt.js";
 import { McpPicker } from "./components/McpPicker.js";
 import { McpMigrationPicker } from "./components/McpMigrationPicker.js";
-import { applyMigration, listMigrationEntries, type MigrationEntry } from "../commands/migrate.js";
+import {
+  applyMigration,
+  listMigrationEntries,
+  type MigrationEntry,
+} from "../commands/migrate.js";
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
@@ -179,7 +180,6 @@ function usageLines(profile: ProfileData): string[] {
       string,
       import("../auth/auth.js").AxonCodeWindowUsage,
     ][] = [
-      ["5hr", "5-Hour", profile.tieredUsage.fiveHour],
       ["wk", "Weekly", profile.tieredUsage.weekly],
       ["mo", "Monthly", profile.tieredUsage.monthly],
     ];
@@ -353,7 +353,9 @@ export function App({
     // Ink also listens for resize. Run our state update first so it never
     // redraws an old, taller frame into an already-shrunken terminal.
     stdout?.prependListener("resize", onResize);
-    return () => { stdout?.off("resize", onResize); };
+    return () => {
+      stdout?.off("resize", onResize);
+    };
   }, [stdout]);
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
     loadSettings(),
@@ -413,7 +415,9 @@ export function App({
   // Set when /migrate is open. Holds the entries to show in the picker; null
   // means the picker isn't open. We cache the entries on first open so the
   // picker shows a stable list even if the user cancels and reopens.
-  const [mcpMigrationEntries, setMcpMigrationEntries] = useState<MigrationEntry[] | null>(null);
+  const [mcpMigrationEntries, setMcpMigrationEntries] = useState<
+    MigrationEntry[] | null
+  >(null);
   // Project-scope MCP servers awaiting the user's approval at startup.
   const [pendingMcpApproval, setPendingMcpApproval] = useState<string[] | null>(
     null,
@@ -471,10 +475,12 @@ export function App({
   );
   // Mirror of the `-s` override so a fresh agent (created mid-session via
   // /new or /resume) keeps the override instead of falling back to default.
-  const systemPromptOverrideRef = useRef<string | undefined>(systemPromptOverride);
+  const systemPromptOverrideRef = useRef<string | undefined>(
+    systemPromptOverride,
+  );
 
   const enqueueMessage = useCallback((prompt: SubmittedPrompt) => {
-	queueRef.current = [...queueRef.current, prompt];
+    queueRef.current = [...queueRef.current, prompt];
     setQueuedMessages(queueRef.current);
   }, []);
 
@@ -685,7 +691,10 @@ export function App({
             });
             setBusy(true);
             setBusyLabel("Thinking");
-            void agentRef.current.runTurn(nextQueued.text, nextQueued.attachments);
+            void agentRef.current.runTurn(
+              nextQueued.text,
+              nextQueued.attachments,
+            );
           }
           break;
       }
@@ -1116,13 +1125,17 @@ export function App({
 
   const handleSubmit = useCallback(
     (input: string | SubmittedPrompt) => {
-      const prompt = typeof input === "string" ? { text: input, attachments: [] } : input;
+      const prompt =
+        typeof input === "string" ? { text: input, attachments: [] } : input;
       const { text, attachments } = prompt;
       smoothScrollPendingRef.current = 0;
       setScrollOffset(0);
       if (text.startsWith("/")) {
         if (attachments.length > 0) {
-          pushRow({ kind: "info", text: "Attachments are ignored for slash commands." });
+          pushRow({
+            kind: "info",
+            text: "Attachments are ignored for slash commands.",
+          });
         }
         handleCommand(text);
         return;
@@ -1246,31 +1259,34 @@ export function App({
   const resolveMcpMigration = useCallback(
     async (selected: MigrationEntry[]) => {
       if (selected.length === 0) {
-        pushRow({ kind: "info", text: "MCP migration cancelled (no servers selected)." })
-        return
+        pushRow({
+          kind: "info",
+          text: "MCP migration cancelled (no servers selected).",
+        });
+        return;
       }
-      const result = applyMigration(selected)
-      const addedNames = result.added.map((e) => e.name)
-      const skippedCount = result.skipped.length
+      const result = applyMigration(selected);
+      const addedNames = result.added.map((e) => e.name);
+      const skippedCount = result.skipped.length;
       if (result.added.length === 0) {
         pushRow({
           kind: "info",
           text: `MCP migration: nothing added (${skippedCount} skipped — name${skippedCount === 1 ? "" : "s"} already in use).`,
-        })
-        return
+        });
+        return;
       }
       pushRow({
         kind: "info",
         text: `MCP migration: added ${result.added.length} server${result.added.length === 1 ? "" : "s"} to ~/.orbcode/settings.json (${addedNames.join(", ")})${skippedCount > 0 ? `; skipped ${skippedCount} (name already in use).` : "."}`,
-      })
+      });
       // Tear down the live manager + agent, then immediately rebuild the
       // manager so /mcp works without needing to send a message first.
       // The agent is dropped so the next message creates a fresh one that
       // picks up the new manager's tool list.
-      await rebuildMcpManager()
+      await rebuildMcpManager();
     },
     [pushRow, rebuildMcpManager],
-  )
+  );
 
   // Handle a permanent delete from the /mcp picker. The manager has already
   // dropped the server from its in-memory state and from the on-disk config;
@@ -1279,7 +1295,7 @@ export function App({
   // confirmation.
   const handleMcpServerDeleted = useCallback(
     async (name: string) => {
-      const manager = mcpManagerRef.current
+      const manager = mcpManagerRef.current;
       if (manager) {
         // `removeServer` already removed the name from both lists, but
         // `saveMcpApproval` needs the post-removal snapshot so the
@@ -1288,19 +1304,19 @@ export function App({
           process.cwd(),
           manager.getEnabled(),
           manager.getDisabled(),
-        )
+        );
       }
       pushRow({
         kind: "info",
         text: `MCP: removed "${name}" from the config. Use \`orbcode mcp add ${name} …\` to re-add it.`,
-      })
+      });
       // Rebuild the manager from the now-trimmed on-disk config so /mcp
       // works immediately and the next message gets a fresh agent with the
       // correct tool list.
-      await rebuildMcpManager()
+      await rebuildMcpManager();
     },
     [pushRow, rebuildMcpManager],
-  )
+  );
 
   // Apply --resume and an initial prompt (`orbcode "do something"`) on startup.
   const bootedRef = useRef(false);
@@ -1335,7 +1351,15 @@ export function App({
       });
     }
     refreshUsage();
-  }, [initialSession, initialAction, initialPrompt, handleResume, handleCommand, handleSubmit, refreshUsage]);
+  }, [
+    initialSession,
+    initialAction,
+    initialPrompt,
+    handleResume,
+    handleCommand,
+    handleSubmit,
+    refreshUsage,
+  ]);
 
   // Resolve the npm version check after first paint so the TUI shows up
   // immediately and the upgrade banner fades in once we know the answer.
@@ -1496,9 +1520,7 @@ export function App({
   // is handled by flexbox below: the transcript shrinks while this bottom
   // region never does, which is what actually pins the prompt to the bottom.
   const hasUsageLine = Boolean(
-    usage?.tieredUsage?.fiveHour ||
-    usage?.tieredUsage?.weekly ||
-    usage?.tieredUsage?.monthly,
+    usage?.tieredUsage?.weekly || usage?.tieredUsage?.monthly,
   );
   // InputBox reports its real height because multiline input and autocomplete
   // popups make the bottom stack taller than the normal three-row prompt.
@@ -1506,7 +1528,8 @@ export function App({
   let bottomControlsHeight = inputBoxHeight + 1 + (hasUsageLine ? 1 : 0);
   if (queuedMessages.length > 0) {
     bottomControlsHeight +=
-      2 + Math.min(5, queuedMessages.length) +
+      2 +
+      Math.min(5, queuedMessages.length) +
       (queuedMessages.length > 5 ? 1 : 0);
   }
 
@@ -1616,9 +1639,15 @@ export function App({
       startY,
       endY,
     };
-  }, [contentHeight, introHeaderOnly, rowLayout, rowsHeight, transcriptHeight, viewportTop]);
-  const virtualTranscriptMarginTop =
-    transcriptMarginTop + virtualRows.startY;
+  }, [
+    contentHeight,
+    introHeaderOnly,
+    rowLayout,
+    rowsHeight,
+    transcriptHeight,
+    viewportTop,
+  ]);
+  const virtualTranscriptMarginTop = transcriptMarginTop + virtualRows.startY;
   const rowBottomSpacerHeight = Math.max(0, rowsHeight - virtualRows.endY);
 
   useEffect(() => {
@@ -1630,86 +1659,119 @@ export function App({
   // append to terminal scrollback. Only the transcript is clipped/translated;
   // the prompt and status region never shrink or leave the viewport.
   return (
-    <Box flexDirection="column" width={termCols} height={termRows} paddingX={2} overflow="hidden" position="relative">
+    <Box
+      flexDirection="column"
+      width={termCols}
+      height={termRows}
+      paddingX={2}
+      overflow="hidden"
+      position="relative"
+    >
       {view === "login" ? (
         <LoginSection onLogin={handleLogin} />
       ) : (
-        <Box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
-          <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
-            <Box flexDirection="column" flexShrink={0} marginTop={virtualTranscriptMarginTop}>
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          minHeight={0}
+          overflow="hidden"
+        >
+          <Box
+            flexDirection="column"
+            flexGrow={1}
+            flexShrink={1}
+            minHeight={0}
+            overflow="hidden"
+          >
+            <Box
+              flexDirection="column"
+              flexShrink={0}
+              marginTop={virtualTranscriptMarginTop}
+            >
               {virtualRows.rows.map((row) => (
                 <RowView key={row.id} row={row} width={wrapWidth} />
               ))}
               {rowBottomSpacerHeight > 0 && (
                 <Box height={rowBottomSpacerHeight} flexShrink={0} />
               )}
-            {updateInfo?.updateAvailable && updateInfo.latest && (
-              <Box
-                marginTop={1}
-                flexDirection="column"
-                borderStyle="round"
-                borderColor={COLORS.warning}
-                paddingX={2}
-                alignSelf="flex-start"
-              >
-                <Text color={COLORS.warning} bold>
-                  ↑ Update available: v{updateInfo.current} → v{updateInfo.latest}
-                </Text>
-                <Text>
-                  Run <Text color={COLORS.accent}>orbcode update</Text> to install
-                  the latest version, then relaunch.
-                </Text>
-              </Box>
-            )}
-            {streamingReasoning && (
-              <Box flexDirection="column" marginTop={1}>
-                <Spinner label="Thinking" />
-                <Box paddingLeft={2}>
-                  <Text color={COLORS.dim} italic>
-                    {streamingReasoningDisplay}
+              {updateInfo?.updateAvailable && updateInfo.latest && (
+                <Box
+                  marginTop={1}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={COLORS.warning}
+                  paddingX={2}
+                  alignSelf="flex-start"
+                >
+                  <Text color={COLORS.warning} bold>
+                    ↑ Update available: v{updateInfo.current} → v
+                    {updateInfo.latest}
                   </Text>
-                </Box>
-              </Box>
-            )}
-            {streamingTextDisplay && (
-              <Box marginTop={1}>
-                <Text>
-                  <Text color={COLORS.primary}>● </Text>
-                  {streamingTextDisplay}
-                </Text>
-              </Box>
-            )}
-            {taskLines.length > 0 && (
-              <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-                <Text color={COLORS.dim} bold>
-                  Tasks
-                </Text>
-                {taskLines.slice(0, 10).map((line, i) => (
-                  <Text key={i} color={/^[-*]\s*\[x\]/i.test(line) ? COLORS.dim : COLORS.primary}>
-                    {line
-                      .replace(/^[-*]\s*\[x\]/i, "  ■")
-                      .replace(/^[-*]\s*\[-\]/, "  ◧")
-                      .replace(/^[-*]\s*\[ \]/, "  □")}
+                  <Text>
+                    Run <Text color={COLORS.accent}>orbcode update</Text> to
+                    install the latest version, then relaunch.
                   </Text>
-                ))}
-                {taskLines.length > 10 && (
-                  <Text color={COLORS.dim}> … {taskLines.length - 10} more</Text>
-                )}
-              </Box>
-            )}
-            {busy &&
-              !pendingApproval &&
-              !pendingFollowup &&
-              !pendingHookTrust &&
-              !pendingMcpApproval &&
-              !mcpPickerOpen &&
-              !mcpMigrationEntries &&
-              !streamingText &&
-              !streamingReasoning && (
-                <Box marginTop={1}>
-                  <Spinner label={busyLabel} />
                 </Box>
               )}
+              {streamingReasoning && (
+                <Box flexDirection="column" marginTop={1}>
+                  <Spinner label="Thinking" />
+                  <Box paddingLeft={2}>
+                    <Text color={COLORS.dim} italic>
+                      {streamingReasoningDisplay}
+                    </Text>
+                  </Box>
+                </Box>
+              )}
+              {streamingTextDisplay && (
+                <Box marginTop={1}>
+                  <Text>
+                    <Text color={COLORS.primary}>● </Text>
+                    {streamingTextDisplay}
+                  </Text>
+                </Box>
+              )}
+              {taskLines.length > 0 && (
+                <Box flexDirection="column" marginTop={1} paddingLeft={1}>
+                  <Text color={COLORS.dim} bold>
+                    Tasks
+                  </Text>
+                  {taskLines.slice(0, 10).map((line, i) => (
+                    <Text
+                      key={i}
+                      color={
+                        /^[-*]\s*\[x\]/i.test(line)
+                          ? COLORS.dim
+                          : COLORS.primary
+                      }
+                    >
+                      {line
+                        .replace(/^[-*]\s*\[x\]/i, "  ■")
+                        .replace(/^[-*]\s*\[-\]/, "  ◧")
+                        .replace(/^[-*]\s*\[ \]/, "  □")}
+                    </Text>
+                  ))}
+                  {taskLines.length > 10 && (
+                    <Text color={COLORS.dim}>
+                      {" "}
+                      … {taskLines.length - 10} more
+                    </Text>
+                  )}
+                </Box>
+              )}
+              {busy &&
+                !pendingApproval &&
+                !pendingFollowup &&
+                !pendingHookTrust &&
+                !pendingMcpApproval &&
+                !mcpPickerOpen &&
+                !mcpMigrationEntries &&
+                !streamingText &&
+                !streamingReasoning && (
+                  <Box marginTop={1}>
+                    <Spinner label={busyLabel} />
+                  </Box>
+                )}
             </Box>
           </Box>
           <Box flexDirection="column" flexShrink={0}>
@@ -1720,12 +1782,21 @@ export function App({
                 </Text>
                 {queuedMessages.slice(0, 5).map((msg, i) => (
                   <Text key={i} color={COLORS.dim}>
-                    {i + 1}. {truncateForQueue(msg.text || "Attached files").replace(/\n/g, "↵")}
-                    {msg.attachments.length > 0 ? ` · 📎 ${msg.attachments.length}` : ""}
+                    {i + 1}.{" "}
+                    {truncateForQueue(msg.text || "Attached files").replace(
+                      /\n/g,
+                      "↵",
+                    )}
+                    {msg.attachments.length > 0
+                      ? ` · 📎 ${msg.attachments.length}`
+                      : ""}
                   </Text>
                 ))}
                 {queuedMessages.length > 5 && (
-                  <Text color={COLORS.dim}> … {queuedMessages.length - 5} more</Text>
+                  <Text color={COLORS.dim}>
+                    {" "}
+                    … {queuedMessages.length - 5} more
+                  </Text>
                 )}
               </Box>
             )}
@@ -1877,10 +1948,13 @@ export function App({
 /** Count the number of terminal rows a block of text will occupy (accounting
  * for wrapping at `width` columns). */
 function wrapHeight(text: string, width: number): number {
-  return text.split("\n").reduce(
-    (sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / width)),
-    0,
-  );
+  return text
+    .split("\n")
+    .reduce(
+      (sum, line) =>
+        sum + Math.max(1, Math.ceil(Math.max(1, line.length) / width)),
+      0,
+    );
 }
 
 /** Return the tail of `text` that fits within `maxLines` terminal rows,
@@ -1913,11 +1987,13 @@ function estimateRowLines(row: Row, width: number): number {
   const w = Math.max(20, width);
   function wrapped(text: string, lineWidth = w): number {
     const available = Math.max(1, lineWidth);
-    return text.split("\n").reduce(
-      (sum, line) =>
-        sum + Math.max(1, Math.ceil(Math.max(1, line.length) / available)),
-      0,
-    );
+    return text
+      .split("\n")
+      .reduce(
+        (sum, line) =>
+          sum + Math.max(1, Math.ceil(Math.max(1, line.length) / available)),
+        0,
+      );
   }
   switch (row.kind) {
     case "header": {
@@ -1926,12 +2002,14 @@ function estimateRowLines(row: Row, width: number): number {
       const firstCellWidth = Math.min(30, panelWidth);
       const secondCellWidth = Math.max(10, panelWidth - firstCellWidth - 2);
       const wrappedAt = (text: string, lineWidth: number) =>
-        text.split("\n").reduce(
-          (sum, line) =>
-            sum +
-            Math.max(1, Math.ceil(Math.max(1, line.length) / lineWidth)),
-          0,
-        );
+        text
+          .split("\n")
+          .reduce(
+            (sum, line) =>
+              sum +
+              Math.max(1, Math.ceil(Math.max(1, line.length) / lineWidth)),
+            0,
+          );
       const heroTextHeight =
         wrappedAt(`${PRODUCT_NAME} / v${VERSION}`, infoWidth) +
         wrappedAt(TAGLINE, infoWidth) +
@@ -1955,7 +2033,9 @@ function estimateRowLines(row: Row, width: number): number {
       return heroHeight + firstActionRow + secondActionRow + shortcuts + 3;
     }
     case "user":
-      return 1 + formatUserBlock(row.text, w, row.attachments).split("\n").length;
+      return (
+        1 + formatUserBlock(row.text, w, row.attachments).split("\n").length
+      );
     case "assistant":
       return 1 + wrapped(`● ${row.text}`);
     case "reasoning":
@@ -1972,10 +2052,7 @@ function estimateRowLines(row: Row, width: number): number {
         const visible = diffLines.slice(0, 60);
         h +=
           1 +
-          visible.reduce(
-            (height, line) => height + wrapped(line, w - 10),
-            0,
-          ) +
+          visible.reduce((height, line) => height + wrapped(line, w - 10), 0) +
           (diffLines.length > 60 ? 1 : 0);
       } else if (row.resultPreview) {
         h += wrapped(row.resultPreview, w - 2);
