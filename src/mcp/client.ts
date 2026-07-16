@@ -64,7 +64,21 @@ export interface McpConnection {
 }
 
 const CONNECT_TIMEOUT_MS = 30_000
+export const MAX_MCP_RESULT_CHARS = 30_000
 const CLIENT_INFO = { name: "orbcode", version: VERSION }
+
+/** Keep a single MCP response from consuming an unbounded amount of model
+ * context. Preserve both ends because summaries and errors commonly appear at
+ * the end of otherwise large results. */
+export function truncateMcpResult(text: string, limit = MAX_MCP_RESULT_CHARS): string {
+	if (text.length <= limit) return text
+	const marker =
+		"\n\n[...MCP tool result truncated by OrbCode. Request a narrower or paginated result to inspect omitted content...]\n\n"
+	if (limit <= marker.length) return text.slice(0, limit)
+	const available = limit - marker.length
+	const headLength = Math.floor(available * 0.8)
+	return text.slice(0, headLength) + marker + text.slice(-(available - headLength))
+}
 
 /** Connect to one MCP server and enumerate its tools. The optional
  *  `authIntercept` lets the caller surface the OAuth URL in the TUI and
@@ -137,7 +151,7 @@ export async function callMcpTool(
 			parts.push(`[resource: ${block.uri}]`)
 		}
 	}
-	const text = parts.join("\n") || "(empty MCP tool result)"
+	const text = truncateMcpResult(parts.join("\n") || "(empty MCP tool result)")
 	return { text, isError: Boolean(result.isError) }
 }
 
