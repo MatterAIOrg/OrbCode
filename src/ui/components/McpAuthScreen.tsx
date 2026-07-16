@@ -1,8 +1,10 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import { copyToClipboard } from "../../utils/clipboard.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 interface McpAuthScreenProps {
 	/** The server name being authenticated. */
@@ -66,7 +68,7 @@ export function McpAuthScreen({ serverName, authUrl, onPasteCode, onCancel }: Mc
 	})
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.warning} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.warning} paddingX={1}>
 			<Text bold color={COLORS.warning}>
 				Authenticating with {serverName}…
 			</Text>
@@ -109,6 +111,6 @@ export function McpAuthScreen({ serverName, authUrl, onPasteCode, onCancel }: Mc
 			)}
 			<Text> </Text>
 			<Text color={COLORS.dim}>Return here after authenticating in your browser. Press Esc to go back.</Text>
-		</Box>
+		</PopoverBox>
 	)
 }

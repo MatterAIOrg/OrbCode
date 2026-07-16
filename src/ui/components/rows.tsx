@@ -98,9 +98,29 @@ function plural(count: number, word: string): string {
 }
 
 /** Claude Code-style diff: stats header, line-number gutter, red/green line backgrounds. */
-export function DiffView({ diff }: { diff: string }) {
+interface DiffViewProps {
+	diff: string
+	/** Limit the number of parsed diff rows shown. */
+	maxLines?: number
+	/** Keep live approval rows to one terminal line instead of wrapping code. */
+	maxWidth?: number
+}
+
+function truncateLine(text: string, maxWidth: number | undefined): string {
+	if (!maxWidth || text.length <= maxWidth) return text
+	if (maxWidth <= 1) return "…".slice(0, maxWidth)
+	return text.slice(0, maxWidth - 1) + "…"
+}
+
+/** Number of terminal rows used by DiffView when its lines do not wrap. */
+export function diffViewHeight(diff: string, maxLines = MAX_DIFF_LINES): number {
+	const { rows } = parseDiff(diff)
+	return 1 + Math.min(rows.length, maxLines) + (rows.length > maxLines ? 1 : 0)
+}
+
+export function DiffView({ diff, maxLines = MAX_DIFF_LINES, maxWidth }: DiffViewProps) {
 	const { rows, added, removed } = parseDiff(diff)
-	const visible = rows.slice(0, MAX_DIFF_LINES)
+	const visible = rows.slice(0, maxLines)
 	const numWidth = Math.max(
 		3,
 		...visible.map((r) => (r.kind === "line" ? String(r.num).length : 0)),
@@ -116,7 +136,7 @@ export function DiffView({ diff }: { diff: string }) {
 				if (row.kind === "file") {
 					return (
 						<Text key={i} bold color={COLORS.dim}>
-							{row.text}
+							{truncateLine(row.text, maxWidth)}
 						</Text>
 					)
 				}
@@ -128,17 +148,22 @@ export function DiffView({ diff }: { diff: string }) {
 					)
 				}
 				const num = String(row.num).padStart(numWidth)
+				const prefixWidth = numWidth + 3
+				const lineText = truncateLine(
+					row.text,
+					maxWidth === undefined ? undefined : Math.max(1, maxWidth - prefixWidth),
+				)
 				if (row.type === "add") {
 					return (
 						<Text key={i} backgroundColor={ADDED_BG} color={COLORS.success}>
-							{num} + {row.text}
+							{num} + {lineText}
 						</Text>
 					)
 				}
 				if (row.type === "del") {
 					return (
 						<Text key={i} backgroundColor={REMOVED_BG} color={COLORS.error}>
-							{num} - {row.text}
+							{num} - {lineText}
 						</Text>
 					)
 				}
@@ -146,11 +171,11 @@ export function DiffView({ diff }: { diff: string }) {
 					<Text key={i}>
 						<Text color={COLORS.dim}>{num}</Text>
 						{"   "}
-						{row.text}
+						{lineText}
 					</Text>
 				)
 			})}
-			{rows.length > MAX_DIFF_LINES && <Text color={COLORS.dim}>… {rows.length - MAX_DIFF_LINES} more lines</Text>}
+			{rows.length > maxLines && <Text color={COLORS.dim}>… {rows.length - maxLines} more lines</Text>}
 		</Box>
 	)
 }

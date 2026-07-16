@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import {
@@ -10,6 +10,8 @@ import {
 	uninstallPlugin,
 } from "../../plugins/manager.js"
 import type { InstalledPlugin, MarketplacePlugin, PluginInventory } from "../../plugins/types.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 12
 
@@ -162,7 +164,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
 	const visible = currentList.slice(windowStart, windowStart + VISIBLE_ROWS)
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Box flexDirection="row" justifyContent="space-between">
 				<Box flexDirection="row">
 					<Text bold color={activeTab === "installed" ? COLORS.primary : COLORS.dim}>
@@ -253,6 +255,6 @@ export function PluginManager({ onClose }: PluginManagerProps) {
 						: "←/→ tabs · ↑/↓ select · / search · enter install · esc close"}
 				</Text>
 			</Box>
-		</Box>
+		</PopoverBox>
 	)
 }

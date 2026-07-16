@@ -8,9 +8,11 @@ import { DiffView, formatToolName } from "./rows.js"
 interface ApprovalPromptProps {
 	request: ApprovalRequest
 	onDecision: (decision: ApprovalDecision) => void
+	maxDiffLines?: number
+	width?: number
 }
 
-export function ApprovalPrompt({ request, onDecision }: ApprovalPromptProps) {
+export function ApprovalPrompt({ request, onDecision, maxDiffLines, width }: ApprovalPromptProps) {
 	useInput((input, key) => {
 		const lower = input.toLowerCase()
 		if (lower === "y" || key.return) onDecision("yes")
@@ -18,35 +20,33 @@ export function ApprovalPrompt({ request, onDecision }: ApprovalPromptProps) {
 		else if (lower === "a" && !request.isDangerous) onDecision("always")
 	})
 
-	const title =
+	const question =
 		request.kind === "command"
 			? request.isDangerous
 				? "Run this command? (marked as potentially dangerous)"
 				: "Run this command?"
-			: `Apply this change? (${formatToolName(request.toolName)})`
+			: "Apply this change?"
+	const color = request.isDangerous ? COLORS.error : COLORS.warning
+	const diffWidth = width === undefined ? undefined : Math.max(1, width - 2)
 
 	return (
-		<Box
-			flexDirection="column"
-			borderStyle="round"
-			borderColor={request.isDangerous ? COLORS.error : COLORS.warning}
-			paddingX={1}
-		>
-			<Text bold color={request.isDangerous ? COLORS.error : COLORS.warning}>
-				{title}
+		<Box flexDirection="column" marginTop={1}>
+			<Text>
+				<Text color={color}>◆ </Text>
+				<Text bold>{formatToolName(request.toolName)}</Text>
+				<Text color={COLORS.dim}> {request.summary}</Text>
 			</Text>
-			{request.diff ? (
-				<Box paddingLeft={2}>
-					<DiffView diff={request.diff} />
-				</Box>
-			) : (
-				<Box paddingLeft={2}>
+			<Box paddingLeft={2} flexDirection="column">
+				<Text bold color={color}>{question}</Text>
+				{request.diff ? (
+					<DiffView diff={request.diff} maxLines={maxDiffLines} maxWidth={diffWidth} />
+				) : (
 					<Text>{request.detail}</Text>
-				</Box>
-			)}
-			<Text color={COLORS.dim}>
-				(y) yes · (n) no{!request.isDangerous && " · (a) always for this session"}
-			</Text>
+				)}
+				<Text color={COLORS.dim}>
+					(y) yes · (n) no{!request.isDangerous && " · (a) always for this session"}
+				</Text>
+			</Box>
 		</Box>
 	)
 }

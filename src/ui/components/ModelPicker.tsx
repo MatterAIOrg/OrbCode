@@ -1,8 +1,10 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import { BUILTIN_AXON_MODELS, type AxonModel } from "../../api/models.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 6
 
@@ -53,7 +55,7 @@ export function ModelPicker({ currentId, onSelect, onCancel }: ModelPickerProps)
 	const visible = models.slice(windowStart, windowStart + VISIBLE_ROWS)
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
 				Select a model
 			</Text>
@@ -84,6 +86,6 @@ export function ModelPicker({ currentId, onSelect, onCancel }: ModelPickerProps)
 				<Text color={COLORS.dim}>  ↓ {models.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
 			<Text color={COLORS.dim}>↑/↓ select · enter confirm · esc cancel</Text>
-		</Box>
+		</PopoverBox>
 	)
 }

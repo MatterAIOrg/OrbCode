@@ -1,8 +1,10 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import type { SessionData } from "../../core/sessions.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 const VISIBLE_ROWS = 8
 
@@ -54,7 +56,7 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 	const visible = sessions.slice(windowStart, windowStart + VISIBLE_ROWS)
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
 				{title}
 			</Text>
@@ -78,6 +80,6 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 				<Text color={COLORS.dim}>  ↓ {sessions.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
 			<Text color={COLORS.dim}>↑/↓ select · enter resume · esc cancel</Text>
-		</Box>
+		</PopoverBox>
 	)
 }

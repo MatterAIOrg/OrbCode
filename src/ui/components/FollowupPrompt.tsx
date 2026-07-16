@@ -1,8 +1,10 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, useInput } from "ink"
 
 import { COLORS } from "../../branding.js"
 import type { FollowupSuggestion } from "../../core/events.js"
+import { PopoverBox } from "./PopoverBox.js"
+import { PopoverText as Text } from "./PopoverText.js"
 
 interface FollowupPromptProps {
 	question: string
@@ -47,7 +49,7 @@ export function FollowupPrompt({ question, suggestions, onAnswer }: FollowupProm
 	})
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
+		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
 				? {question}
 			</Text>
@@ -63,6 +65,6 @@ export function FollowupPrompt({ question, suggestions, onAnswer }: FollowupProm
 				{isCustomSelected && <Text underline> </Text>}
 			</Text>
 			<Text color={COLORS.dim}>↑/↓ select · enter confirm · 1-{Math.min(suggestions.length, 9)} quick pick</Text>
-		</Box>
+		</PopoverBox>
 	)
 }
