@@ -7,6 +7,8 @@ import { DEFAULT_MODEL_ID, isValidAxonModel, registerCustomModels, type CustomMo
 import { isHookEvent, type HookMatcher, type HooksConfig } from "../core/hooks.js"
 import type { McpServerConfig } from "../mcp/types.js"
 
+export type OrbCodeThemeMode = "dark" | "light"
+
 export interface OrbCodeSettings {
 	/** login token, written by `orbcode login` (config.json only) */
 	token?: string
@@ -14,6 +16,8 @@ export interface OrbCodeSettings {
 	organizationId?: string
 	autoApproveEdits: boolean
 	autoApproveSafeCommands: boolean
+	/** OrbCode-owned TUI palette; terminal theme detection never overrides it. */
+	theme: OrbCodeThemeMode
 
 	// The fields below come from settings.json files (and env vars) and are
 	// never persisted back to config.json.
@@ -40,6 +44,7 @@ const DEFAULTS: OrbCodeSettings = {
 	model: DEFAULT_MODEL_ID,
 	autoApproveEdits: false,
 	autoApproveSafeCommands: false,
+	theme: "dark",
 }
 
 /** Keys that settings.json files may set, in increasing precedence order. */
@@ -231,6 +236,9 @@ export function loadSettings(): OrbCodeSettings {
 	if (!isValidAxonModel(settings.model)) {
 		settings.model = DEFAULT_MODEL_ID
 	}
+	if (settings.theme !== "dark" && settings.theme !== "light") {
+		settings.theme = DEFAULTS.theme
+	}
 	return settings
 }
 
@@ -252,6 +260,7 @@ export function saveSettings(settings: OrbCodeSettings): void {
 		organizationId: settings.organizationId,
 		autoApproveEdits: settings.autoApproveEdits,
 		autoApproveSafeCommands: settings.autoApproveSafeCommands,
+		theme: settings.theme,
 	}
 	fs.writeFileSync(getConfigPath(), JSON.stringify(toPersist, null, "\t") + "\n", { mode: 0o600 })
 }

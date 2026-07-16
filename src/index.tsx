@@ -3,6 +3,7 @@ import { runHeadless } from "./headless.js"
 import { runMcpCommand } from "./commands/mcp.js"
 import { runPluginCommand } from "./commands/plugin.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
+import { loadSettings } from "./config/settings.js"
 import {
 	clearUpdateCache,
 	compareVersions,
@@ -229,7 +230,8 @@ async function main(): Promise<void> {
 	const destroyed = new Promise<void>((resolve) => {
 		markDestroyed = resolve
 	})
-	const initialTheme = process.env.ORBCODE_THEME?.toLowerCase() === "light" ? LIGHT_THEME : DARK_THEME
+	const initialMode = loadSettings().theme
+	const initialTheme = initialMode === "light" ? LIGHT_THEME : DARK_THEME
 	const renderer = await createCliRenderer({
 		targetFps: 60,
 		gatherStats: false,
@@ -246,7 +248,7 @@ async function main(): Promise<void> {
 	root.render(
 		createElement(
 			ThemeProvider,
-			null,
+			{ initialMode },
 			createElement(App, {
 				initialView,
 				initialAction,

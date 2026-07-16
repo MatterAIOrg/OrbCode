@@ -1,4 +1,5 @@
-import React from "react";
+import { execFileSync } from "node:child_process";
+import React, { useMemo } from "react";
 import { Box, Text } from "../primitives.js";
 
 import { COLORS } from "../../branding.js";
@@ -57,6 +58,20 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+function getCurrentBranch(): string | undefined {
+  try {
+    const branch = execFileSync("git", ["branch", "--show-current"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1000,
+    }).trim();
+    return branch || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Picks the usage window that currently constrains the agent and formats it as
  * "<window> limit XX% · resets <relative>".
@@ -101,6 +116,9 @@ export function StatusBar({
   tieredUsage,
 }: StatusBarProps) {
   const model = getModel(modelId);
+  // Refresh after each agent turn, which also catches branch switches made by
+  // commands during that turn without spawning git for every streaming frame.
+  const branch = useMemo(getCurrentBranch, [busy]);
   const contextPct = Math.min(
     100,
     Math.round((contextTokens / model.contextWindow) * 100),
@@ -113,14 +131,16 @@ export function StatusBar({
           {exitConfirmationActive ? (
             <Text color={COLORS.warning} bold wrap="truncate">
               Press Ctrl+D again to exit
+              {branch && ` · ${truncate(branch, 24)}`}
             </Text>
           ) : (
             <Text color={COLORS.dim} wrap="truncate">
               <Text color={MODE_COLORS[approvalMode]} bold>
                 {MODE_LABELS[approvalMode]}
               </Text>
-              {" (shift+tab to cycle)"}
+              {" (⇧tab)"}
               {busy && " · esc to interrupt"}
+              {branch && ` · ${truncate(branch, 24)}`}
             </Text>
           )}
         </Box>

@@ -7,7 +7,11 @@ import React, {
 } from "react";
 import { useTerminalDimensions } from "@opentui/react";
 import { Box, Text, useApp, useInput } from "./primitives.js";
-import { useTheme } from "./theme.js";
+import {
+  useTheme,
+  useThemeMode,
+  type OrbCodeThemeMode,
+} from "./theme.js";
 import open from "open";
 import * as path from "node:path";
 
@@ -64,6 +68,7 @@ import {
 } from "../commands/migrate.js";
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
+import { ThemePicker } from "./components/ThemePicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
 import {
@@ -87,6 +92,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
   { name: "/attach", description: "choose files to attach" },
   { name: "/model", description: "select the Axon model to use" },
+  { name: "/theme", description: "choose the OrbCode dark or light theme" },
   {
     name: "/clear",
     description: "clear the screen — the conversation continues",
@@ -340,6 +346,7 @@ export function App({
 }) {
   const { exit } = useApp();
   const theme = useTheme();
+  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { width: termCols, height: termRows } = useTerminalDimensions();
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
     loadSettings(),
@@ -382,6 +389,7 @@ export function App({
   // keep flowing without making the user wait for the previous response.
   const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [resumableSessions, setResumableSessions] = useState<
     SessionData[] | null
   >(null);
@@ -805,6 +813,20 @@ export function App({
     [pushRow],
   );
 
+  const switchTheme = useCallback(
+    (mode: OrbCodeThemeMode) => {
+      const updated = { ...settings, theme: mode };
+      setSettings(updated);
+      saveSettings(updated);
+      setThemeMode(mode);
+      pushRow({
+        kind: "info",
+        text: `Theme switched to ${mode}.`,
+      });
+    },
+    [pushRow, setThemeMode, settings],
+  );
+
   // Fire SessionEnd hooks (best-effort, capped at 3s) before quitting.
   const endAndExit = useCallback(
     (reason: string) => {
@@ -881,6 +903,20 @@ export function App({
             }
           } else {
             setModelPickerOpen(true);
+          }
+          break;
+        }
+        case "/theme": {
+          const requested = arg.trim().toLowerCase();
+          if (!requested) {
+            setThemePickerOpen(true);
+          } else if (requested === "dark" || requested === "light") {
+            switchTheme(requested);
+          } else {
+            pushRow({
+              kind: "error",
+              text: `Unknown theme "${arg}". Available: dark, light`,
+            });
           }
           break;
         }
@@ -964,6 +1000,7 @@ export function App({
             text: [
               `Version     ${VERSION}`,
               `Model       ${model.name} (${model.id})`,
+              `Theme       ${settings.theme[0].toUpperCase()}${settings.theme.slice(1)}`,
               `Directory   ${process.cwd()}`,
               `Account     ${getAuthToken(settings) ? (settings.apiKey || process.env.MATTERAI_TOKEN ? "API key" : "signed in") : "signed out"}${settings.organizationId ? ` · org ${settings.organizationId}` : ""}`,
               `Gateway     ${settings.baseUrl ?? "MatterAI (default)"}`,
@@ -1101,6 +1138,7 @@ export function App({
       pushRow,
       getAgent,
       switchModel,
+      switchTheme,
       resetTranscript,
       clearQueue,
     ],
@@ -1465,6 +1503,7 @@ export function App({
     !pendingHookTrust &&
     !pendingMcpApproval &&
     !modelPickerOpen &&
+    !themePickerOpen &&
     !mcpPickerOpen &&
     !mcpMigrationEntries &&
     !resumableSessions &&
@@ -1475,6 +1514,7 @@ export function App({
   const popoverOpen =
     !!pendingFollowup ||
     modelPickerOpen ||
+    themePickerOpen ||
     mcpPickerOpen ||
     !!mcpMigrationEntries ||
     !!resumableSessions ||
@@ -1896,6 +1936,16 @@ export function App({
                   switchModel(modelId);
                 }}
                 onCancel={() => setModelPickerOpen(false)}
+              />
+            )}
+            {themePickerOpen && (
+              <ThemePicker
+                current={themeMode}
+                onSelect={(mode) => {
+                  setThemePickerOpen(false);
+                  switchTheme(mode);
+                }}
+                onCancel={() => setThemePickerOpen(false)}
               />
             )}
             {resumableSessions && (

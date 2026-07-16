@@ -254,8 +254,8 @@ MatterAI gateway untouched.
 
 - **Native OpenTUI surface** with OrbCode-owned dark/light palettes, retained
   full-screen rendering, mouse input, and truly opaque panels.
-  OrbCode follows the terminal's reported light/dark mode; set
-  `ORBCODE_THEME=dark` or `ORBCODE_THEME=light` to force one palette.
+  Use `/theme` to choose dark or light. OrbCode saves the choice and paints
+  every terminal cell itself, so terminal theme detection cannot override it.
 - **Streaming responses** rendered as markdown (headers, lists, code fences,
   inline code, links) with native styled text nodes.
 - **Thinking**: reasoning streams live under `✦ Thinking…` (last few lines,
@@ -301,6 +301,7 @@ MatterAI gateway untouched.
 | `/help`      | list commands                                                                                         |
 | `/attach`    | open the native file picker and add one or more attachments                                           |
 | `/model`     | scrollable model picker (`/model pro` / `/model mini` / full id selects directly)                     |
+| `/theme`     | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
 | `/clear`     | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
 | `/new`       | start a fresh conversation/session with a clean slate                                                 |
 | `/resume`    | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
@@ -364,7 +365,7 @@ judgment".
 Two kinds of files under `~/.orbcode/`:
 
 - **`config.json`** — state written by the app itself (login token, chosen
-  model, approval defaults). Created on first save, mode 0600.
+  model, theme, approval defaults). Created on first save, mode 0600.
 - **`settings.json`** — user-managed configuration, Claude-Code style. Created
   automatically as an empty `{}` on first run so it's easy to find. A
   project-level `.orbcode/settings.json` in the working directory layers on
@@ -847,7 +848,9 @@ analyzing the codebase.
 Interactive sessions run on OpenTUI's native retained renderer with the React
 reconciler. The small Node launcher keeps management/headless commands cheap and
 starts the package's pinned Bun runtime only for the TUI; OpenTUI owns alternate
-screen setup, cell painting, input, resize, and terminal restoration.
+screen setup, cell painting, input, resize, and terminal restoration. OrbCode
+selects and persists its own dark/light palette; terminal theme reports are
+intentionally ignored.
 
 ```
 src/
