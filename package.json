@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "OrbCode CLI — agentic coding in your terminal, powered by Axon models by MatterAI",
   "type": "module",
   "bin": {
@@ -36,6 +36,7 @@
     "test:attachments": "node --import tsx --test test/attachments.test.ts",
     "test:mcp": "node --import tsx --test test/mcp-client.test.ts",
     "test:plugins": "node --import tsx --test test/plugins.test.ts",
+    "test:ui": "bun test test/ui-viewport.test.tsx",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {

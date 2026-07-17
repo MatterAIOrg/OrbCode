@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streaming responses stay visible above the input box.** The transcript's
+  live edge is now anchored using its rendered layout instead of relying on
+  approximate text-height calculations, so word-wrapped final lines are not
+  clipped behind the composer.
+
 ## [0.5.1] - 2026-07-16
 
 ### Fixed
