@@ -21,6 +21,7 @@ import {
 } from "../tools/index.js"
 import { walkFiles } from "../tools/executors/listFiles.js"
 import { previewFileChange } from "../tools/executors/files.js"
+import { extractFigmaUrls, figmaFetch } from "../tools/executors/figma.js"
 import type { AgentCallbacks, AgentEvent, ApprovalDecision } from "./events.js"
 import {
 	getSessionFilePath,
@@ -677,6 +678,51 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 						]
 					: userContent,
 		})
+
+		// --- Auto-fetch Figma URLs from the user's message ---
+		// Instead of relying on the model to call figma_fetch, we scan the
+		// user's text for figma.com URLs and pre-fetch each one so the design
+		// data is always available to the model from the first completion.
+		// This runs once per URL, deterministically.
+		const figmaUrls = extractFigmaUrls(userText)
+		if (figmaUrls.length > 0) {
+			const ctx = this.toolContext()
+			const autoToolCalls = figmaUrls.map((figmaUrl, i) => ({
+				id: `figma_auto_${Date.now()}_${i}`,
+				name: "figma_fetch",
+				arguments: JSON.stringify({ url: figmaUrl }),
+			}))
+			// Push the assistant tool_calls message so the API accepts the
+			// tool results that follow.
+			this.messages.push({
+				role: "assistant",
+				content: "",
+				tool_calls: autoToolCalls.map((tc) => ({
+					id: tc.id,
+					type: "function" as const,
+					function: { name: tc.name, arguments: tc.arguments },
+				})),
+			})
+			for (const toolCall of autoToolCalls) {
+				const summary = describeToolCall(toolCall.name, JSON.parse(toolCall.arguments))
+				onEvent({ type: "tool-start", id: toolCall.id, name: toolCall.name, summary })
+				const result = await figmaFetch(JSON.parse(toolCall.arguments), ctx)
+				const resultText = result.text
+				this.messages.push({ role: "tool", tool_call_id: toolCall.id, content: resultText })
+				const previewLines = resultText.split("\n")
+				const resultPreview =
+					previewLines.slice(0, RESULT_PREVIEW_LINES).join("\n") +
+					(previewLines.length > RESULT_PREVIEW_LINES ? `\n… (${previewLines.length} lines)` : "")
+				onEvent({
+					type: "tool-end",
+					id: toolCall.id,
+					name: toolCall.name,
+					summary,
+					resultPreview,
+					isError: Boolean(result.isError),
+				})
+			}
+		}
 
 		try {
 			this.stopHookActive = false
