@@ -11,6 +11,7 @@ import { read_file_single } from "./read_file.js"
 import searchFiles from "./search_files.js"
 import updateTodoList from "./update_todo_list.js"
 import useSkill from "./use_skill.js"
+import figmaFetch from "./figma_fetch.js"
 import webFetch from "./web_fetch.js"
 import webSearch from "./web_search.js"
 
@@ -30,6 +31,7 @@ export const nativeTools = [
 	searchFiles,
 	updateTodoList,
 	useSkill,
+	figmaFetch,
 	webFetch,
 	webSearch,
 ] satisfies OpenAI.Chat.ChatCompletionTool[]

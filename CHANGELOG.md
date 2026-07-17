@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Figma design context (`figma_fetch` tool).** A new native tool fetches the
+  full node tree, components, styles, and rendered image URLs for any
+  `figma.com/design/`, `/file/`, or `/proto/` URL. Requests are authenticated
+  against the MatterAI backend (`/axoncode/figma`), which uses the org's
+  configured Figma access token so callers don't need to handle credentials.
+- **Auto-fetch Figma URLs from user messages.** When a user pastes a Figma
+  link into a prompt, the agent scans the message for Figma URLs and
+  pre-fetches each one before the first model completion. The design data is
+  injected as a tool result, so the model has visual + structural context
+  from step 0 without having to discover and call `figma_fetch` itself.
+  URLs are deduped and trailing punctuation is stripped.
+
 ### Fixed
 
 - **Streaming responses stay visible above the input box.** The transcript's
