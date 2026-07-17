@@ -8,6 +8,7 @@ import { searchFiles } from "./executors/searchFiles.js"
 import { executeCommand } from "./executors/executeCommand.js"
 import { useSkill } from "./executors/skills.js"
 import { webFetch, webSearch } from "./executors/web.js"
+import { figmaFetch } from "./executors/figma.js"
 import type { McpManager } from "../mcp/manager.js"
 
 export { nativeTools }
@@ -53,6 +54,8 @@ export function describeToolCall(toolName: string, args: Record<string, unknown>
 			return String(args.query ?? "")
 		case "web_fetch":
 			return String(args.url ?? "")
+		case "figma_fetch":
+			return String(args.url ?? "")
 		case "update_todo_list":
 			return "updating tasks"
 		case "use_skill":
@@ -81,6 +84,7 @@ const executors: Record<string, (args: Record<string, unknown>, context: ToolCon
 	execute_command: executeCommand,
 	web_search: webSearch,
 	web_fetch: webFetch,
+	figma_fetch: figmaFetch,
 	use_skill: useSkill,
 	update_todo_list: async (args, context) => {
 		context.setTodos(String(args.todos ?? ""))
