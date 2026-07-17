@@ -80,6 +80,7 @@ import {
 } from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
 import { PluginManager } from "./components/PluginManager.js";
+import { TranscriptViewport } from "./components/TranscriptViewport.js";
 import {
   addLink,
   loadLinks,
@@ -1702,6 +1703,12 @@ export function App({
   ]);
   const virtualTranscriptMarginTop = transcriptMarginTop + virtualRows.startY;
   const rowBottomSpacerHeight = Math.max(0, rowsHeight - virtualRows.endY);
+  // Height estimates are only an approximation of OpenTUI's word wrapping.
+  // At the live edge, let Yoga align the rendered content itself so the last
+  // line always remains above the composer even when an earlier row wrapped to
+  // more lines than estimated. Estimates still drive virtualization/scrolling.
+  const anchorTranscriptToBottom =
+    !introHeaderOnly && effectiveScrollOffset === 0;
 
   useEffect(() => {
     setScrollOffset((current) => Math.min(current, maxScrollOffset));
@@ -1738,17 +1745,13 @@ export function App({
           minHeight={0}
           overflow="hidden"
         >
-          <Box
-            flexDirection="column"
-            flexGrow={1}
-            flexShrink={1}
-            minHeight={0}
-            overflow="hidden"
-          >
+          <TranscriptViewport anchorToBottom={anchorTranscriptToBottom}>
             <Box
               flexDirection="column"
               flexShrink={0}
-              marginTop={virtualTranscriptMarginTop}
+              marginTop={
+                anchorTranscriptToBottom ? 0 : virtualTranscriptMarginTop
+              }
             >
               {virtualRows.rows.map((row) => (
                 <RowView key={row.id} row={row} width={wrapWidth} />
@@ -1859,7 +1862,7 @@ export function App({
                   </Box>
                 )}
             </Box>
-          </Box>
+          </TranscriptViewport>
           <Box flexDirection="column" flexShrink={0}>
             {queuedMessages.length > 0 && (
               <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
