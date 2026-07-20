@@ -127,6 +127,13 @@ export interface AxonCodeTieredUsage {
   monthly: AxonCodeWindowUsage;
 }
 
+export interface AxonCodeWeeklyResetAvailability {
+  eligible: boolean;
+  available: boolean;
+  lastResetAt: string | null;
+  nextAvailableAt: string | null;
+}
+
 export interface ProfileData {
   user?: { name?: string; email?: string; image?: string };
   organizations?: Array<{ id: string; name: string; role?: string }>;
@@ -137,7 +144,14 @@ export interface ProfileData {
   creditsResetDate?: string;
   // Tiered usage windows (weekly / monthly).
   tieredUsage?: AxonCodeTieredUsage;
+  weeklyReset?: AxonCodeWeeklyResetAvailability;
   [key: string]: unknown;
+}
+
+export interface WeeklyResetResponse {
+  success: true;
+  weeklyReset: AxonCodeWeeklyResetAvailability;
+  tieredUsage: AxonCodeTieredUsage;
 }
 
 export async function fetchProfile(token: string): Promise<ProfileData> {
@@ -157,6 +171,35 @@ export async function fetchProfile(token: string): Promise<ProfileData> {
     );
   }
   return (await response.json()) as ProfileData;
+}
+
+export async function resetWeeklyUsage(
+  token: string,
+): Promise<WeeklyResetResponse> {
+  const url = getUrlFromToken(
+    "https://api.matterai.so/axoncode/weekly-reset",
+    token,
+  );
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  const data = (await response.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  if (!response.ok) {
+    throw new Error(
+      typeof data.error === "string"
+        ? data.error
+        : `Weekly reset failed (${response.status}).`,
+    );
+  }
+  return data as unknown as WeeklyResetResponse;
 }
 
 /**

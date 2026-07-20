@@ -33,6 +33,7 @@ import {
   APP_URL,
   fetchProfile,
   fetchTaskTitle,
+  resetWeeklyUsage,
   type ProfileData,
 } from "../auth/auth.js";
 import {
@@ -66,6 +67,10 @@ import {
   listMigrationEntries,
   type MigrationEntry,
 } from "../commands/migrate.js";
+import {
+  buildCreateSkillPrompt,
+  CREATE_SKILL_USAGE,
+} from "../commands/createSkill.js";
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { ThemePicker } from "./components/ThemePicker.js";
@@ -118,8 +123,16 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
   { name: "/usage", description: "fetch plan usage" },
   {
+    name: "/weekly-reset",
+    description: "reset weekly usage (Pro+, once per month)",
+  },
+  {
     name: "/init",
     description: "analyze this codebase and create an AGENTS.md",
+  },
+  {
+    name: "/create-skill",
+    description: "create a repo-local skill from a plain-language description",
   },
   {
     name: "/link",
@@ -1041,6 +1054,22 @@ export function App({
           void getAgent().runTurn(buildInitPrompt(agentsPath));
           break;
         }
+        case "/create-skill": {
+          const skillRequest = arg.trim();
+          if (!skillRequest) {
+            pushRow({ kind: "error", text: CREATE_SKILL_USAGE });
+            break;
+          }
+          if (!getAuthToken(settings)) {
+            setView("login");
+            break;
+          }
+          pushRow({ kind: "user", text: command });
+          setBusy(true);
+          setBusyLabel("Creating skill");
+          void getAgent().runTurn(buildCreateSkillPrompt(skillRequest));
+          break;
+        }
         case "/link":
           setLinks(loadLinks(process.cwd()));
           setLinkStatus("");
@@ -1105,6 +1134,36 @@ export function App({
               })
               .catch(() => {});
           }
+          break;
+        }
+        case "/weekly-reset": {
+          const token = getAuthToken(settings);
+          if (!token) {
+            setView("login");
+            break;
+          }
+          pushRow({ kind: "info", text: "Resetting weekly usage…" });
+          resetWeeklyUsage(token)
+            .then((result) => {
+              setUsage((current) => ({
+                ...current,
+                plan: result.tieredUsage.plan,
+                tieredUsage: result.tieredUsage,
+              }));
+              pushRow({
+                kind: "info",
+                text: `Weekly usage reset. Available again ${formatRelativeTime(result.weeklyReset.nextAvailableAt ?? undefined)}.`,
+              });
+            })
+            .catch((error) => {
+              pushRow({
+                kind: "error",
+                text:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to reset weekly usage.",
+              });
+            });
           break;
         }
         case "/login":
