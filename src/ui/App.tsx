@@ -1785,7 +1785,7 @@ export function App({
               )}
               {streamingReasoning && (
                 <Box flexDirection="column" marginTop={1}>
-                  <Spinner label="Thinking" />
+                  <Spinner label="Thinking" showTip />
                   <Box paddingLeft={2}>
                     <Text color={COLORS.dim} italic>
                       {streamingReasoningDisplay}
@@ -1863,7 +1863,12 @@ export function App({
                 !streamingText &&
                 !streamingReasoning && (
                   <Box marginTop={1}>
-                    <Spinner label={busyLabel} />
+                    <Spinner
+                      label={busyLabel}
+                      showTip={
+                        busyLabel === "Thinking" || busyLabel === "Working"
+                      }
+                    />
                   </Box>
                 )}
             </Box>
