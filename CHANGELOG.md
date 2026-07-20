@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/create-skill` slash command.** Describe a repository-specific workflow in
+  plain language and OrbCode creates or updates a reusable skill under
+  `.orb/skills/<skill-name>/`, keeping any supporting scripts, references, and
+  assets inside the same skill directory.
 - **Figma design context (`figma_fetch` tool).** A new native tool fetches the
   full node tree, components, styles, and rendered image URLs for any
   `figma.com/design/`, `/file/`, or `/proto/` URL. Requests are authenticated

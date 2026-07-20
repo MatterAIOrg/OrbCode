@@ -310,7 +310,9 @@ MatterAI gateway untouched.
 | `/tasks`     | print the current task list                                                                           |
 | `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
 | `/usage`     | fetch plan usage                                                                                      |
+| `/weekly-reset` | reset weekly usage (Pro and above, once per monthly billing cycle)                                    |
 | `/init`      | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
+| `/create-skill <description>` | create or update a repository skill under `.orb/skills/<skill-name>/` from a plain-language prompt |
 | `/task`      | reference a previous session as context for the current task — opens a picker if no ID is given |
 | `/link`      | link other repos on your machine so changes here are checked against them (enter a folder path) |
 | `/mcp`       | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
@@ -808,6 +810,11 @@ calls the `use_skill` tool with the skill's name, which loads the full
 instructions into context. Project skills override user skills on name
 collisions (closer-to-cwd wins).
 
+The tool also accepts an explicit path to a skill directory or its `SKILL.md`
+file. Paths may be absolute, relative to the current workspace, or start with
+`~/`, so a prompt or `AGENTS.md` can point to a shared skill stored outside the
+standard discovery directories.
+
 ## AGENTS.md memory
 
 AGENTS.md files provide project- and user-level instructions that are injected
@@ -933,7 +940,8 @@ extension). It shows in the status bar, is written into the session file (so
 
 **Usage data**: `/status` and `/usage` fetch `/axoncode/profile` and show the
 plan, usage percentage (used/remaining), remaining reviews, and the credits
-reset date — the same data as the extension's profile view.
+reset date — the same data as the extension's profile view. Eligible paid users
+can run `/weekly-reset` once per monthly billing cycle.
 
 ## Tools
 
