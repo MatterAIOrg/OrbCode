@@ -26,6 +26,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { getConfigDir, loadSettings } from "../config/settings.js";
+import { isFigmaMcpServer } from "../mcp/figmaGuard.js";
 import type {
   McpHttpServerConfig,
   McpServerConfig,
@@ -190,7 +191,7 @@ function readMcpServers(filePath: string): Record<string, McpServerConfig> {
   for (const [name, raw] of Object.entries(block)) {
     if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
     const config = normalizeExternalServer(raw);
-    if (config) out[name] = config;
+    if (config && !isFigmaMcpServer(name, config)) out[name] = config;
   }
   return out;
 }
@@ -238,7 +239,7 @@ function readMcpServersFromObject(
   for (const [name, raw] of Object.entries(block)) {
     if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
     const config = normalizeExternalServer(raw);
-    if (config) out[name] = config;
+    if (config && !isFigmaMcpServer(name, config)) out[name] = config;
   }
   return out;
 }
@@ -363,6 +364,13 @@ export function applyMigration(entries: MigrationEntry[]): MigrationResult {
   const skipped: { entry: MigrationEntry; reason: string }[] = [];
 
   for (const entry of entries) {
+    if (isFigmaMcpServer(entry.name, entry.config)) {
+      skipped.push({
+        entry,
+        reason: "external Figma MCPs are disabled; use the native figma_fetch tool",
+      });
+      continue;
+    }
     if (entry.name in servers) {
       skipped.push({
         entry,

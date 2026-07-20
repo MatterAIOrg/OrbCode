@@ -13,6 +13,7 @@ import {
 } from "./migrate.js"
 import { loadSettings } from "../config/settings.js"
 import type { McpHttpServerConfig, McpScope, McpServerConfig, McpSseServerConfig, McpStdioServerConfig } from "../mcp/types.js"
+import { isFigmaMcpServer } from "../mcp/figmaGuard.js"
 
 /**
  * `orbcode mcp` subcommand — manage MCP servers from the command line, like
@@ -427,7 +428,9 @@ function applyMigrationDryRun(entries: MigrationEntry[]): {
 	const added: string[] = []
 	const skipped: { entry: MigrationEntry; reason: string }[] = []
 	for (const entry of entries) {
-		if (entry.name in existing) {
+		if (isFigmaMcpServer(entry.name, entry.config)) {
+			skipped.push({ entry, reason: "external Figma MCPs are disabled; use the native figma_fetch tool" })
+		} else if (entry.name in existing) {
 			skipped.push({ entry, reason: "already exists in ~/.orbcode/settings.json" })
 		} else {
 			added.push(entry.key)
