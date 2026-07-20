@@ -80,7 +80,10 @@ import {
 } from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
 import { PluginManager } from "./components/PluginManager.js";
-import { TranscriptViewport } from "./components/TranscriptViewport.js";
+import {
+  getTranscriptPlacement,
+  TranscriptViewport,
+} from "./components/TranscriptViewport.js";
 import {
   addLink,
   loadLinks,
@@ -1640,11 +1643,13 @@ export function App({
   const maxScrollOffset = Math.max(0, transcriptHeight - contentHeight);
   const effectiveScrollOffset = Math.min(scrollOffset, maxScrollOffset);
   const introHeaderOnly = rows.length === 1 && rows[0]?.kind === "header";
-  const transcriptMarginTop = introHeaderOnly
-    ? INTRO_TOP_MARGIN
-    : transcriptHeight <= contentHeight
-      ? contentHeight - transcriptHeight
-      : -(maxScrollOffset - effectiveScrollOffset);
+  const transcriptPlacement = getTranscriptPlacement({
+    contentHeight,
+    introHeaderOnly,
+    introTopMargin: INTRO_TOP_MARGIN,
+    scrollOffset: effectiveScrollOffset,
+    transcriptHeight,
+  });
 
   const viewportTop =
     !introHeaderOnly && transcriptHeight > contentHeight
@@ -1701,14 +1706,14 @@ export function App({
     transcriptHeight,
     viewportTop,
   ]);
-  const virtualTranscriptMarginTop = transcriptMarginTop + virtualRows.startY;
+  const virtualTranscriptMarginTop =
+    transcriptPlacement.marginTop + virtualRows.startY;
   const rowBottomSpacerHeight = Math.max(0, rowsHeight - virtualRows.endY);
   // Height estimates are only an approximation of OpenTUI's word wrapping.
   // At the live edge, let Yoga align the rendered content itself so the last
   // line always remains above the composer even when an earlier row wrapped to
   // more lines than estimated. Estimates still drive virtualization/scrolling.
-  const anchorTranscriptToBottom =
-    !introHeaderOnly && effectiveScrollOffset === 0;
+  const anchorTranscriptToBottom = transcriptPlacement.anchorToBottom;
 
   useEffect(() => {
     setScrollOffset((current) => Math.min(current, maxScrollOffset));
