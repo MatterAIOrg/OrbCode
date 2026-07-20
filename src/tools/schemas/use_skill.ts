@@ -5,7 +5,7 @@ export default {
 	function: {
 		name: "use_skill",
 		description:
-			"Use a specific skill to guide the task execution. Skills can be standalone user/project skills or namespaced skills installed as part of a plugin bundle. The available skills are listed in the 'Available Skills' section of your system prompt — invoke this tool with a skill_name from that list when the task matches the skill's when-to-use condition.",
+			"Use a skill by its discovered name or by an explicit skill directory or SKILL.md path. Skills can be standalone user/project skills, external path-based skills, or namespaced skills installed as part of a plugin bundle.",
 		strict: true,
 		parameters: {
 			type: "object",
@@ -13,7 +13,7 @@ export default {
 				skill_name: {
 					type: "string",
 					description:
-						"The name of the skill to use. Must match one of the available skills listed in the tool description.",
+						"A discovered skill name, plugin:skill name, or an absolute, workspace-relative, or home-relative path to a skill directory or SKILL.md file.",
 				},
 			},
 			required: ["skill_name"],

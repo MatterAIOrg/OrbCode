@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 
 import { getConfigDir } from "../config/settings.js"
@@ -12,7 +13,8 @@ import type { ParsedFrontmatter, Skill } from "./types.js"
  * invokes the `use_skill` tool. Discovery mirrors Claude Code's layout:
  *
  *   - User skills:   ~/.orbcode/skills/<name>/SKILL.md
- *   - Project skills: .orbcode/skills/<name>/SKILL.md (in cwd and parents)
+ *   - Project skills: .orb/skills/<name>/SKILL.md (in cwd and parents)
+ *   - External skills: an explicit directory or SKILL.md path passed to use_skill
  *
  * Only the directory format (`<name>/SKILL.md`) is supported, matching Claude
  * Code's current skills/ convention. Project skills override user skills on
@@ -48,7 +50,7 @@ function descriptionFromBody(content: string): string {
 /** Load a single skill from a `<dir>/SKILL.md` path. */
 function loadSkill(
 	skillDir: string,
-	source: "user" | "project" | "plugin",
+	source: "user" | "project" | "plugin" | "external",
 	options: { skillFile?: string; name?: string; plugin?: string; pluginDir?: string } = {},
 ): Skill | undefined {
 	const skillFile = options.skillFile ?? path.join(skillDir, "SKILL.md")
@@ -71,6 +73,23 @@ function loadSkill(
 		plugin: options.plugin,
 		pluginDir: options.pluginDir,
 	}
+}
+
+function resolveSkillFile(skillPath: string, cwd: string): string {
+	const expandedPath =
+		skillPath === "~"
+			? os.homedir()
+			: skillPath.startsWith(`~${path.sep}`)
+				? path.join(os.homedir(), skillPath.slice(2))
+				: skillPath
+	const resolvedPath = path.resolve(cwd, expandedPath)
+	return path.basename(resolvedPath) === "SKILL.md" ? resolvedPath : path.join(resolvedPath, "SKILL.md")
+}
+
+/** Load a skill from an explicit directory or SKILL.md path. */
+export function loadSkillFromPath(skillPath: string, cwd = process.cwd()): Skill | undefined {
+	const skillFile = resolveSkillFile(skillPath.trim(), cwd)
+	return loadSkill(path.dirname(skillFile), "external", { skillFile })
 }
 
 /** Load all skills from a `skills/` directory (each subdirectory is one skill). */
@@ -148,7 +167,9 @@ export function renderSkillCatalog(skills: Map<string, Skill>): string {
 		lines.push(`- \`${skill.name}\`: ${skill.description}${when}`)
 	}
 	lines.push("")
-	lines.push("Use the `use_skill` tool with a `skill_name` to load a skill's full instructions.")
+	lines.push(
+		"Use the `use_skill` tool with a skill name from this list or an explicit skill directory/SKILL.md path to load its full instructions.",
+	)
 	return lines.join("\n")
 }
 

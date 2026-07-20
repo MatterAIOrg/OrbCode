@@ -9,7 +9,7 @@ export interface Skill {
 	/** The full markdown body (without frontmatter). */
 	content: string
 	/** Where this skill was loaded from. */
-	source: "user" | "project" | "plugin"
+	source: "user" | "project" | "plugin" | "external"
 	/** Absolute path to the skill's directory (for ${SKILL_DIR} substitution). */
 	dir: string
 	/** Plugin namespace/root when this skill was installed as part of a plugin. */

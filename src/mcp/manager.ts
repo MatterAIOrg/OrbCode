@@ -3,6 +3,7 @@ import type OpenAI from "openai"
 import { callMcpTool, connectMcpServer, type McpConnection } from "./client.js"
 import { configPathForScope, loadMcpConfig, removeMcpServerAnyScope } from "./config.js"
 import { hasStoredAuth, isOAuthConfig, type AuthIntercept } from "./auth.js"
+import { isFigmaMcpServer, isFigmaMcpTool } from "./figmaGuard.js"
 import type { McpHttpServerConfig, McpServerConfig, McpServerState, McpSnapshot, McpTool, ScopedMcpServerConfig } from "./types.js"
 
 /**
@@ -83,6 +84,11 @@ export class McpManager {
 		const cfg = this.configs.get(name)
 		if (!cfg) return
 		const state = this.states.get(name)!
+		if (isFigmaMcpServer(name, cfg)) {
+			state.status = "disabled"
+			state.detail = "external Figma MCP disabled — use native figma_fetch"
+			return
+		}
 		const isRemote = cfg.type === "http" || cfg.type === "sse"
 
 		// At startup, don't open a browser for OAuth servers that haven't been
@@ -229,6 +235,9 @@ export class McpManager {
 	async callTool(toolName: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }> {
 		if (!toolName.startsWith("mcp__")) {
 			return { text: `Invalid MCP tool name: ${toolName}`, isError: true }
+		}
+		if (isFigmaMcpTool({ name: toolName })) {
+			return { text: "External Figma MCP tools are disabled. Use the native figma_fetch tool instead.", isError: true }
 		}
 		for (const connection of this.connections.values()) {
 			const tool = connection.tools.find((candidate) => candidate.name === toolName)

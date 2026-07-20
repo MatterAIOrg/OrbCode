@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { VERSION } from "../branding.js"
 import type { McpServerConfig, McpTool } from "./types.js"
 import { createAuthTransport, hasOAuth, type AuthIntercept } from "./auth.js"
+import { isFigmaMcpServer, isFigmaMcpTool } from "./figmaGuard.js"
 
 /** The SDK transport type (union of the three we use). */
 type AnyTransport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
@@ -84,6 +85,9 @@ export function truncateMcpResult(text: string, limit = MAX_MCP_RESULT_CHARS): s
  *  `authIntercept` lets the caller surface the OAuth URL in the TUI and
  *  provide the auth code (from the callback or a manual paste). */
 export async function connectMcpServer(name: string, config: McpServerConfig, authIntercept?: AuthIntercept): Promise<McpConnection> {
+	if (isFigmaMcpServer(name, config)) {
+		throw new Error("External Figma MCP servers are disabled. Use OrbCode's native figma_fetch tool instead.")
+	}
 	const { transport, authenticate } = buildTransport(name, config, authIntercept)
 	const client = new Client(CLIENT_INFO, { capabilities: {} })
 
@@ -118,13 +122,15 @@ export async function connectMcpServer(name: string, config: McpServerConfig, au
 /** Enumerate tools from a connected client, namespaced as mcp__<server>__<tool>. */
 export async function listServerTools(server: string, client: Client): Promise<McpTool[]> {
 	const result = await client.listTools()
-	return (result.tools ?? []).map((tool) => ({
-		name: `mcp__${server}__${tool.name}`,
-		originalName: tool.name,
-		server,
-		description: tool.description,
-		inputSchema: (tool.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
-	}))
+	return (result.tools ?? [])
+		.filter((tool) => !isFigmaMcpTool(tool))
+		.map((tool) => ({
+			name: `mcp__${server}__${tool.name}`,
+			originalName: tool.name,
+			server,
+			description: tool.description,
+			inputSchema: (tool.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
+		}))
 }
 
 /** Call a tool on a connected client and return a text result for the model. */

@@ -3,6 +3,7 @@ import * as path from "node:path"
 
 import { getConfigDir } from "../config/settings.js"
 import { installedPluginDirs } from "../plugins/manager.js"
+import { isFigmaMcpServer } from "./figmaGuard.js"
 import type {
 	McpHttpServerConfig,
 	McpJsonConfig,
@@ -131,7 +132,7 @@ function normalizeServers(
 	for (const [name, cfg] of Object.entries(raw)) {
 		if (!/^[A-Za-z0-9_-]+$/.test(name)) continue
 		const normalized = normalizeServerConfig(cfg, variables)
-		if (normalized) servers[name] = normalized
+		if (normalized && !isFigmaMcpServer(name, normalized)) servers[name] = normalized
 	}
 	return servers
 }
@@ -275,6 +276,9 @@ export function configPathForScope(cwd: string, scope: McpScope): string {
 export function addMcpServer(cwd: string, name: string, config: McpServerConfig, scope: McpScope): void {
 	if (!/^[A-Za-z0-9_-]+$/.test(name)) {
 		throw new Error(`Invalid server name "${name}". Use only letters, numbers, hyphens, and underscores.`)
+	}
+	if (isFigmaMcpServer(name, config)) {
+		throw new Error("External Figma MCP servers are disabled. Use OrbCode's native figma_fetch tool instead.")
 	}
 	if (scope === "project") {
 		const existing = readProjectMcpJson(cwd)
