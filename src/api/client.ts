@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { API_GATEWAY_PATH } from "../auth/auth.js";
 import {
   DEFAULT_HEADERS,
+  getClientMetadataHeaders,
   X_AXONCODE_TASKID,
   X_AXON_REPO,
   X_ORGANIZATIONID,
@@ -51,8 +52,11 @@ export class AxonClient implements LLMClient {
     });
   }
 
-  private requestHeaders(): Record<string, string> {
+  private requestHeaders(
+    model: ReturnType<typeof getModel>,
+  ): Record<string, string> {
     const headers: Record<string, string> = {
+      ...getClientMetadataHeaders(model.contextWindow),
       [X_AXONCODE_TASKID]: this.options.taskId,
     };
     if (this.options.organizationId)
@@ -88,7 +92,7 @@ export class AxonClient implements LLMClient {
     }
 
     const stream = await this.client.chat.completions.create(requestOptions, {
-      headers: this.requestHeaders(),
+      headers: this.requestHeaders(model),
       signal: abortSignal,
     });
 
