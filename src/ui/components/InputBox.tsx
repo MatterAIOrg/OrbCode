@@ -6,6 +6,7 @@ import {
 	type SubmittedPrompt,
 	droppedAttachmentPaths,
 	parseAttachments,
+	partitionAttachmentsByImageSupport,
 	pickAttachmentPaths,
 } from "../../attachments.js"
 import { COLORS } from "../../branding.js"
@@ -198,10 +199,10 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 			.then(async () => {
 				const result = await parseAttachments(filePaths, attachmentsRef.current)
 				if (generation !== composerGenerationRef.current) return
-				const accepted = supportsImages
-					? result.attachments
-					: result.attachments.filter((attachment) => attachment.kind !== "image")
-				const unsupportedImages = result.attachments.filter((attachment) => attachment.kind === "image")
+				const { accepted, unsupportedImages } = partitionAttachmentsByImageSupport(
+					result.attachments,
+					supportsImages,
+				)
 				if (accepted.length > 0) {
 					const next = [...attachmentsRef.current, ...accepted]
 					attachmentsRef.current = next

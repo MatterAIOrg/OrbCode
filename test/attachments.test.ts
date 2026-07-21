@@ -8,6 +8,7 @@ import {
 	droppedAttachmentPaths,
 	formatAttachmentContext,
 	parseAttachments,
+	partitionAttachmentsByImageSupport,
 } from "../src/attachments.js"
 
 const temporaryDirectories: string[] = []
@@ -50,6 +51,14 @@ test("extracts text documents and validates image contents", async () => {
 	assert.equal(result.attachments[1]?.kind, "image")
 	assert.match(result.attachments[1]?.kind === "image" ? result.attachments[1].dataUrl : "", /^data:image\/png;base64,/)
 	assert.match(result.errors[0] ?? "", /contents do not match/)
+
+	const supported = partitionAttachmentsByImageSupport(result.attachments, true)
+	assert.deepEqual(supported.accepted, result.attachments)
+	assert.deepEqual(supported.unsupportedImages, [])
+
+	const unsupported = partitionAttachmentsByImageSupport(result.attachments, false)
+	assert.deepEqual(unsupported.accepted.map((attachment) => attachment.kind), ["document"])
+	assert.deepEqual(unsupported.unsupportedImages.map((attachment) => attachment.kind), ["image"])
 })
 
 test("bounds extracted text and formats document context", async () => {

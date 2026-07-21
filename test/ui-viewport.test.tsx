@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
 
 import { Box, Text } from "../src/ui/primitives.js";
+import { InputBox } from "../src/ui/components/InputBox.js";
 import {
   Spinner,
   TIP_DELAY_MS,
@@ -97,6 +98,36 @@ test("keeps the wrapped live response above the composer", async () => {
     assert.notEqual(finalRow, -1);
     assert.notEqual(composerRow, -1);
     assert.equal(finalRow, composerRow - 1);
+  } finally {
+    act(() => screen.renderer.destroy());
+  }
+});
+
+test("treats a raw linefeed as Shift+Enter in the composer", async () => {
+  let submittedText: string | undefined;
+  const screen = await testRender(
+    <InputBox
+      active
+      width={80}
+      slashCommands={[]}
+      onSubmit={(prompt) => {
+        submittedText = prompt.text;
+      }}
+      supportsImages
+    />,
+    { width: 80, height: 8, kittyKeyboard: true },
+  );
+
+  try {
+    await act(async () => {
+      await screen.mockInput.typeText("first");
+      await screen.mockInput.pressKeys(["LINEFEED"]);
+      await screen.mockInput.typeText("second");
+      screen.mockInput.pressEnter();
+      await screen.flush();
+    });
+
+    assert.equal(submittedText, "first\nsecond");
   } finally {
     act(() => screen.renderer.destroy());
   }

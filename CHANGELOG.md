@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-07-21
+
+### Fixed
+
+- **Shift+Enter now inserts a newline in terminals that send a bare linefeed.**
+  Outside the Kitty keyboard protocol, many terminals encode Shift+Enter as a
+  raw LF (linefeed) with no shift modifier, so OpenTUI surfaced it as a plain
+  `linefeed` key — which the composer treated as an ordinary Enter and submitted
+  the prompt instead of starting a new line. The input key mapper now recognizes
+  a `linefeed` key as `return` with the `shift` flag set, so multiline input
+  works consistently across terminals that don't implement the Kitty protocol.
+
+### Changed
+
+- **Attachment image-support partitioning is now a shared helper.** The logic
+  that splits parsed attachments into image-capable and unsupported-image sets
+  (used when the active model can't accept images) is extracted into
+  `partitionAttachmentsByImageSupport`, so the partition rule has a single
+  implementation and is covered by a dedicated unit test.
+
 ## [0.5.5] - 2026-07-20
 
 ### Added
@@ -722,7 +742,9 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.5...HEAD
+[0.5.6]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.5...v0.5.6
+[0.5.5]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.1...v0.5.5
 [0.5.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.4.8...v0.5.0
 [0.4.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/MatterAIOrg/OrbCode/releases/tag/v0.3.4

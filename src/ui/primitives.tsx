@@ -124,6 +124,10 @@ export function Text({
 
 function inputKey(event: KeyEvent): InputKey {
 	const name = event.name.toLowerCase()
+	// Outside the Kitty keyboard protocol, several terminals encode
+	// Shift+Enter as LF while plain Enter is CR. OpenTUI exposes that LF as a
+	// `linefeed` key with no shift modifier, so preserve the distinction here.
+	const isLinefeed = name === "linefeed"
 	return {
 		upArrow: name === "up",
 		downArrow: name === "down",
@@ -131,13 +135,13 @@ function inputKey(event: KeyEvent): InputKey {
 		rightArrow: name === "right",
 		pageUp: name === "pageup" || name === "page_up",
 		pageDown: name === "pagedown" || name === "page_down",
-		return: name === "return" || name === "enter",
+		return: name === "return" || name === "enter" || isLinefeed,
 		escape: name === "escape" || name === "esc",
 		tab: name === "tab",
 		backspace: name === "backspace",
 		delete: name === "delete",
 		ctrl: event.ctrl,
-		shift: event.shift,
+		shift: event.shift || isLinefeed,
 		meta: event.meta || event.option,
 	}
 }
