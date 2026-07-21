@@ -182,14 +182,19 @@ picker (`/model <id>` still selects directly). Additional models can be
 declared via `customModels` in settings.json. The choice persists across
 sessions.
 
-| id                        | context | max output | pricing                |
-| ------------------------- | ------- | ---------- | ---------------------- |
-| `axon-eido-3-code-pro`    | 400k    | 64k        | $3/M in · $9/M out     |
-| `axon-eido-3-code-mini`   | 400k    | 64k        | $1.5/M in · $4.5/M out |
-| `axon-eido-3-flash`       | 200k    | 64k        | free                   |
+| id                             | context | max output | pricing                |
+| ------------------------------ | ------- | ---------- | ---------------------- |
+| `axon-eido-3-code-pro-200k`    | 200k    | 64k        | $3/M in · $9/M out     |
+| `axon-eido-3-code-pro-400k`    | 400k    | 64k        | $3/M in · $9/M out     |
+| `axon-eido-3-code-mini-200k`   | 200k    | 64k        | $1.5/M in · $4.5/M out |
+| `axon-eido-3-code-mini-400k`   | 400k    | 64k        | $1.5/M in · $4.5/M out |
+| `axon-eido-3-flash`            | 200k    | 64k        | free                   |
 
-`axon-eido-3-code-mini` is the default. All three support native JSON tool calls
-and image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
+`axon-eido-3-code-mini-200k` is the default. The context suffix controls
+OrbCode's local context window; requests still send the underlying base model ID
+to the MatterAI gateway. The 400k options require a Pro Plus or Ultra plan and
+are unavailable on Free and Pro. All five options support native JSON tool calls and
+image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
 shown in the status bar.
 
 ### Other providers (Anthropic, OpenAI-compatible)

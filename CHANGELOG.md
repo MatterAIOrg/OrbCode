@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] - 2026-07-21
+
+### Added
+
+- **Axon Eido 3 Pro and Mini now expose 200k and 400k context-window options.**
+  Each model ships as two local entries — `axon-eido-3-code-{pro,mini}-200k`
+  and `axon-eido-3-code-{pro,mini}-400k` — that share the same underlying base
+  model on the MatterAI gateway. A new `gatewayModelId` field on `AxonModel`
+  lets a local context-window option map to a different base model ID sent to
+  the gateway, so the suffix only affects OrbCode's local context window.
+- **400k context is gated to Pro Plus and Ultra plans.** A new
+  `canUse400kContext(plan)` helper normalizes the plan name and unlocks the
+  400k options only for `proplus` / `ultra`. The model picker renders the 400k
+  rows dimmed with a "Only available in Pro Plus and Ultra plans" hint, skips
+  them when navigating with ↑/↓/Tab, and refuses to select them via Enter or
+  number keys. Selecting a 400k model from `/model` or the picker on an
+  ineligible plan emits an error row and leaves the current model unchanged.
+  Headless mode (`-p`) fetches `/axoncode/profile` and exits with a clear
+  message if the requested 400k model isn't allowed. If a user without 400k
+  access loads the app with a 400k model already in settings, OrbCode
+  auto-falls back to the matching `-200k` variant.
+
+### Changed
+
+- **Default model is now `axon-eido-3-code-mini-200k`.** The previous default
+  (`axon-eido-3-code-mini`, 400k) is preserved as the `-400k` option for
+  eligible plans.
+- **`/model pro` and `/model mini` short suffixes prefer the 200k variant.**
+  The suffix matcher now also accepts `-<arg>-` infixes (so `pro` matches
+  `axon-eido-3-code-pro-200k`) and sorts 200k matches ahead of 400k ones,
+  keeping the short form usable on every plan.
+
 ## [0.5.7] - 2026-07-21
 
 ### Added
@@ -757,7 +789,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.7...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.1...v0.5.5

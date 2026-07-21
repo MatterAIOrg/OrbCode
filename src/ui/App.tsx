@@ -25,7 +25,10 @@ import {
 } from "../branding.js";
 import {
   BUILTIN_AXON_MODELS,
+  canUse400kContext,
+  get200kAxonFallback,
   getModel,
+  is400kAxonModel,
   isValidAxonModel,
 } from "../api/models.js";
 import { LoginView } from "./LoginView.js";
@@ -448,6 +451,8 @@ export function App({
     usagePercentage?: number;
     tieredUsage?: import("../auth/auth.js").AxonCodeTieredUsage;
   } | null>(null);
+  const activePlan = usage?.plan ?? usage?.tieredUsage?.plan;
+  const has400kAccess = canUse400kContext(activePlan);
 
   // Refresh plan/usage from /axoncode/profile (shown below the chat box).
   const refreshUsage = useCallback(() => {
@@ -818,6 +823,13 @@ export function App({
 
   const switchModel = useCallback(
     (modelId: string) => {
+      if (is400kAxonModel(modelId) && !has400kAccess) {
+        pushRow({
+          kind: "error",
+          text: "400k context is only available on Pro Plus and Ultra plans.",
+        });
+        return;
+      }
       const updated = { ...loadSettings(), model: modelId };
       setSettings(updated);
       saveSettings(updated);
@@ -827,8 +839,16 @@ export function App({
         text: `Model switched to ${getModel(modelId).name}`,
       });
     },
-    [pushRow],
+    [has400kAccess, pushRow],
   );
+
+  useEffect(() => {
+    if (!activePlan || has400kAccess || !is400kAxonModel(settings.model)) {
+      return;
+    }
+
+    switchModel(get200kAxonFallback(settings.model));
+  }, [activePlan, has400kAccess, settings.model, switchModel]);
 
   const switchTheme = useCallback(
     (mode: OrbCodeThemeMode) => {
@@ -903,13 +923,18 @@ export function App({
               text: `Model "${arg}" is only available in non-interactive mode. Run: orbcode -p "..." --model ${arg}`,
             });
           } else if (arg) {
-            // Allow short suffixes like "pro" or "mini" to resolve to the
-            // latest matching registered id, so /model pro keeps working
-            // as new model generations are added.
+            // Allow short suffixes like "pro" or "mini" to resolve to a
+            // matching registered id, preferring the default 200k context.
             const matches = pickerIds
-              .filter((id) => id.endsWith(`-${arg}`))
-              .sort()
-              .reverse();
+              .filter(
+                (id) => id.endsWith(`-${arg}`) || id.includes(`-${arg}-`),
+              )
+              .sort((a, b) => {
+                const aIs200k = a.endsWith("-200k");
+                const bIs200k = b.endsWith("-200k");
+                if (aIs200k !== bIs200k) return aIs200k ? -1 : 1;
+                return b.localeCompare(a);
+              });
             if (matches.length > 0) {
               switchModel(matches[0]);
             } else {
@@ -2003,6 +2028,7 @@ export function App({
             {modelPickerOpen && (
               <ModelPicker
                 currentId={settings.model}
+                canUse400k={has400kAccess}
                 onSelect={(modelId) => {
                   setModelPickerOpen(false);
                   switchModel(modelId);

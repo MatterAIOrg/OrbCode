@@ -1,4 +1,11 @@
-import { getModel, isValidAxonModel, usesAiSdk } from "./api/models.js"
+import {
+	canUse400kContext,
+	getModel,
+	is400kAxonModel,
+	isValidAxonModel,
+	usesAiSdk,
+} from "./api/models.js"
+import { fetchProfile } from "./auth/auth.js"
 import { getAuthToken, getPendingProjectHooks, loadSettings } from "./config/settings.js"
 import { Agent } from "./core/agent.js"
 import type { AgentEvent } from "./core/events.js"
@@ -31,6 +38,15 @@ export async function runHeadless(
 	if (!token && !usesAiSdk(getModel(settings.model))) {
 		console.error("Not signed in. Run `orbcode login`, set MATTERAI_TOKEN, or put an apiKey in settings.json.")
 		process.exit(1)
+	}
+
+	if (token && is400kAxonModel(settings.model)) {
+		const profile = await fetchProfile(token)
+		const plan = profile.plan ?? profile.tieredUsage?.plan
+		if (!canUse400kContext(plan)) {
+			console.error("400k context is only available on Pro Plus and Ultra plans. Use the matching -200k model.")
+			process.exit(1)
+		}
 	}
 
 	// There's no interactive trust prompt in headless mode, so untrusted project
