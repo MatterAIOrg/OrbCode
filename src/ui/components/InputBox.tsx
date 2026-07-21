@@ -4,7 +4,9 @@ import { Box, Text, useInput } from "../primitives.js"
 import {
 	type Attachment,
 	type SubmittedPrompt,
+	clipboardAttachmentPaths,
 	droppedAttachmentPaths,
+	isSupportedAttachmentPath,
 	parseAttachments,
 	partitionAttachmentsByImageSupport,
 	pickAttachmentPaths,
@@ -260,6 +262,39 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 		setEditor(next, atToken.start + file.length + 2)
 	}
 
+	const insertPastedText = (input: string) => {
+		const currentValue = valueRef.current
+		const currentCursor = cursorRef.current
+		const clean = input.replace(/\r\n?/g, "\n")
+		const next = currentValue.slice(0, currentCursor) + clean + currentValue.slice(currentCursor)
+		setHistoryIndex(-1)
+		setEditor(next, currentCursor + clean.length)
+	}
+
+	const handlePaste = (input: string, kind?: "text" | "binary" | "unknown") => {
+		const droppedPaths = droppedAttachmentPaths(input, process.cwd())
+		if (droppedPaths.length > 0) {
+			addDroppedAttachments(droppedPaths)
+			return true
+		}
+
+		const trimmed = input.trim()
+		const mayBeCopiedFile = kind === "binary" || !trimmed || isSupportedAttachmentPath(trimmed)
+		if (!mayBeCopiedFile) return false
+
+		const generation = composerGenerationRef.current
+		void clipboardAttachmentPaths(process.cwd())
+			.then((filePaths) => {
+				if (generation !== composerGenerationRef.current) return
+				if (filePaths.length > 0) addDroppedAttachments(filePaths)
+				else insertPastedText(input)
+			})
+			.catch(() => {
+				if (generation === composerGenerationRef.current) insertPastedText(input)
+			})
+		return true
+	}
+
 	useInput(
 		(input, key) => {
 			const currentValue = valueRef.current
@@ -393,13 +428,13 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				// Multi-char chunks (paste) are inserted as-is. Newlines inside
 				// the chunk are literal newlines, not a submit signal — press
 				// Enter when you're ready to send.
-				const clean = input.replace(/\r\n?/g, "\n")
-				const next = currentValue.slice(0, currentCursor) + clean + currentValue.slice(currentCursor)
-				setHistoryIndex(-1)
-				setEditor(next, currentCursor + clean.length)
+				insertPastedText(input)
 			}
 		},
-		{ isActive: active },
+		{
+			isActive: active,
+			onPaste: (input, metadata) => handlePaste(input, metadata?.kind),
+		},
 	)
 
 	const plainDisplay = active

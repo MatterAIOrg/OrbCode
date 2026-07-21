@@ -2,9 +2,11 @@ import assert from "node:assert/strict"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
+import { pathToFileURL } from "node:url"
 import { afterEach, test } from "node:test"
 
 import {
+	clipboardAttachmentPathsFromText,
 	droppedAttachmentPaths,
 	formatAttachmentContext,
 	parseAttachments,
@@ -33,6 +35,22 @@ test("recognizes quoted and shell-escaped dropped file paths without consuming p
 	assert.deepEqual(droppedAttachmentPaths(`'${first}' '${second}'`, directory), [first, second])
 	assert.deepEqual(droppedAttachmentPaths(first.replace(/([\\\s()])/g, "\\$1"), directory), [first])
 	assert.deepEqual(droppedAttachmentPaths("please review this report", directory), [])
+})
+
+test("resolves copied file-manager URLs as attachments", async () => {
+	const directory = await temporaryDirectory()
+	const image = path.join(directory, "design mock.png")
+	const unsupported = path.join(directory, "archive.zip")
+	await fs.writeFile(image, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+	await fs.writeFile(unsupported, "zip")
+
+	assert.deepEqual(
+		clipboardAttachmentPathsFromText(
+			[`# file-manager clipboard`, pathToFileURL(image).href, pathToFileURL(unsupported).href].join("\n"),
+			directory,
+		),
+		[image],
+	)
 })
 
 test("extracts text documents and validates image contents", async () => {

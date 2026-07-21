@@ -274,8 +274,9 @@ MatterAI gateway untouched.
   as a compact Tasks panel (`□` pending / `◧` in progress / `■` done).
 - **@-references**: type `@` in the input to fuzzy-search workspace files;
   ↑/↓ to choose, enter/tab inserts the top/selected match into the prompt.
-- **Attachments**: use `/attach` or `ctrl+f` to open the native file picker, or
-  drag files onto the input box (the terminal pastes their paths). CSV, XLSX,
+- **Attachments**: use `/attach` or `ctrl+f` to open the native file picker,
+  copy and paste a file from the system file manager, or drag files onto the
+  input box (the terminal pastes their paths). CSV, XLSX,
   DOCX, PDF, plain-text, JSON, Markdown, PNG, JPEG, and WebP are supported.
   Documents are extracted to bounded text before the model call;
   attached filenames stay visible in the composer, queue, transcript, and

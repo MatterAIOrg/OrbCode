@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react"
-import { createTextAttributes, type KeyEvent } from "@opentui/core"
+import { createTextAttributes, type KeyEvent, type PasteMetadata } from "@opentui/core"
 import {
 	useKeyboard,
 	usePaste,
@@ -156,7 +156,11 @@ function inputText(event: KeyEvent): string {
 
 export function useInput(
 	handler: (input: string, key: InputKey) => void,
-	options: { isActive?: boolean } = {},
+	options: {
+		isActive?: boolean
+		/** Return true when the caller consumed the paste. */
+		onPaste?: (input: string, metadata?: PasteMetadata) => boolean
+	} = {},
 ) {
 	const active = options.isActive ?? true
 	useKeyboard((event) => {
@@ -165,7 +169,9 @@ export function useInput(
 	})
 	usePaste((event) => {
 		if (!active) return
-		handler(new TextDecoder().decode(event.bytes), {
+		const input = new TextDecoder().decode(event.bytes)
+		if (options.onPaste?.(input, event.metadata)) return
+		handler(input, {
 			upArrow: false,
 			downArrow: false,
 			leftArrow: false,
