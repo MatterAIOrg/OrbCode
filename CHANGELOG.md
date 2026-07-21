@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-07-21
+
+### Added
+
+- **Paste files copied in the host file manager as attachments.** Copying a
+  file in Finder/Explorer (or a `text/uri-list` copy on Linux/Wayland) and pasting
+  into the composer now attaches the file, instead of pasting a meaningless path
+  string. OrbCode reads the native file-list clipboard flavor — `public.file-url`
+  on macOS via JXA, `FileDropList` on Windows via PowerShell, and `text/uri-list`
+  on Linux via `wl-paste`/`xclip` — resolves each entry to a real path, filters to
+  supported attachment types, and queues them exactly like drag-and-drop. When
+  the clipboard holds no files (a plain text copy), the paste falls back to
+  inserting the text as before. `useInput` exposes an optional `onPaste` hook so
+  callers can consume a paste before it reaches the key handler.
+
 ## [0.5.6] - 2026-07-21
 
 ### Fixed
@@ -742,7 +757,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.7...HEAD
+[0.5.7]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.1...v0.5.5
 [0.5.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.4.8...v0.5.0

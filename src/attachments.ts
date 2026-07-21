@@ -165,6 +165,61 @@ export function isSupportedAttachmentPath(filePath: string): boolean {
 }
 
 /**
+ * Read file objects copied by the host file manager. Terminals generally expose
+ * only the clipboard's text flavor, so Finder/Explorer copies need to be read
+ * from the native file-list flavor instead.
+ */
+export async function clipboardAttachmentPaths(cwd: string): Promise<string[]> {
+	let output: string | undefined
+	if (process.platform === "darwin") {
+		const script = [
+			'ObjC.import("AppKit")',
+			"const pasteboard = $.NSPasteboard.generalPasteboard",
+			"const items = pasteboard.pasteboardItems",
+			"const urls = []",
+			"for (let index = 0; index < items.count; index++) {",
+			"  const value = items.objectAtIndex(index).stringForType(\"public.file-url\")",
+			"  if (value) urls.push(ObjC.unwrap(value))",
+			"}",
+			"urls.join(\"\\n\")",
+		].join("\n")
+		output = await runClipboardCommand("osascript", ["-l", "JavaScript", "-e", script], cwd)
+	} else if (process.platform === "win32") {
+		const script = [
+			"$ErrorActionPreference = 'SilentlyContinue'",
+			"Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }",
+		].join("; ")
+		output = await runClipboardCommand(
+			"powershell.exe",
+			["-NoProfile", "-NonInteractive", "-Command", script],
+			cwd,
+		)
+	} else if (process.platform === "linux") {
+		output = await runClipboardCommand("wl-paste", ["--no-newline", "--type", "text/uri-list"], cwd)
+		if (output === undefined) {
+			output = await runClipboardCommand("xclip", ["-selection", "clipboard", "-t", "text/uri-list", "-o"], cwd)
+		}
+	}
+
+	return clipboardAttachmentPathsFromText(output ?? "", cwd)
+}
+
+export function clipboardAttachmentPathsFromText(input: string, cwd: string): string[] {
+	const paths: string[] = []
+	for (const line of input.split(/\r?\n/)) {
+		const token = line.trim()
+		if (!token || token.startsWith("#")) continue
+		const filePath = resolvePathToken(token, cwd)
+		try {
+			if (isSupportedAttachmentPath(filePath) && fs.statSync(filePath).isFile()) paths.push(filePath)
+		} catch {
+			// Clipboard entries can disappear if a file is moved after it was copied.
+		}
+	}
+	return [...new Set(paths)]
+}
+
+/**
  * Terminal emulators implement file drag-and-drop by pasting one or more paths.
  * Only consume the input when every pasted token is an existing supported file,
  * so ordinary pasted prose remains ordinary prompt text.
@@ -411,5 +466,30 @@ function runPickerCommand(command: string, args: string[], cwd: string): Promise
 			else if (code === 1) resolve(null)
 			else reject(new Error(stderr.trim() || `File picker exited with code ${code ?? "unknown"}`))
 		})
+	})
+}
+
+/** `undefined` means the executable or requested clipboard format is unavailable. */
+function runClipboardCommand(command: string, args: string[], cwd: string): Promise<string | undefined> {
+	return new Promise((resolve) => {
+		const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "ignore"] })
+		let stdout = ""
+		let settled = false
+		const finish = (value: string | undefined) => {
+			if (settled) return
+			settled = true
+			clearTimeout(timeout)
+			resolve(value)
+		}
+		const timeout = setTimeout(() => {
+			child.kill()
+			finish(undefined)
+		}, 1_500)
+		child.stdout.setEncoding("utf8")
+		child.stdout.on("data", (chunk: string) => {
+			if (stdout.length < 1024 * 1024) stdout += chunk
+		})
+		child.on("error", () => finish(undefined))
+		child.on("close", (code) => finish(code === 0 ? stdout : undefined))
 	})
 }
