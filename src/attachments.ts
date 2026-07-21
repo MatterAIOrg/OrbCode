@@ -70,6 +70,19 @@ export interface ParseAttachmentsResult {
 	errors: string[]
 }
 
+export function partitionAttachmentsByImageSupport(
+	attachments: Attachment[],
+	supportsImages: boolean,
+): { accepted: Attachment[]; unsupportedImages: ImageAttachment[] } {
+	if (supportsImages) return { accepted: attachments, unsupportedImages: [] }
+	return {
+		accepted: attachments.filter((attachment) => attachment.kind !== "image"),
+		unsupportedImages: attachments.filter(
+			(attachment): attachment is ImageAttachment => attachment.kind === "image",
+		),
+	}
+}
+
 /** Open the host operating system's native file chooser. */
 export async function pickAttachmentPaths(cwd: string): Promise<string[]> {
 	let output: string | null | undefined
