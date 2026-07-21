@@ -8,7 +8,7 @@ import {
   X_ORGANIZATIONID,
 } from "./headers.js";
 import { stripReasoningDetails, type LLMClient } from "./llmClient.js";
-import { getModel } from "./models.js";
+import { getGatewayModelId, getModel } from "./models.js";
 import type { ApiStreamChunk } from "./stream.js";
 
 interface CompletionUsage {
@@ -71,7 +71,7 @@ export class AxonClient implements LLMClient {
 
     const requestOptions: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
       {
-        model: model.id,
+        model: getGatewayModelId(model),
         temperature: 0.2,
         messages: [
           { role: "system", content: systemPrompt },

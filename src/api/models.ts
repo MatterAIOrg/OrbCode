@@ -8,6 +8,8 @@ export type ModelEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface AxonModel {
   id: string;
+  /** Model ID sent to the MatterAI gateway when it differs from the local selection ID. */
+  gatewayModelId?: string;
   name: string;
   description: string;
   contextWindow: number;
@@ -151,9 +153,23 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     outputPrice: 0.0,
     free: true,
   },
-  "axon-eido-3-code-pro": {
-    id: "axon-eido-3-code-pro",
-    name: "Axon Eido 3 Pro",
+  "axon-eido-3-code-pro-200k": {
+    id: "axon-eido-3-code-pro-200k",
+    gatewayModelId: "axon-eido-3-code-pro",
+    name: "Axon Eido 3 Pro (200K context)",
+    description:
+      "Axon Eido 3 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.000003,
+    outputPrice: 0.000009,
+    free: false,
+  },
+  "axon-eido-3-code-pro-400k": {
+    id: "axon-eido-3-code-pro-400k",
+    gatewayModelId: "axon-eido-3-code-pro",
+    name: "Axon Eido 3 Pro (400K context)",
     description:
       "Axon Eido 3 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
     contextWindow: 400000,
@@ -163,9 +179,23 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     outputPrice: 0.000009,
     free: false,
   },
-  "axon-eido-3-code-mini": {
-    id: "axon-eido-3-code-mini",
-    name: "Axon Eido 3 Mini",
+  "axon-eido-3-code-mini-200k": {
+    id: "axon-eido-3-code-mini-200k",
+    gatewayModelId: "axon-eido-3-code-mini",
+    name: "Axon Eido 3 Mini (200K context)",
+    description:
+      "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.0000015,
+    outputPrice: 0.0000045,
+    free: false,
+  },
+  "axon-eido-3-code-mini-400k": {
+    id: "axon-eido-3-code-mini-400k",
+    gatewayModelId: "axon-eido-3-code-mini",
+    name: "Axon Eido 3 Mini (400K context)",
     description:
       "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
     contextWindow: 400000,
@@ -188,7 +218,25 @@ export const AXON_MODELS: Record<string, AxonModel> = {
   ...ANTHROPIC_MODELS,
 };
 
-export const DEFAULT_MODEL_ID = "axon-eido-3-code-mini";
+export const DEFAULT_MODEL_ID = "axon-eido-3-code-mini-200k";
+
+const EXTENDED_CONTEXT_PLANS = new Set(["proplus", "ultra"]);
+
+/** Whether an account plan includes Axon's 400k context options. */
+export function canUse400kContext(plan?: string): boolean {
+  const normalizedPlan = plan?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+  return EXTENDED_CONTEXT_PLANS.has(normalizedPlan);
+}
+
+export function is400kAxonModel(modelId: string): boolean {
+  return (
+    modelId.startsWith("axon-eido-3-code-") && modelId.endsWith("-400k")
+  );
+}
+
+export function get200kAxonFallback(modelId: string): string {
+  return modelId.replace(/-400k$/, "-200k");
+}
 
 /** A model declared in settings.json; everything except the id is optional. */
 export interface CustomModelConfig {
@@ -243,4 +291,9 @@ export function isValidAxonModel(modelId: string): boolean {
 
 export function getModel(modelId: string): AxonModel {
   return AXON_MODELS[modelId] ?? AXON_MODELS[DEFAULT_MODEL_ID];
+}
+
+/** Resolve a local context-window option to the model ID understood by the gateway. */
+export function getGatewayModelId(model: AxonModel): string {
+  return model.gatewayModelId ?? model.id;
 }
