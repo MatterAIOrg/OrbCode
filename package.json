@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "0.5.10",
+  "version": "0.6.0",
   "description": "OrbCode CLI — agentic coding in your terminal, powered by Axon models by MatterAI",
   "type": "module",
   "bin": {
@@ -36,6 +36,7 @@
     "test:attachments": "node --import tsx --test test/attachments.test.ts",
     "test:mcp": "node --import tsx --test test/mcp-client.test.ts",
     "test:plugins": "node --import tsx --test test/plugins.test.ts",
+    "test:search": "node --import tsx --test test/search-files.test.ts",
     "test:ui": "bun test test/ui-viewport.test.tsx",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
@@ -51,16 +52,20 @@
     "open": "^10.1.0",
     "openai": "^4.78.0",
     "pdf-parse": "^2.4.5",
-    "picomatch": "^4.0.4",
+    "picomatch": "4.0.4",
     "react": "^19.2.0",
     "read-excel-file": "^9.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
-    "@types/picomatch": "^3.0.1",
+    "@types/picomatch": "3.0.2",
     "@types/react": "^19.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "optionalDependencies": {
+    "@ff-labs/fff-node": "0.10.1",
+    "@vscode/ripgrep": "1.18.0"
   },
   "keywords": [
     "orbcode",

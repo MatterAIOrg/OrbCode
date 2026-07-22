@@ -14,6 +14,7 @@ import { createLLMClient } from "../api/provider.js"
 import { buildSystemPrompt } from "../prompts/system.js"
 import {
 	describeToolCall,
+	disposeSearchFiles,
 	executeTool,
 	getActiveTools,
 	getApprovalKind,
@@ -22,6 +23,7 @@ import {
 import { walkFiles } from "../tools/executors/listFiles.js"
 import { previewFileChange } from "../tools/executors/files.js"
 import { extractFigmaUrls, figmaFetch } from "../tools/executors/figma.js"
+import { stripSearchPageMetadataForDisplay } from "../tools/executors/searchFiles/format.js"
 import type { AgentCallbacks, AgentEvent, ApprovalDecision } from "./events.js"
 import {
 	getSessionFilePath,
@@ -168,8 +170,10 @@ function contentToText(content: unknown): string {
 		.join("")
 }
 
-function resultPreview(text: string): string {
-	const lines = text.split("\n")
+function formatResultPreview(toolName: string, text: string): string {
+	const visibleText = toolName === "search_files" ? stripSearchPageMetadataForDisplay(text) : text
+	if (!visibleText) return ""
+	const lines = visibleText.split("\n")
 	return (
 		lines.slice(0, RESULT_PREVIEW_LINES).join("\n") +
 		(lines.length > RESULT_PREVIEW_LINES ? `\n… (${lines.length} lines)` : "")
@@ -291,7 +295,7 @@ function legacyTranscript(messages: OpenAI.Chat.ChatCompletionMessageParam[]): S
 				kind: "tool",
 				name: tool.name,
 				summary: tool.summary,
-				resultPreview: resultPreview(text),
+				resultPreview: formatResultPreview(tool.name, text),
 				isError,
 				diff: isError ? undefined : tool.diff,
 			})
@@ -419,7 +423,11 @@ export class Agent {
 
 	/** Visible history restored by the TUI, including reasoning and tools. */
 	get displayTranscript(): SessionTranscriptEntry[] {
-		return this.transcript.map((entry) => ({ ...entry }))
+		return this.transcript.map((entry) =>
+			entry.kind === "tool" && entry.name === "search_files"
+				? { ...entry, resultPreview: stripSearchPageMetadataForDisplay(entry.resultPreview) }
+				: { ...entry },
+		)
 	}
 
 	private recordTranscriptEvent(event: AgentEvent): void {
@@ -812,6 +820,11 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			await this.mcp?.stop()
 		} catch {
 			// best-effort
+		}
+		try {
+			await disposeSearchFiles()
+		} catch {
+			// Search cleanup must not prevent the CLI from exiting.
 		}
 	}
 
@@ -1257,10 +1270,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		}
 
-		const previewLines = resultText.split("\n")
-		const resultPreview =
-			previewLines.slice(0, RESULT_PREVIEW_LINES).join("\n") +
-			(previewLines.length > RESULT_PREVIEW_LINES ? `\n… (${previewLines.length} lines)` : "")
+		const resultPreview = formatResultPreview(toolCall.name, resultText)
 
 		onEvent({
 			type: "tool-end",

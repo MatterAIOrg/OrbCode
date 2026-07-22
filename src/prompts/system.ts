@@ -185,51 +185,25 @@ Command validity rules: a command is never empty, never just \`:\`, never a bare
 
 ## search_files
 
-The \`search_files\` tool allows you to search for patterns across files in a directory using regex.
+Search file contents using a Rust-compatible regex. Results are compact, limited to three matches per file, and paginated.
 
 ### Parameters
 
 1. **path** (string, required): Directory to search recursively, relative to workspace
 2. **regex** (string, required): Rust-compatible regular expression pattern
 3. **file_pattern** (string or null, required): Glob pattern to filter files OR null
+4. **cursor** (string or null, required): Copy the opaque cursor from the same search exactly, or pass JSON null without quotes for the first page
+5. **max_results** (integer or null, required): Target 1-100 results; null defaults to 50
+6. **context_lines** (integer or null, required): 0-2 surrounding lines; null defaults to 0
 
-### CRITICAL: file_pattern Must Be a String or null
-
-**The \`file_pattern\` parameter MUST ALWAYS be:**
-- A properly quoted string: \`"*.js"\`, \`"*.tsx"\`, \`"**/*.json"\`
-- OR explicitly \`null\` if you want to search all files
-
-**NEVER provide an unquoted value like \`*.js\` - this will cause a JSON parsing error.**
-
-### Correct Examples
-\`\`\`json
-// Search for "import" in all TypeScript files
-{
-  "path": "src",
-  "regex": "import.*from",
-  "file_pattern": "*.ts"
-}
-
-// Search for "TODO" in all files (no filter)
-{
-  "path": "src",
-  "regex": "TODO:",
-  "file_pattern": null
-}
-
-\`\`\`
-
-The regex uses Rust syntax (similar to PCRE); escape special characters like \`\\.\` and \`\\(\`. \`file_pattern\` uses glob syntax: \`"*.ts"\`, \`"*.{jsx,tsx}"\`, \`"**/*.json"\`. When in doubt, use \`null\` to search all files.
+Use zero context for discovery, then read the relevant file region. Reuse a cursor only with the same path, regex, and file pattern; never invent or edit one.
+If \`Next cursor\` is \`none\`, the search is complete: stop and never pass the word \`none\`. If a result says \`Restarted: yes\`, the FFF continuation failed and ripgrep restarted at page one, so account for repeated matches and continue only with the new cursor.
 
 ### Search Hygiene
 
 - Exclude test, spec, and mock paths from discovery searches by default (\`__tests__\`, \`*.spec.*\`, \`*.test.*\`, \`__mocks__\`) unless the task itself is about tests. They pollute results and bury the implementation you are looking for.
 - Scope \`path\` to the narrowest plausible directory instead of searching from the repository root.
 - If a search returns hundreds of hits, tighten the regex or \`file_pattern\` and search again. Do not scan through the dump.
-
-### Remember
-
-**Always quote the file_pattern value or use null. Never use bare/unquoted glob patterns.**
 
 ## Verifying tool results and avoiding loops
 

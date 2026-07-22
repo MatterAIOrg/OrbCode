@@ -1,108 +1,137 @@
 import * as fs from "node:fs"
-import * as path from "node:path"
-import picomatch from "picomatch"
 
 import { type ToolContext, type ToolResult, resolveWorkspacePath } from "../types.js"
+import { searchFilesWithFff, disposeFffSearch } from "./searchFiles/fff.js"
+import { formatSearchPage } from "./searchFiles/format.js"
+import { disposeRipgrepSearch, searchFilesWithRipgrep } from "./searchFiles/ripgrep.js"
+import {
+	createSearchFingerprint,
+	normalizeSearchFilePattern,
+	parseSearchOptions,
+	type SearchPage,
+} from "./searchFiles/types.js"
 
-const IGNORED_DIRS = new Set([
-	"node_modules",
-	".git",
-	"dist",
-	"build",
-	"out",
-	".next",
-	".turbo",
-	"__pycache__",
-	".venv",
-	"venv",
-])
+let disposalPromise: Promise<void> | undefined
+let activeSearches = 0
+let idlePromise: Promise<void> | undefined
+let resolveIdle: (() => void) | undefined
 
-const MAX_RESULTS = 300
-const MAX_FILE_SIZE = 2 * 1024 * 1024 // skip files over 2MB
-const MAX_LINE_LENGTH = 500
+async function acquireSearchOperation(): Promise<void> {
+	while (disposalPromise) {
+		try {
+			await disposalPromise
+		} catch {
+			// Cleanup errors are reported to the disposer; later sessions may retry.
+		}
+	}
+	activeSearches++
+}
+
+function releaseSearchOperation(): void {
+	activeSearches--
+	if (activeSearches === 0) {
+		resolveIdle?.()
+		resolveIdle = undefined
+		idlePromise = undefined
+	}
+}
+
+function waitForSearchOperations(): Promise<void> {
+	if (activeSearches === 0) return Promise.resolve()
+	if (!idlePromise) {
+		idlePromise = new Promise<void>((resolve) => {
+			resolveIdle = resolve
+		})
+	}
+	return idlePromise
+}
 
 export async function searchFiles(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-	const dirPath = resolveWorkspacePath(context.cwd, String(args.path ?? "."))
-	const regexSource = String(args.regex ?? "")
-	const filePattern = args.file_pattern == null || args.file_pattern === "" ? null : String(args.file_pattern)
-
-	let regex: RegExp
+	await acquireSearchOperation()
 	try {
-		regex = new RegExp(regexSource)
+		const directoryPath = resolveWorkspacePath(context.cwd, String(args.path ?? "."))
+		if (typeof args.regex !== "string" || args.regex.length === 0) {
+			throw new Error("regex must be a non-empty string")
+		}
+		const regex = args.regex
+		const filePattern = normalizeSearchFilePattern(args.file_pattern)
+		if (!fs.existsSync(directoryPath) || !fs.statSync(directoryPath).isDirectory()) {
+			return { text: `Directory not found: ${directoryPath}`, isError: true }
+		}
+
+		const fingerprint = createSearchFingerprint(directoryPath, regex, filePattern)
+		const options = parseSearchOptions(args, fingerprint)
+		let page: SearchPage
+
+		if (options.cursor?.engine === "ripgrep") {
+			page = await searchFilesWithRipgrep(context.cwd, directoryPath, regex, filePattern, options)
+		} else {
+			try {
+				page = await searchFilesWithFff(context.cwd, directoryPath, regex, filePattern, options)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				const restarted = options.cursor?.engine === "fff"
+				page = await searchFilesWithRipgrep(context.cwd, directoryPath, regex, filePattern, {
+					...options,
+					cursor: null,
+				})
+				page.warning = restarted
+					? `FFF continuation failed; ripgrep fallback restarted from the first page and may repeat earlier results (${message})`
+					: `FFF failed; used ripgrep fallback (${message})`
+				page.restarted = restarted
+			}
+		}
+
+		return { text: formatSearchPage(page) }
 	} catch (error) {
-		return { text: `Invalid regex: ${(error as Error).message}`, isError: true }
+		return { text: `Error searching files:\n${error instanceof Error ? error.message : String(error)}`, isError: true }
+	} finally {
+		releaseSearchOperation()
 	}
-
-	if (!fs.existsSync(dirPath)) {
-		return { text: `Directory not found: ${dirPath}`, isError: true }
-	}
-
-	// A bare pattern like "*.ts" should match at any depth, like ripgrep -g.
-	const isMatch = filePattern
-		? picomatch(filePattern.includes("/") ? filePattern : `**/${filePattern}`, { dot: true })
-		: () => true
-
-	const results: string[] = []
-	let matchCount = 0
-
-	const walk = (dir: string): void => {
-		if (matchCount >= MAX_RESULTS) return
-		let dirents: fs.Dirent[]
-		try {
-			dirents = fs.readdirSync(dir, { withFileTypes: true })
-		} catch {
-			return
-		}
-		for (const dirent of dirents) {
-			if (matchCount >= MAX_RESULTS) return
-			const full = path.join(dir, dirent.name)
-			if (dirent.isDirectory()) {
-				if (!IGNORED_DIRS.has(dirent.name) && !dirent.name.startsWith(".")) walk(full)
-				continue
-			}
-			// picomatch only understands forward slashes, so normalize Windows paths.
-			const rel = path.relative(dirPath, full).split(path.sep).join("/")
-			if (!isMatch(rel)) continue
-			let stat: fs.Stats
-			try {
-				stat = fs.statSync(full)
-			} catch {
-				continue
-			}
-			if (stat.size > MAX_FILE_SIZE) continue
-
-			let content: string
-			try {
-				content = fs.readFileSync(full, "utf8")
-			} catch {
-				continue
-			}
-			if (content.includes("\u0000")) continue // binary
-
-			const lines = content.split("\n")
-			const fileMatches: string[] = []
-			for (let i = 0; i < lines.length && matchCount < MAX_RESULTS; i++) {
-				if (regex.test(lines[i])) {
-					matchCount++
-					const lineText = lines[i].length > MAX_LINE_LENGTH ? lines[i].slice(0, MAX_LINE_LENGTH) + "…" : lines[i]
-					fileMatches.push(`  ${i + 1}: ${lineText}`)
-				}
-			}
-			if (fileMatches.length > 0) {
-				results.push(`${rel}\n${fileMatches.join("\n")}`)
-			}
-		}
-	}
-
-	walk(dirPath)
-
-	if (results.length === 0) {
-		return { text: `No matches found for "${regexSource}" in ${dirPath}.` }
-	}
-
-	let text = `Found ${matchCount} match${matchCount === 1 ? "" : "es"}:\n\n${results.join("\n\n")}`
-	if (matchCount >= MAX_RESULTS) {
-		text += `\n\n(Truncated at ${MAX_RESULTS} matches. Narrow your regex or file_pattern.)`
-	}
-	return { text }
 }
+
+export function disposeSearchFiles(): Promise<void> {
+	if (disposalPromise) return disposalPromise
+
+	let resolveDisposal!: () => void
+	let rejectDisposal!: (error: unknown) => void
+	const disposing = new Promise<void>((resolve, reject) => {
+		resolveDisposal = resolve
+		rejectDisposal = reject
+	})
+	disposalPromise = disposing
+	void (async () => {
+		await waitForSearchOperations()
+		const errors: unknown[] = []
+		try {
+			await disposeFffSearch()
+		} catch (error) {
+			errors.push(error)
+		}
+		try {
+			await disposeRipgrepSearch()
+		} catch (error) {
+			errors.push(error)
+		}
+		if (errors.length > 0) throw new AggregateError(errors, "Search cleanup failed")
+	})().then(resolveDisposal, rejectDisposal)
+	void disposing.then(
+		() => {
+			if (disposalPromise === disposing) disposalPromise = undefined
+		},
+		() => {
+			if (disposalPromise === disposing) disposalPromise = undefined
+		},
+	)
+	return disposing
+}
+
+export { formatSearchPage, stripSearchPageMetadataForDisplay } from "./searchFiles/format.js"
+export {
+	createSearchFingerprint,
+	normalizeNullableString,
+	normalizeSearchFilePattern,
+	parseSearchCursor,
+	parseSearchOptions,
+	serializeSearchCursor,
+} from "./searchFiles/types.js"
