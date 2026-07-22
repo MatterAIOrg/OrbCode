@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.7] - 2026-07-22
+
+### Changed
+
+- **Version bump to 6.6.7.** No functional changes since v0.6.0;
+  `package.json` version and the release branch/tag are advanced to `6.6.7`.
+
 ## [0.6.0] - 2026-07-22
 
 ### Changed
@@ -837,7 +844,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v6.6.7...HEAD
+[6.6.7]: https://github.com/MatterAIOrg/OrbCode/compare/v0.6.0...v6.6.7
 [0.6.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.10...v0.6.0
 [0.5.10]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.8...v0.5.10
 [0.5.8]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.7...v0.5.8
