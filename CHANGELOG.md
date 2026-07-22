@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-22
+
+### Changed
+
+- **`search_files` rewritten on FFF with ripgrep fallback and pagination.** The
+  native `search_files` tool now runs through the FFF (`@ff-labs/fff-node`)
+  engine first — a persistent, watched file finder that keeps an in-memory index
+  of the workspace — and falls back to the bundled `@vscode/ripgrep` binary (or
+  system `rg`) when FFF is unavailable or a continuation fails. Results are
+  compact (at most three matches per file), capped at 100 per page, and paginated
+  via an opaque `cursor` string that is fingerprint-bound to the originating
+  path, regex, and `file_pattern`; passing the literal word `none` is rejected
+  with a clear error so the model can't continue a completed search. A rare FFF
+  continuation failure restarts from page one with ripgrep and is flagged with
+  `Restarted: yes` so repeated matches can be accounted for.
+- **New `search_files` parameters.** `cursor` (opaque continuation token or
+  null), `max_results` (1–100, default 50), and `context_lines` (0–2, default 0)
+  replace the old fixed 300-match dump. `file_pattern` now accepts `null` for all
+  files (the schema's `type` widened from `string` to `string|null`), and the
+  system prompt's verbose quoting rules were replaced with concise pagination
+  guidance. The tool description, schema, executor, and summary formatter were
+  updated together.
+- **Search results are cleaned for the TUI.** Pagination metadata (`Engine`,
+  `Matches`, `Next cursor`, `Restarted`, `Warning`) is stripped from result
+  previews and the restored display transcript so the visible rows show only
+  file paths and matched lines.
+- **Search engines are disposed cleanly on exit.** A `disposeSearchFiles` hook
+  drains in-flight FFF and ripgrep operations, destroys persistent finders, and
+  tears down child processes (SIGKILL escalation after 250ms) so the CLI never
+  leaves a `rg` process or FFF library behind.
+- **README tool table updated.** `search_files` now reads "FFF-first Rust-regex
+  search, compact pagination, and bundled/system ripgrep fallback".
+
+### Added
+
+- **`test/search-files.test.ts`** — 11 tests covering FFF default selection,
+  native pagination continuity, literal handling of route-directory
+  metacharacters, opaque-cursor binding, fractional-limit rejection, ripgrep
+  ignore/normalization consistency, adjacent-match preservation across pages,
+  completed-search disambiguation, FFF continuation fallback during cleanup,
+  and post-cleanup FFF re-initialization. Exposed via `npm run test:search`.
+
 ## [0.5.10] - 2026-07-22
 
 ### Changed
@@ -795,7 +837,9 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.8...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.10...v0.6.0
+[0.5.10]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.8...v0.5.10
 [0.5.8]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.5...v0.5.6

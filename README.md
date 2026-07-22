@@ -951,7 +951,7 @@ can run `/weekly-reset` once per monthly billing cycle.
 
 ## Tools
 
-Active in the CLI (schemas byte-identical to the extension's `native-tools`):
+Active in the CLI (aligned with the extension's native tools, with CLI-specific limits where noted):
 
 | tool                       | executor notes                                                                               |
 | -------------------------- | -------------------------------------------------------------------------------------------- |
@@ -960,7 +960,7 @@ Active in the CLI (schemas byte-identical to the extension's `native-tools`):
 | `multi_file_edit`          | batched edits grouped per file, per-edit OK/FAILED results                                   |
 | `file_write`               | creates parent dirs, full-content writes                                                     |
 | `list_files`               | optional recursive, ignores node_modules/.git/build dirs, 800-entry cap                      |
-| `search_files`             | JS regex search with glob `file_pattern` (picomatch), 300-match cap, binary skip             |
+| `search_files`             | FFF-first Rust-regex search, compact pagination, and bundled/system ripgrep fallback          |
 | `execute_command`          | user's shell, 120s timeout, 30k output cap, optional cwd                                     |
 | `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
 | `update_todo_list`         | drives the TUI todo panel                                                                    |

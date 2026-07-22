@@ -4,7 +4,7 @@ import { nativeTools } from "./schemas/index.js"
 import type { ToolContext, ToolResult } from "./types.js"
 import { fileEdit, fileWrite, multiFileEdit, readFile } from "./executors/files.js"
 import { listFiles } from "./executors/listFiles.js"
-import { searchFiles } from "./executors/searchFiles.js"
+import { disposeSearchFiles, normalizeSearchFilePattern, searchFiles } from "./executors/searchFiles.js"
 import { executeCommand } from "./executors/executeCommand.js"
 import { useSkill } from "./executors/skills.js"
 import { webFetch, webSearch } from "./executors/web.js"
@@ -13,6 +13,7 @@ import type { McpManager } from "../mcp/manager.js"
 
 export { nativeTools }
 export type { ToolContext, ToolResult }
+export { disposeSearchFiles }
 
 export type ApprovalKind = "none" | "edit" | "command"
 
@@ -57,8 +58,10 @@ export function describeToolCall(toolName: string, args: Record<string, unknown>
 			return String(args.command ?? "")
 		case "list_files":
 			return `${args.path ?? "."}${args.recursive ? " (recursive)" : ""}`
-		case "search_files":
-			return `/${args.regex ?? ""}/ in ${args.path ?? "."}${args.file_pattern ? ` (${args.file_pattern})` : ""}`
+		case "search_files": {
+			const pattern = normalizeSearchFilePattern(args.file_pattern)
+			return `/${args.regex ?? ""}/ in ${args.path ?? "."}${pattern ? ` · ${pattern}` : ""}`
+		}
 		case "web_search":
 			return String(args.query ?? "")
 		case "web_fetch":
