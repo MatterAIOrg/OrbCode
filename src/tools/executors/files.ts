@@ -5,37 +5,119 @@ import { type ToolContext, type ToolResult, resolveWorkspacePath } from "../type
 import { unifiedDiff } from "../../utils/diff.js"
 
 const MAX_READ_LINES = 1000
+const MIN_READ_LINES = 200
 
 /** Format file content as right-aligned `LINE_NUMBER|LINE_CONTENT` (6-char padding). */
 function withLineNumbers(lines: string[], startLine: number): string {
 	return lines.map((line, i) => `${String(startLine + i).padStart(6, " ")}|${line}`).join("\n")
 }
 
+interface FileReadSpec {
+	file_path: string
+	offset?: number
+	limit?: number
+}
+
+function parseFileEntries(args: Record<string, unknown>): FileReadSpec[] {
+	if (Array.isArray(args.files) && args.files.length > 0) {
+		return args.files.map((item: Record<string, unknown>) => {
+			const offset = item.offset != null ? Math.max(1, Number(item.offset) || 1) : undefined
+			let limit: number | undefined
+			if (item.limit != null) {
+				const rawLimit = Number(item.limit)
+				if (!isNaN(rawLimit)) {
+					limit = Math.min(MAX_READ_LINES, Math.max(MIN_READ_LINES, rawLimit))
+				}
+			}
+			return {
+				file_path: String(item.file_path ?? ""),
+				offset,
+				limit,
+			}
+		})
+	} else if (args.file_path) {
+		const offset = args.offset != null ? Math.max(1, Number(args.offset) || 1) : undefined
+		let limit: number | undefined
+		if (args.limit != null) {
+			const rawLimit = Number(args.limit)
+			if (!isNaN(rawLimit)) {
+				limit = Math.min(MAX_READ_LINES, Math.max(1, rawLimit))
+			}
+		}
+		return [
+			{
+				file_path: String(args.file_path),
+				offset,
+				limit,
+			},
+		]
+	}
+	return []
+}
+
 export async function readFile(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-	const filePath = resolveWorkspacePath(context.cwd, String(args.file_path ?? ""))
-	const offset = Math.max(1, Number(args.offset ?? 1) || 1)
-	const limitArg = args.limit === null || args.limit === undefined ? MAX_READ_LINES : Number(args.limit)
-	const limit = Math.min(Math.max(1, limitArg || MAX_READ_LINES), MAX_READ_LINES)
-
-	let content: string
-	try {
-		content = fs.readFileSync(filePath, "utf8")
-	} catch (error) {
-		return { text: `Error reading file ${filePath}: ${(error as Error).message}`, isError: true }
+	const entries = parseFileEntries(args)
+	if (entries.length === 0) {
+		return { text: "No files specified to read.", isError: true }
 	}
 
-	const allLines = content.split("\n")
-	const slice = allLines.slice(offset - 1, offset - 1 + limit)
-	if (slice.length === 0) {
-		return { text: `File ${filePath} has ${allLines.length} lines; offset ${offset} is beyond the end.`, isError: true }
+	const results: { text: string; isError?: boolean }[] = []
+
+	for (const entry of entries) {
+		const relPath = entry.file_path
+		const filePath = resolveWorkspacePath(context.cwd, relPath)
+		const offset = entry.offset ?? 1
+		const limit = entry.limit ?? MAX_READ_LINES
+
+		let content: string
+		try {
+			content = fs.readFileSync(filePath, "utf8")
+		} catch (error) {
+			results.push({
+				text: `Error reading file ${relPath}: ${(error as Error).message}`,
+				isError: true,
+			})
+			continue
+		}
+
+		const allLines = content.split("\n")
+		const totalLines = allLines.length
+		const slice = allLines.slice(offset - 1, offset - 1 + limit)
+
+		if (slice.length === 0 && totalLines > 0) {
+			results.push({
+				text: `File ${relPath} has ${totalLines} lines; offset ${offset} is beyond the end.`,
+				isError: true,
+			})
+			continue
+		}
+
+		const formattedContent = withLineNumbers(slice, offset)
+		const lastLineShown = offset - 1 + slice.length
+
+		if (entries.length === 1) {
+			let output = formattedContent
+			if (lastLineShown < totalLines) {
+				output += `\n\n(Showing lines ${offset}-${lastLineShown} of ${totalLines}. Use offset/limit to read more.)`
+			}
+			results.push({ text: output })
+		} else {
+			const rangeLabel = totalLines > 0 ? ` (lines ${offset}-${lastLineShown} of ${totalLines})` : ""
+			let output = `--- ${relPath}${rangeLabel} ---\n${formattedContent}`
+			if (lastLineShown < totalLines) {
+				output += `\n(Showing lines ${offset}-${lastLineShown} of ${totalLines}. Use offset/limit to read more.)`
+			}
+			results.push({ text: output })
+		}
 	}
 
-	let result = withLineNumbers(slice, offset)
-	const lastLineShown = offset - 1 + slice.length
-	if (lastLineShown < allLines.length) {
-		result += `\n\n(Showing lines ${offset}-${lastLineShown} of ${allLines.length}. Use offset/limit to read more.)`
+	const combinedText = results.map((r) => r.text).join("\n\n")
+	const allFailed = results.length > 0 && results.every((r) => r.isError)
+
+	return {
+		text: combinedText,
+		isError: allFailed,
 	}
-	return { text: result }
 }
 
 export async function fileWrite(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {

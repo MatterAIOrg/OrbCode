@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.10] - 2026-07-22
+
+### Changed
+
+- **Batched `read_file` tool support.** Updated the native `read_file` tool to accept a `files` array (1-10 file regions) for batching independent reads in a single tool call. Clamps line limits to 200-1000 lines for region requests and formats returned regions with range and total file line labels when multiple regions are returned. Updated tool schema, executor, system prompt guidelines, and summary descriptions.
+
 ## [0.5.8] - 2026-07-21
 
 ### Added

@@ -33,8 +33,17 @@ export function getApprovalKind(toolName: string, args: Record<string, unknown>)
 /** One-line human summary of a tool call, shown in the UI. */
 export function describeToolCall(toolName: string, args: Record<string, unknown>): string {
 	switch (toolName) {
-		case "read_file":
+		case "read_file": {
+			if (Array.isArray(args.files) && args.files.length > 0) {
+				const paths = args.files.map((f: { file_path?: string }) => f.file_path ?? "").filter(Boolean)
+				const uniqueFiles = [...new Set(paths)]
+				if (args.files.length === 1) {
+					return uniqueFiles[0] || String(args.files[0]?.file_path ?? "")
+				}
+				return `${args.files.length} regions across ${uniqueFiles.length} file${uniqueFiles.length === 1 ? "" : "s"}`
+			}
 			return String(args.file_path ?? "")
+		}
 		case "file_write":
 			return String(args.file_path ?? "")
 		case "file_edit":
