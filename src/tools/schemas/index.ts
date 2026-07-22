@@ -7,7 +7,7 @@ import askFollowupQuestion from "./ask_followup_question.js"
 import attemptCompletion from "./attempt_completion.js"
 import executeCommand from "./execute_command.js"
 import listFiles from "./list_files.js"
-import { read_file_single } from "./read_file.js"
+import read_file from "./read_file.js"
 import searchFiles from "./search_files.js"
 import updateTodoList from "./update_todo_list.js"
 import useSkill from "./use_skill.js"
@@ -27,7 +27,7 @@ export const nativeTools = [
 	attemptCompletion,
 	executeCommand,
 	listFiles,
-	read_file_single,
+	read_file,
 	searchFiles,
 	updateTodoList,
 	useSkill,

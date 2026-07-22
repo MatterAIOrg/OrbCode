@@ -134,36 +134,38 @@ Common tool calls and explanations
 
 ## read_file Tool Usage
 
-The \`read_file\` tool reads file contents with optional offset and limit. Use it to examine code before making changes or to discuss specific sections.
+The \`read_file\` tool reads one or more file regions in one operation. Batch all independent reads that are already known at the current step instead of issuing one call per file or walking through adjacent offsets.
 
 ### Parameters
 
-- \`file_path\` (required): Absolute path to the file (e.g., /Users/username/project/src/file.ts)
-- \`offset\` (optional): Starting line number (1-indexed). Defaults to 1.
-- \`limit\` (optional): Maximum number of lines to read. If not specified, reads the complete file. Default and maximum limit is 1000 lines.
+- \`files\` (required): Array containing 1-10 file-region requests.
+- \`files[].file_path\` (required): Absolute path to the file (e.g., /Users/username/project/src/file.ts).
+- \`files[].offset\` (optional): Starting line number (1-indexed). Defaults to 1.
+- \`files[].limit\` (optional): Number of lines to read. Use 200-1000; each region is capped at 1000 lines.
 
 ### Example
 
-**Read lines 100-150:**
+**Read several relevant regions together:**
 \`\`\`json
 {
-  "file_path": "/Users/username/project/src/App.tsx",
-  "offset": 100,
-  "limit": 50
+  "files": [
+    {"file_path": "/Users/username/project/src/App.tsx", "offset": 1, "limit": 1000},
+    {"file_path": "/Users/username/project/src/utils.ts", "offset": 400, "limit": 500}
+  ]
 }
 \`\`\`
 
-Parameter rules: \`file_path\` must be an absolute path; \`offset\` and \`limit\` must be >= 1 if specified; omit \`limit\` to read from \`offset\` to the end. Call the tool multiple times to read multiple files.
-
-CRITICAL: \`offset\` is what targets a region — \`limit\` alone reads the TOP of the file. To inspect line N (e.g. from search results), you MUST pass \`offset\` ≈ N-20 together with \`limit\`. Before sending the call, confirm \`offset\` is present whenever you are aiming at a specific line.
+Parameter rules: \`file_path\` must be absolute. \`offset\` must be >= 1 and \`limit\` must be between 200 and 1000 when specified. Omitting both reads from the top up to the 1000-line cap. To inspect line N in a large file, use an offset that includes enough context for the complete surrounding function or logical region.
 
 When you don't know line numbers: use \`search_files\` to locate the code, note the line number from the results, then \`read_file\` that region with surrounding context.
 
 ### Reading Strategy
 
-- When investigating a bug, read whole functions or logical regions in ONE call rather than small slivers. Prefer one 150-line read over five 30-line reads — fragmented reads lose context and waste calls.
+- For files up to 1000 lines, read the whole file once. For larger files, prefer 500-1000-line logical regions. Do not request fewer than 200 lines merely to save context.
+- Put every independent file or region you already know you need into the same \`files\` array. Use another call only when the first result reveals a genuinely new dependency.
 - Budget your re-reads: if you have already read a region and have not edited it since, work from what you have instead of fetching it again. Re-read only when the file has changed or you genuinely lack the detail.
 - After every read, verify the output matches the parameters you sent. If you meant to read around line N but the result starts at line 1, you omitted \`offset\` — re-issue the call with \`offset\` set. NEVER re-read the top of the file expecting a different result.
+- For code reviews, first use a compact change inventory such as \`git status --short\`, \`git diff --stat\`, and \`git diff --unified=20\`. Do not dump an unbounded repository diff and then request the same per-file diffs again.
 
 
 # execute_command
