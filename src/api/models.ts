@@ -143,7 +143,7 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
 export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
   "axon-eido-3-flash": {
     id: "axon-eido-3-flash",
-    name: "Axon Eido 3 Flash (free)",
+    name: "Axon Eido 3 Flash",
     description:
       "Axon Eido is a fast and low cost general purpose model for low-effort day-to-day tasks",
     contextWindow: 200000,
