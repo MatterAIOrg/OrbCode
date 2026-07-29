@@ -205,6 +205,32 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     outputPrice: 0.0000045,
     free: false,
   },
+  "axon-lumen-4-code-200k": {
+    id: "axon-lumen-4-code-200k",
+    gatewayModelId: "axon-lumen-4-code",
+    name: "Axon Lumen 4 (200K context)",
+    description:
+      "Axon Lumen 4 Code is the ultra-intelligent frontier model for complex agentic coding tasks and general intelligence.",
+    contextWindow: 200000,
+    maxOutputTokens: 128000,
+    supportsImages: true,
+    inputPrice: 0.000005,
+    outputPrice: 0.000025,
+    free: false,
+  },
+  "axon-lumen-4-code-400k": {
+    id: "axon-lumen-4-code-400k",
+    gatewayModelId: "axon-lumen-4-code",
+    name: "Axon Lumen 4 (400K context)",
+    description:
+      "Axon Lumen 4 Code is the ultra-intelligent frontier model for complex agentic coding tasks and general intelligence.",
+    contextWindow: 400000,
+    maxOutputTokens: 128000,
+    supportsImages: true,
+    inputPrice: 0.000005,
+    outputPrice: 0.000025,
+    free: false,
+  },
 };
 
 /**
@@ -221,17 +247,32 @@ export const AXON_MODELS: Record<string, AxonModel> = {
 export const DEFAULT_MODEL_ID = "axon-eido-3-code-mini-200k";
 
 const EXTENDED_CONTEXT_PLANS = new Set(["proplus", "ultra"]);
+const LUMEN_MODEL_PLANS = new Set(["proplus", "ultra"]);
+
+function normalizePlan(plan?: string): string {
+  return plan?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+}
 
 /** Whether an account plan includes Axon's 400k context options. */
 export function canUse400kContext(plan?: string): boolean {
-  const normalizedPlan = plan?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
-  return EXTENDED_CONTEXT_PLANS.has(normalizedPlan);
+  return EXTENDED_CONTEXT_PLANS.has(normalizePlan(plan));
+}
+
+/** Whether an account plan includes the Axon Lumen models. */
+export function canUseLumenModels(plan?: string): boolean {
+  return LUMEN_MODEL_PLANS.has(normalizePlan(plan));
 }
 
 export function is400kAxonModel(modelId: string): boolean {
   return (
-    modelId.startsWith("axon-eido-3-code-") && modelId.endsWith("-400k")
+    (modelId.startsWith("axon-eido-3-code-") ||
+      modelId.startsWith("axon-lumen-4-code-")) &&
+    modelId.endsWith("-400k")
   );
+}
+
+export function isLumenAxonModel(modelId: string): boolean {
+  return modelId.startsWith("axon-lumen-");
 }
 
 export function get200kAxonFallback(modelId: string): string {

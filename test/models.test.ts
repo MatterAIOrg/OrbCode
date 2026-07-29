@@ -5,9 +5,11 @@ import {
   BUILTIN_AXON_MODELS,
   DEFAULT_MODEL_ID,
   canUse400kContext,
+  canUseLumenModels,
   get200kAxonFallback,
   getGatewayModelId,
   is400kAxonModel,
+  isLumenAxonModel,
 } from "../src/api/models.js";
 
 for (const tier of ["pro", "mini"] as const) {
@@ -45,11 +47,43 @@ test("400k context is limited to Pro Plus and Ultra plans", () => {
   }
 });
 
+test("Axon Lumen 4 exposes 200k and 400k local options", () => {
+  const baseId = "axon-lumen-4-code";
+  const model200k = BUILTIN_AXON_MODELS[`${baseId}-200k`];
+  const model400k = BUILTIN_AXON_MODELS[`${baseId}-400k`];
+
+  assert.equal(model200k.contextWindow, 200000);
+  assert.equal(model400k.contextWindow, 400000);
+  assert.equal(getGatewayModelId(model200k), baseId);
+  assert.equal(getGatewayModelId(model400k), baseId);
+});
+
 test("restricted Axon models map to their 200k variants", () => {
   assert.equal(is400kAxonModel("axon-eido-3-code-mini-400k"), true);
+  assert.equal(is400kAxonModel("axon-lumen-4-code-400k"), true);
   assert.equal(is400kAxonModel("third-party-model-400k"), false);
+  assert.equal(
+    get200kAxonFallback("axon-lumen-4-code-400k"),
+    "axon-lumen-4-code-200k",
+  );
   assert.equal(
     get200kAxonFallback("axon-eido-3-code-pro-400k"),
     "axon-eido-3-code-pro-200k",
   );
+});
+
+test("Lumen models are limited to Pro Plus and Ultra plans", () => {
+  for (const plan of ["Pro Plus", "pro_plus", "pro-plus", "ULTRA"]) {
+    assert.equal(canUseLumenModels(plan), true);
+  }
+  for (const plan of [undefined, "free", "Pro", "Enterprise"]) {
+    assert.equal(canUseLumenModels(plan), false);
+  }
+});
+
+test("isLumenAxonModel identifies every Lumen variant", () => {
+  assert.equal(isLumenAxonModel("axon-lumen-4-code-200k"), true);
+  assert.equal(isLumenAxonModel("axon-lumen-4-code-400k"), true);
+  assert.equal(isLumenAxonModel("axon-eido-3-code-pro-200k"), false);
+  assert.equal(isLumenAxonModel("axon-eido-3-flash"), false);
 });

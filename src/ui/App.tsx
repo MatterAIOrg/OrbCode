@@ -25,10 +25,13 @@ import {
 } from "../branding.js";
 import {
   BUILTIN_AXON_MODELS,
+  DEFAULT_MODEL_ID,
   canUse400kContext,
+  canUseLumenModels,
   get200kAxonFallback,
   getModel,
   is400kAxonModel,
+  isLumenAxonModel,
   isValidAxonModel,
 } from "../api/models.js";
 import { LoginView } from "./LoginView.js";
@@ -453,6 +456,7 @@ export function App({
   } | null>(null);
   const activePlan = usage?.plan ?? usage?.tieredUsage?.plan;
   const has400kAccess = canUse400kContext(activePlan);
+  const hasLumenAccess = canUseLumenModels(activePlan);
 
   // Refresh plan/usage from /axoncode/profile (shown below the chat box).
   const refreshUsage = useCallback(() => {
@@ -823,6 +827,13 @@ export function App({
 
   const switchModel = useCallback(
     (modelId: string) => {
+      if (isLumenAxonModel(modelId) && !hasLumenAccess) {
+        pushRow({
+          kind: "error",
+          text: "Axon Lumen models are only available on Pro Plus and Ultra plans.",
+        });
+        return;
+      }
       if (is400kAxonModel(modelId) && !has400kAccess) {
         pushRow({
           kind: "error",
@@ -839,16 +850,24 @@ export function App({
         text: `Model switched to ${getModel(modelId).name}`,
       });
     },
-    [has400kAccess, pushRow],
+    [has400kAccess, hasLumenAccess, pushRow],
   );
 
   useEffect(() => {
-    if (!activePlan || has400kAccess || !is400kAxonModel(settings.model)) {
+    if (!activePlan) {
       return;
     }
-
-    switchModel(get200kAxonFallback(settings.model));
-  }, [activePlan, has400kAccess, settings.model, switchModel]);
+    // A stored Lumen selection on a plan without access falls back to the
+    // default Eido model; its 400k variant is covered by the Lumen check
+    // first since the 200k Lumen fallback would still be locked.
+    if (isLumenAxonModel(settings.model) && !hasLumenAccess) {
+      switchModel(DEFAULT_MODEL_ID);
+      return;
+    }
+    if (!has400kAccess && is400kAxonModel(settings.model)) {
+      switchModel(get200kAxonFallback(settings.model));
+    }
+  }, [activePlan, has400kAccess, hasLumenAccess, settings.model, switchModel]);
 
   const switchTheme = useCallback(
     (mode: OrbCodeThemeMode) => {
@@ -2029,6 +2048,7 @@ export function App({
               <ModelPicker
                 currentId={settings.model}
                 canUse400k={has400kAccess}
+                canUseLumen={hasLumenAccess}
                 onSelect={(modelId) => {
                   setModelPickerOpen(false);
                   switchModel(modelId);
