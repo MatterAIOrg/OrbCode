@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Axon Lumen 4 Code model support.** Added support for `axon-lumen-4-code` in 200K and 400K context variants (`axon-lumen-4-code-200k` and `axon-lumen-4-code-400k`). Lumen models are available on Pro Plus and Ultra plans.
+
 ## [6.6.8] - 2026-07-25
 
 ### Changed
