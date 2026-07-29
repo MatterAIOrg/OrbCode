@@ -61,6 +61,28 @@ function retryBackoffMs(attempt: number): number {
 	return Math.min(500 * 2 ** attempt, 8000)
 }
 
+/** Short, user-facing label for a stream failure. Upstream error bodies can be
+ *  raw HTML (e.g. an nginx 502 page), so never surface `error.message` — only
+ *  the numeric HTTP status when one is available. */
+function streamErrorLabel(error: unknown): string {
+	const err = error as { status?: number; code?: number | string }
+	const status = Number(err?.status ?? err?.code)
+	return Number.isFinite(status) && status !== 0 ? `Connection failed (${status})` : "Connection failed"
+}
+
+/** Error message safe to show in the transcript. Upstream gateways often answer
+ *  failures with raw HTML pages or huge multi-line bodies; collapse those to a
+ *  clean status label instead of dumping markup into the UI. */
+function sanitizeErrorMessage(error: unknown): string {
+	const err = error as { status?: number; code?: number | string; message?: unknown }
+	const message = String(err?.message ?? error ?? "Unknown error")
+	const clean = message.replace(/\s+/g, " ").trim()
+	const looksLikeHtml = /<\/?[a-z][^>]*>/i.test(clean)
+	if (!looksLikeHtml && clean.length <= 200) return clean
+	const status = Number(err?.status ?? err?.code)
+	return Number.isFinite(status) && status !== 0 ? `Request failed (${status})` : "Request failed"
+}
+
 /** Sleep that settles early (rejecting with AbortError) if the signal fires, so
  *  a user interrupt isn't stuck waiting out a retry backoff. */
 function interruptibleDelay(ms: number, signal: AbortSignal): Promise<void> {
@@ -749,19 +771,19 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 					role: "user",
 					content: "System reminder: The user interrupted this response before it finished.",
 				})
-			} else {
-				onEvent({ type: "error", message: (error as Error).message })
-			}
-		} finally {
-			this.abortController = undefined
-			this.recordTranscriptEvent({ type: "turn-end" })
-			this.persist()
-			onEvent({ type: "turn-end" })
+		} else {
+			onEvent({ type: "error", message: sanitizeErrorMessage(error) })
 		}
+	} finally {
+		this.abortController = undefined
+		this.recordTranscriptEvent({ type: "turn-end" })
+		this.persist()
+		onEvent({ type: "turn-end" })
 	}
+}
 
-	/** Fire SessionStart once per instance, stashing any injected context for
-	 *  the first user message. */
+/** Fire SessionStart once per instance, stashing any injected context for
+ *  the first user message. */
 	private async maybeFireSessionStart(): Promise<void> {
 		if (this.sessionStarted) return
 		this.sessionStarted = true
@@ -908,10 +930,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 		} catch (error) {
 			if ((error as Error).name === "AbortError" || signal.aborted) {
-				onEvent({ type: "error", message: "Compaction interrupted; history left unchanged." })
-			} else {
-				onEvent({ type: "error", message: (error as Error).message })
-			}
+			onEvent({ type: "error", message: "Compaction interrupted; history left unchanged." })
+		} else {
+			onEvent({ type: "error", message: sanitizeErrorMessage(error) })
+		}
 		} finally {
 			this.abortController = undefined
 			this.recordTranscriptEvent({ type: "turn-end" })
@@ -954,7 +976,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				const delayMs = retryBackoffMs(attempt)
 				this.options.callbacks.onEvent({
 					type: "system",
-					message: `Connection to the model failed (${(error as Error).message}). Retrying ${attempt + 1}/${MAX_STREAM_RETRIES} in ${Math.ceil(delayMs / 1000)}s…`,
+					message: `${streamErrorLabel(error)}. Retrying ${attempt + 1}/${MAX_STREAM_RETRIES} in ${Math.ceil(delayMs / 1000)}s…`,
 					isError: false,
 				})
 				await interruptibleDelay(delayMs, signal)

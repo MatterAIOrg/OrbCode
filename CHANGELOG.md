@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.7.0] - 2026-07-29
+
+### Added
+
+- **Axon Lumen 4 Code model support.** Added support for `axon-lumen-4-code` in 200K and 400K context variants (`axon-lumen-4-code-200k` and `axon-lumen-4-code-400k`). Lumen models are available on Pro Plus and Ultra plans.
+
 ## [6.6.8] - 2026-07-25
 
 ### Changed
@@ -850,7 +856,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v6.6.7...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v6.7.0...HEAD
+[6.7.0]: https://github.com/MatterAIOrg/OrbCode/compare/v6.6.8...v6.7.0
 [6.6.7]: https://github.com/MatterAIOrg/OrbCode/compare/v0.6.0...v6.6.7
 [0.6.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.10...v0.6.0
 [0.5.10]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.8...v0.5.10

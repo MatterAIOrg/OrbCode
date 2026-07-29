@@ -2,7 +2,7 @@ import React, { useState } from "react"
 import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
-import { BUILTIN_AXON_MODELS, type AxonModel } from "../../api/models.js"
+import { BUILTIN_AXON_MODELS, isLumenAxonModel, type AxonModel } from "../../api/models.js"
 import { PopoverBox } from "./PopoverBox.js"
 
 const VISIBLE_ROWS = 6
@@ -11,6 +11,7 @@ const CONTEXT_WINDOW_ORDER = [200000, 400000]
 interface ModelPickerProps {
 	currentId: string
 	canUse400k: boolean
+	canUseLumen: boolean
 	onSelect: (modelId: string) => void
 	onCancel: () => void
 }
@@ -21,14 +22,15 @@ function formatPrice(model: AxonModel): string {
 	return `${perMillion(model.inputPrice)} in / ${perMillion(model.outputPrice)} out per 1M tokens`
 }
 
-export function ModelPicker({ currentId, canUse400k, onSelect, onCancel }: ModelPickerProps) {
+export function ModelPicker({ currentId, canUse400k, canUseLumen, onSelect, onCancel }: ModelPickerProps) {
 	const models = Object.values(BUILTIN_AXON_MODELS).sort((a, b) => {
 		const aIndex = CONTEXT_WINDOW_ORDER.indexOf(a.contextWindow)
 		const bIndex = CONTEXT_WINDOW_ORDER.indexOf(b.contextWindow)
 		return (aIndex === -1 ? CONTEXT_WINDOW_ORDER.length : aIndex) -
 			(bIndex === -1 ? CONTEXT_WINDOW_ORDER.length : bIndex)
 	})
-	const isLocked = (model: AxonModel) => model.contextWindow === 400000 && !canUse400k
+	const isLocked = (model: AxonModel) =>
+		(model.contextWindow === 400000 && !canUse400k) || (isLumenAxonModel(model.id) && !canUseLumen)
 	const nextSelectableIndex = (from: number, direction: 1 | -1) => {
 		for (let offset = 1; offset <= models.length; offset += 1) {
 			const candidate = (from + direction * offset + models.length) % models.length
@@ -79,6 +81,10 @@ export function ModelPicker({ currentId, canUse400k, onSelect, onCancel }: Model
 				const isSelected = index === selected
 				const isCurrent = model.id === currentId
 				const locked = isLocked(model)
+			// The 400k group header already carries the plan note, so only badge
+			// Lumen rows whose lock isn't explained by the context header.
+			const showPlanBadge =
+				isLumenAxonModel(model.id) && !canUseLumen && !(model.contextWindow === 400000 && !canUse400k)
 				const showContextHeader = i === 0 || visible[i - 1].contextWindow !== model.contextWindow
 				const contextLabel = `Context: ${model.contextWindow / 1000}k`
 				const contextAccessLabel =
@@ -100,6 +106,7 @@ export function ModelPicker({ currentId, canUse400k, onSelect, onCancel }: Model
 								{index + 1}. {model.name}
 								{isCurrent && <Text color={COLORS.success}> ✓ current</Text>}
 								<Text color={COLORS.dim}> · {formatPrice(model)}</Text>
+								{showPlanBadge && <Text color={COLORS.dim}> · Pro Plus and Ultra only</Text>}
 							</Text>
 							{isSelected && (
 								<Box paddingLeft={5}>
