@@ -1,5 +1,4 @@
 import { execSync } from "node:child_process"
-import * as path from "node:path"
 import { randomUUID } from "node:crypto"
 import type OpenAI from "openai"
 
@@ -37,7 +36,17 @@ import { loadMemoryFiles } from "../memory/loader.js"
 import { loadSkills } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
 import { unifiedDiff } from "../utils/diff.js"
-import { countDiffLines, getLanguageFromPath, reportLineMetrics } from "../api/metrics.js"
+import {
+	countDiffLines,
+	detectGitRepo,
+	getGitHead,
+	getPersistedGitHead,
+	getLanguageFromPath,
+	observeGitCommits,
+	persistGitHead,
+	reportLineMetrics,
+	reportUsageEvent,
+} from "../api/metrics.js"
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
@@ -131,21 +140,6 @@ interface PendingToolCall {
 	id: string
 	name: string
 	arguments: string
-}
-
-function detectRepo(cwd: string): string {
-	try {
-		const remote = execSync("git config --get remote.origin.url", {
-			cwd,
-			stdio: ["ignore", "pipe", "ignore"],
-		})
-			.toString()
-			.trim()
-		if (remote) return remote
-	} catch {
-		// not a git repo or no remote
-	}
-	return path.basename(cwd)
 }
 
 function getGitSummary(cwd: string): string {
@@ -349,6 +343,7 @@ export class Agent {
 	private contextTokens = 0
 	private title = ""
 	private createdAt = new Date().toISOString()
+	private lastGitHead?: string
 	private readonly hooks: HookRunner
 	/** MCP server manager (may be undefined when MCP is disabled). */
 	private mcp?: McpManager
@@ -378,6 +373,11 @@ export class Agent {
 			},
 		}
 		this.taskId = options.resume?.id ?? randomUUID()
+		this.lastGitHead =
+			options.resume?.lastGitHead ??
+			getPersistedGitHead(options.cwd) ??
+			getGitHead(options.cwd)
+		persistGitHead(options.cwd, this.lastGitHead)
 		this.hooks = new HookRunner({
 			cwd: options.cwd,
 			sessionId: this.taskId,
@@ -412,7 +412,7 @@ export class Agent {
 			modelId: options.modelId,
 			taskId: this.taskId,
 			organizationId: options.organizationId,
-			repo: detectRepo(options.cwd),
+			repo: detectGitRepo(options.cwd),
 			baseUrl: options.baseUrl,
 		})
 	}
@@ -424,7 +424,7 @@ export class Agent {
 			modelId,
 			taskId: this.taskId,
 			organizationId: this.options.organizationId,
-			repo: detectRepo(this.options.cwd),
+			repo: detectGitRepo(this.options.cwd),
 			baseUrl: this.options.baseUrl,
 		})
 	}
@@ -552,6 +552,8 @@ export class Agent {
 		this.pendingStartContext = ""
 		this.sessionStarted = false
 		this.stopHookActive = false
+		this.lastGitHead = getGitHead(this.options.cwd)
+		persistGitHead(this.options.cwd, this.lastGitHead)
 	}
 
 	/** Write the current conversation to the sessions directory. */
@@ -568,6 +570,7 @@ export class Agent {
 				totalCost: this.totalCost,
 				contextTokens: this.contextTokens,
 				todos: this.todos,
+				lastGitHead: this.lastGitHead,
 				messages: this.messages,
 				transcript: this.transcript,
 			})
@@ -639,6 +642,13 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	async runTurn(userText: string, attachments: Attachment[] = []): Promise<void> {
 		const { onEvent } = this.options.callbacks
 		this.abortController = new AbortController()
+		this.observeCommittedCode()
+		this.trackBackground(reportUsageEvent(this.options.token, {
+			eventType: "user_message",
+			taskId: this.taskId,
+			model: this.options.modelId,
+			repo: detectGitRepo(this.options.cwd),
+		}))
 		this.transcript.push({
 			kind: "user",
 			text: userText,
@@ -815,6 +825,29 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		p.finally(() => this.pendingBackground.delete(p))
 	}
 
+	/** Detect descendant Git commits made while this session is alive. */
+	private observeCommittedCode(): void {
+		const observed = observeGitCommits(this.options.cwd, this.lastGitHead)
+		this.lastGitHead = observed.head
+		persistGitHead(this.options.cwd, this.lastGitHead)
+		if (observed.commits.length === 0) return
+
+		const repo = detectGitRepo(this.options.cwd)
+		for (const commit of observed.commits) {
+			this.trackBackground(reportUsageEvent(this.options.token, {
+				eventId: `commit:${commit.hash}:${repo}`,
+				eventType: "committed_code",
+				taskId: this.taskId,
+				model: this.options.modelId,
+				repo,
+				linesAdded: commit.linesAdded,
+				linesDeleted: commit.linesDeleted,
+				commitHash: commit.hash,
+				timestamp: commit.timestamp,
+			}))
+		}
+	}
+
 	/** Wait (up to `timeoutMs`) for in-flight background hooks to settle. */
 	private async awaitBackground(timeoutMs: number): Promise<void> {
 		if (this.pendingBackground.size === 0) return
@@ -828,6 +861,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 
 	/** Fire SessionEnd hooks. Best-effort; never blocks shutdown. */
 	async endSession(reason: string): Promise<void> {
+		this.observeCommittedCode()
 		// Let in-flight Notification hooks settle before the final SessionEnd.
 		await this.awaitBackground(3000)
 		if (this.hooks.hasHooks("SessionEnd")) {
@@ -1251,6 +1285,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		// potentially long synchronous tool call blocks the event loop.
 		await new Promise(resolve => setImmediate(resolve))
 		const result = await executeTool(toolCall.name, args, this.toolContext(), this.mcp)
+		this.observeCommittedCode()
 
 		// PostToolUse can feed extra context (or a block reason) back to the
 		// model. PreToolUse additionalContext is delivered here too.
@@ -1284,10 +1319,11 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				this.trackBackground(reportLineMetrics({
 					taskId: this.taskId,
 					token: this.options.token,
-					repo: detectRepo(this.options.cwd),
+					repo: detectGitRepo(this.options.cwd),
 					language: getLanguageFromPath(filePath),
 					linesAdded,
 					linesDeleted,
+					model: this.options.modelId,
 				}))
 			}
 		}
