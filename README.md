@@ -279,6 +279,17 @@ MatterAI gateway untouched.
   as a compact Tasks panel (`□` pending / `◧` in progress / `■` done).
 - **@-references**: type `@` in the input to fuzzy-search workspace files;
   ↑/↓ to choose, enter/tab inserts the top/selected match into the prompt.
+- **Editor mode**: `/interface` adds a mouse-enabled Explorer beside the
+  conversation. Directories expand/collapse, changed files carry Git badges,
+  and files/folders use MatterCode's `vscode-material-icons` associations with
+  colored terminal icons (a Nerd Font is recommended). `Ctrl+P` filters the
+  tree, and `Ctrl+Shift+F` searches text across the workspace. Clicking a file
+  or search result opens a line-numbered, scrollable viewer between the
+  Explorer and conversation; search hits open at the matching line. Drag either
+  pane separator to resize it, scroll over a separator for smaller width
+  adjustments, or right-click it to reset. Added and modified Git lines use the
+  same green diff highlight as tool results. Run `/interface` again to return
+  to the full-width CLI.
 - **Attachments**: use `/attach` or `ctrl+f` to open the native file picker,
   copy and paste a file from the system file manager, or drag files onto the
   input box (the terminal pastes their paths). CSV, XLSX,
@@ -305,6 +316,7 @@ MatterAI gateway untouched.
 | command      | action                                                                                                |
 | ------------ | ----------------------------------------------------------------------------------------------------- |
 | `/help`      | list commands                                                                                         |
+| `/interface` | toggle CLI/Editor layout (`/interface cli` and `/interface editor` select directly)                  |
 | `/attach`    | open the native file picker and add one or more attachments                                           |
 | `/model`     | scrollable model picker (`/model pro` / `/model mini` / full id selects directly)                     |
 | `/theme`     | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
@@ -331,7 +343,7 @@ MatterAI gateway untouched.
 
 | key                 | action                                                                 |
 | ------------------- | ---------------------------------------------------------------------- |
-| `Esc`               | interrupt the running turn (or cancel login polling / close a menu)    |
+| `Esc`               | interrupt the running turn (or close the viewer/menu)                   |
 | `Ctrl+C`            | quit                                                                   |
 | `Ctrl+O`            | toggle thinking display for the whole transcript (past turns included) |
 | `Shift+Tab`         | cycle approval mode: ask → accept edits → auto-approve                 |
@@ -339,6 +351,9 @@ MatterAI gateway untouched.
 | `Ctrl+A` / `Ctrl+E` | start / end of line                                                    |
 | `Ctrl+U`            | clear the input line                                                   |
 | `Ctrl+F`            | open the native file picker to add attachments                         |
+| `Ctrl+P`            | focus the Editor Explorer's filename filter                            |
+| `Ctrl+Shift+F`      | open Editor global text search                                         |
+| `Ctrl+W`            | close the active Editor file viewer                                    |
 
 ## Approvals & safety
 
@@ -373,7 +388,8 @@ judgment".
 Two kinds of files under `~/.orbcode/`:
 
 - **`config.json`** — state written by the app itself (login token, chosen
-  model, theme, approval defaults). Created on first save, mode 0600.
+  model, theme, `/interface` layout, approval defaults). Created on first save,
+  mode 0600.
 - **`settings.json`** — user-managed configuration, Claude-Code style. Created
   automatically as an empty `{}` on first run so it's easy to find. A
   project-level `.orbcode/settings.json` in the working directory layers on
@@ -905,6 +921,9 @@ src/
     loader.ts        AGENTS.md discovery (user/project/local) + @include resolution
   ui/
     App.tsx          main OpenTUI React app: transcript, composer, overlays
+    editor/          workspace tree, Git status, and global-search model
+    components/EditorSidebar.tsx  mouse/keyboard Explorer and Search sidebar
+    components/FileViewer.tsx     read-only, line-numbered middle editor pane
     primitives.tsx   OpenTUI box/text/input primitives used by the UI
     theme.tsx        OrbCode-owned dark and light palettes
     LoginView.tsx    device-flow login screen with paste fallback

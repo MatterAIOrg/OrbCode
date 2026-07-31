@@ -34,7 +34,7 @@ export interface OrbCodeTheme {
 export const DARK_THEME: OrbCodeTheme = {
   mode: "dark",
   background: "#141414",
-  panel: "#151B20",
+  panel: "#131516",
   panelRaised: "#1D252C",
   selection: "#203945",
   primary: "#E7F2F5",

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **CLI/Editor interface mode.** `/interface` now toggles a full-width CLI and an
+  editor layout with a mouse-enabled file Explorer. The sidebar supports
+  expandable folders, MatterCode-compatible `vscode-material-icons` file/folder
+  associations, Git change badges, fuzzy filename filtering with `Ctrl+P`,
+  literal global workspace search with `Ctrl+Shift+F`, keyboard navigation,
+  scrolling, and manual refresh. Files and search hits open in a read-only
+  middle viewer with line numbers, match positioning, vertical scrolling, and
+  horizontal panning. Added or modified working-tree lines are highlighted with
+  the same green diff theme used by tool-result rows. Explorer and viewer widths
+  can be changed by dragging or scrolling their separators and reset with
+  right-click. The selected CLI/Editor interface now persists across restarts.
+
 ## [6.7.0] - 2026-07-29
 
 ### Added

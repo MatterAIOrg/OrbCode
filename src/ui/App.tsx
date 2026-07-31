@@ -7,11 +7,7 @@ import React, {
 } from "react";
 import { useTerminalDimensions } from "@opentui/react";
 import { Box, Text, useApp, useInput } from "./primitives.js";
-import {
-  useTheme,
-  useThemeMode,
-  type OrbCodeThemeMode,
-} from "./theme.js";
+import { useTheme, useThemeMode, type OrbCodeThemeMode } from "./theme.js";
 import open from "open";
 import * as path from "node:path";
 
@@ -49,6 +45,7 @@ import {
   saveMcpApproval,
   saveSettings,
   trustProjectHooks,
+  type OrbCodeInterfaceMode,
   type OrbCodeSettings,
 } from "../config/settings.js";
 import { Agent } from "../core/agent.js";
@@ -92,6 +89,16 @@ import {
 import { LinkManager } from "./components/LinkManager.js";
 import { PluginManager } from "./components/PluginManager.js";
 import {
+  EditorSidebar,
+  type EditorFocus,
+  type EditorSidebarPanel,
+} from "./components/EditorSidebar.js";
+import {
+  FileViewer,
+  type EditorFileSelection,
+} from "./components/FileViewer.js";
+import { PaneResizeHandle } from "./components/PaneResizeHandle.js";
+import {
   getTranscriptPlacement,
   TranscriptViewport,
 } from "./components/TranscriptViewport.js";
@@ -105,6 +112,10 @@ import {
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
+  {
+    name: "/interface",
+    description: "toggle the interface between CLI and Editor",
+  },
   { name: "/attach", description: "choose files to attach" },
   { name: "/model", description: "select the Axon model to use" },
   { name: "/theme", description: "choose the OrbCode dark or light theme" },
@@ -394,6 +405,25 @@ export function App({
   const [streamingText, setStreamingText] = useState("");
   const [inputBoxHeight, setInputBoxHeight] = useState(3);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [workspaceMode, setWorkspaceMode] =
+    useState<OrbCodeInterfaceMode>(settings.interfaceMode);
+  const [editorSidebarPanel, setEditorSidebarPanel] =
+    useState<EditorSidebarPanel>("explorer");
+  const [editorFocus, setEditorFocus] = useState<EditorFocus>("chat");
+  const [editorFile, setEditorFile] = useState<EditorFileSelection | null>(
+    null,
+  );
+  const [editorSidebarWidthOverride, setEditorSidebarWidthOverride] =
+    useState<number | null>(null);
+  const [editorViewerWidthOverride, setEditorViewerWidthOverride] =
+    useState<number | null>(null);
+  const editorResizeDragRef = useRef<{
+    pane: "sidebar" | "viewer";
+    lastX: number;
+  } | null>(null);
+  const [resizingEditorPane, setResizingEditorPane] = useState<
+    "sidebar" | "viewer" | null
+  >(null);
   const smoothScrollPendingRef = useRef(0);
   const smoothScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -927,6 +957,35 @@ export function App({
             ).join("\n"),
           });
           break;
+        case "/interface": {
+          const requested = arg.trim().toLowerCase();
+          if (requested && requested !== "cli" && requested !== "editor") {
+            pushRow({
+              kind: "error",
+              text: `Unknown mode "${arg}". Available: cli, editor`,
+            });
+            break;
+          }
+          const nextMode: OrbCodeInterfaceMode =
+            requested === "cli" || requested === "editor"
+              ? requested
+              : workspaceMode === "cli"
+                ? "editor"
+                : "cli";
+          const updated = { ...settings, interfaceMode: nextMode };
+          setSettings(updated);
+          saveSettings(updated);
+          setWorkspaceMode(nextMode);
+          setEditorFocus("chat");
+          pushRow({
+            kind: "info",
+            text:
+              nextMode === "editor"
+                ? "Editor mode enabled. Use the Explorer with the mouse, Ctrl+P to filter files, or Ctrl+Shift+F to search workspace text."
+                : "CLI mode enabled.",
+          });
+          break;
+        }
         case "/model": {
           // The interactive picker is restricted to Axon's own models for now.
           // Third-party providers (Anthropic, OpenAI-compatible) are still
@@ -945,9 +1004,7 @@ export function App({
             // Allow short suffixes like "pro" or "mini" to resolve to a
             // matching registered id, preferring the default 200k context.
             const matches = pickerIds
-              .filter(
-                (id) => id.endsWith(`-${arg}`) || id.includes(`-${arg}-`),
-              )
+              .filter((id) => id.endsWith(`-${arg}`) || id.includes(`-${arg}-`))
               .sort((a, b) => {
                 const aIs200k = a.endsWith("-200k");
                 const bIs200k = b.endsWith("-200k");
@@ -1061,6 +1118,7 @@ export function App({
             text: [
               `Version     ${VERSION}`,
               `Model       ${model.name} (${model.id})`,
+              `Mode        ${workspaceMode === "editor" ? "Editor" : "CLI"}`,
               `Theme       ${settings.theme[0].toUpperCase()}${settings.theme.slice(1)}`,
               `Directory   ${process.cwd()}`,
               `Account     ${getAuthToken(settings) ? (settings.apiKey || process.env.MATTERAI_TOKEN ? "API key" : "signed in") : "signed out"}${settings.organizationId ? ` · org ${settings.organizationId}` : ""}`,
@@ -1248,6 +1306,7 @@ export function App({
       switchTheme,
       resetTranscript,
       clearQueue,
+      workspaceMode,
     ],
   );
 
@@ -1503,12 +1562,41 @@ export function App({
   }, [updateCheck]);
 
   useInput((input, key) => {
-    if (view === "chat" && key.pageUp) {
+    if (
+      view === "chat" &&
+      workspaceMode === "editor" &&
+      key.ctrl &&
+      key.shift &&
+      input === "f"
+    ) {
+      setEditorSidebarPanel("search");
+      setEditorFocus("search");
+      return;
+    }
+    if (
+      view === "chat" &&
+      workspaceMode === "editor" &&
+      key.ctrl &&
+      input === "p"
+    ) {
+      setEditorSidebarPanel("explorer");
+      setEditorFocus("filter");
+      return;
+    }
+    if (
+      view === "chat" &&
+      (workspaceMode === "cli" || editorFocus === "chat") &&
+      key.pageUp
+    ) {
       smoothScrollPendingRef.current = 0;
       scrollTranscriptBy(Math.max(1, contentHeight - 2));
       return;
     }
-    if (view === "chat" && key.pageDown) {
+    if (
+      view === "chat" &&
+      (workspaceMode === "cli" || editorFocus === "chat") &&
+      key.pageDown
+    ) {
       smoothScrollPendingRef.current = 0;
       scrollTranscriptBy(-Math.max(1, contentHeight - 2));
       return;
@@ -1605,6 +1693,23 @@ export function App({
 
   const inputActive =
     view === "chat" &&
+    (workspaceMode === "cli" || editorFocus === "chat") &&
+    !pendingApproval &&
+    !pendingFollowup &&
+    !pendingHookTrust &&
+    !pendingMcpApproval &&
+    !modelPickerOpen &&
+    !themePickerOpen &&
+    !mcpPickerOpen &&
+    !mcpMigrationEntries &&
+    !resumableSessions &&
+    !taskPickerSessions &&
+    !linkManagerOpen &&
+    !skillManagerOpen;
+
+  const editorSidebarActive =
+    view === "chat" &&
+    workspaceMode === "editor" &&
     !pendingApproval &&
     !pendingFollowup &&
     !pendingHookTrust &&
@@ -1653,11 +1758,83 @@ export function App({
   }
 
   const contentHeight = Math.max(1, termRows - bottomControlsHeight);
-  const wrapWidth = Math.max(20, termCols - 4);
-  const approvalMaxDiffLines = Math.max(
-    1,
-    Math.min(60, contentHeight - 6),
+  const innerWidth = Math.max(1, termCols - 4);
+  const editorSidebarMaxWidth = Math.max(
+    12,
+    innerWidth - (editorFile ? 30 : 21),
   );
+  const defaultEditorSidebarWidth = Math.max(
+    12,
+    Math.min(
+      36,
+      Math.max(22, Math.floor(innerWidth * 0.3)),
+      editorSidebarMaxWidth,
+    ),
+  );
+  const editorSidebarWidth =
+    workspaceMode === "editor"
+      ? Math.max(
+          12,
+          Math.min(
+            editorSidebarMaxWidth,
+            editorSidebarWidthOverride ?? defaultEditorSidebarWidth,
+          ),
+        )
+      : 0;
+  const widthAfterSidebar = Math.max(
+    1,
+    innerWidth - editorSidebarWidth - (editorSidebarWidth > 0 ? 1 : 0),
+  );
+  const editorViewerMaxWidth = Math.max(16, widthAfterSidebar - 13);
+  const defaultEditorViewerWidth = Math.max(
+    16,
+    Math.min(
+      80,
+      Math.max(28, Math.floor(innerWidth * 0.38)),
+      editorViewerMaxWidth,
+    ),
+  );
+  const editorViewerWidth =
+    workspaceMode === "editor" && editorFile
+      ? Math.max(
+          16,
+          Math.min(
+            editorViewerMaxWidth,
+            editorViewerWidthOverride ?? defaultEditorViewerWidth,
+          ),
+        )
+      : 0;
+  const wrapWidth = Math.max(
+    12,
+    widthAfterSidebar - editorViewerWidth - (editorViewerWidth > 0 ? 1 : 0),
+  );
+  const resizeEditorSidebarBy = (delta: number) => {
+    setEditorSidebarWidthOverride((current) =>
+      Math.max(
+        12,
+        Math.min(
+          editorSidebarMaxWidth,
+          (current ?? editorSidebarWidth) + delta,
+        ),
+      ),
+    );
+  };
+  const resizeEditorViewerBy = (delta: number) => {
+    setEditorViewerWidthOverride((current) =>
+      Math.max(
+        16,
+        Math.min(
+          editorViewerMaxWidth,
+          (current ?? editorViewerWidth) + delta,
+        ),
+      ),
+    );
+  };
+  const finishEditorResize = () => {
+    editorResizeDragRef.current = null;
+    setResizingEditorPane(null);
+  };
+  const approvalMaxDiffLines = Math.max(1, Math.min(60, contentHeight - 6));
 
   const rowLayout = useMemo(() => {
     let top = 0;
@@ -1715,7 +1892,10 @@ export function App({
     const choices = `(y) yes · (n) no${approval.isDangerous ? "" : " · (a) always for this session"}`;
     dynamicHeight +=
       1 +
-      wrapHeight(`◆ ${formatToolName(approval.toolName)} ${approval.summary}`, wrapWidth) +
+      wrapHeight(
+        `◆ ${formatToolName(approval.toolName)} ${approval.summary}`,
+        wrapWidth,
+      ) +
       wrapHeight(question, nestedWidth) +
       (approval.diff
         ? diffViewHeight(approval.diff, approvalMaxDiffLines)
@@ -1840,7 +2020,9 @@ export function App({
         const direction = event.scroll.direction;
         if (direction !== "up" && direction !== "down") return;
         const sign = direction === "up" ? 1 : -1;
-        queueSmoothScroll(sign * Math.max(1, event.scroll.delta) * WHEEL_SCROLL_LINES);
+        queueSmoothScroll(
+          sign * Math.max(1, event.scroll.delta) * WHEEL_SCROLL_LINES,
+        );
         event.preventDefault();
       }}
     >
@@ -1848,181 +2030,281 @@ export function App({
         <LoginSection onLogin={handleLogin} />
       ) : (
         <Box
-          flexDirection="column"
+          flexDirection="row"
           flexGrow={1}
           minHeight={0}
           overflow="hidden"
+          onMouseDrag={(event) => {
+            const drag = editorResizeDragRef.current;
+            if (!drag) return;
+            const delta = event.x - drag.lastX;
+            drag.lastX = event.x;
+            if (delta !== 0) {
+              if (drag.pane === "sidebar") resizeEditorSidebarBy(delta);
+              else resizeEditorViewerBy(delta);
+            }
+            event.stopPropagation();
+            event.preventDefault();
+          }}
+          onMouseDragEnd={(event) => {
+            if (!editorResizeDragRef.current) return;
+            finishEditorResize();
+            event.stopPropagation();
+            event.preventDefault();
+          }}
+          onMouseUp={() => {
+            if (editorResizeDragRef.current) finishEditorResize();
+          }}
         >
-          <TranscriptViewport anchorToBottom={anchorTranscriptToBottom}>
-            <Box
-              flexDirection="column"
-              flexShrink={0}
-              marginTop={
-                anchorTranscriptToBottom ? 0 : virtualTranscriptMarginTop
+          {workspaceMode === "editor" && (
+            <EditorSidebar
+              cwd={process.cwd()}
+              width={editorSidebarWidth}
+              height={termRows}
+              active={editorSidebarActive}
+              panel={editorSidebarPanel}
+              focus={editorFocus}
+              refreshKey={busy}
+              onPanelChange={setEditorSidebarPanel}
+              onFocusChange={setEditorFocus}
+              onOpenFile={(file) => {
+                setEditorFile(file);
+                setEditorFocus("viewer");
+              }}
+            />
+          )}
+          {workspaceMode === "editor" && (
+            <PaneResizeHandle
+              active={resizingEditorPane === "sidebar"}
+              onDragStart={(x) => {
+                editorResizeDragRef.current = {
+                  pane: "sidebar",
+                  lastX: x,
+                };
+                setResizingEditorPane("sidebar");
+              }}
+              onResize={resizeEditorSidebarBy}
+              onReset={() => setEditorSidebarWidthOverride(null)}
+            />
+          )}
+          {workspaceMode === "editor" && editorFile && (
+            <FileViewer
+              cwd={process.cwd()}
+              file={editorFile}
+              width={editorViewerWidth}
+              height={termRows}
+              active={editorSidebarActive}
+              focused={editorFocus === "viewer"}
+              refreshKey={busy}
+              onFocus={() => setEditorFocus("viewer")}
+              onClose={() => {
+                setEditorFile(null);
+                setEditorFocus("chat");
+              }}
+            />
+          )}
+          {workspaceMode === "editor" && editorFile && (
+            <PaneResizeHandle
+              active={resizingEditorPane === "viewer"}
+              onDragStart={(x) => {
+                editorResizeDragRef.current = {
+                  pane: "viewer",
+                  lastX: x,
+                };
+                setResizingEditorPane("viewer");
+              }}
+              onResize={resizeEditorViewerBy}
+              onReset={() => setEditorViewerWidthOverride(null)}
+            />
+          )}
+          <Box
+            flexDirection="column"
+            flexGrow={1}
+            minWidth={0}
+            minHeight={0}
+            overflow="hidden"
+            onMouseDown={(event) => {
+              if (
+                workspaceMode === "editor" &&
+                event.button === 0 &&
+                editorFocus !== "chat"
+              ) {
+                setEditorFocus("chat");
               }
-            >
-              {virtualRows.rows.map((row) => (
-                <RowView key={row.id} row={row} width={wrapWidth} />
-              ))}
-              {rowBottomSpacerHeight > 0 && (
-                <Box height={rowBottomSpacerHeight} flexShrink={0} />
-              )}
-              {updateInfo?.updateAvailable && updateInfo.latest && (
-                <Box
-                  marginTop={1}
-                  flexDirection="column"
-                  borderStyle="round"
-                  borderColor={COLORS.warning}
-                  paddingX={2}
-                  alignSelf="flex-start"
-                >
-                  <Text color={COLORS.warning} bold>
-                    ↑ Update available: v{updateInfo.current} → v
-                    {updateInfo.latest}
-                  </Text>
-                  <Text>
-                    Run <Text color={COLORS.accent}>orbcode update</Text> to
-                    install the latest version, then relaunch.
-                  </Text>
-                </Box>
-              )}
-              {streamingReasoning && (
-                <Box flexDirection="column" marginTop={1}>
-                  <Spinner label="Thinking" showTip />
-                  <Box paddingLeft={2}>
-                    <Text color={COLORS.dim} italic>
-                      {streamingReasoningDisplay}
+            }}
+          >
+            <TranscriptViewport anchorToBottom={anchorTranscriptToBottom}>
+              <Box
+                flexDirection="column"
+                flexShrink={0}
+                marginTop={
+                  anchorTranscriptToBottom ? 0 : virtualTranscriptMarginTop
+                }
+              >
+                {virtualRows.rows.map((row) => (
+                  <RowView key={row.id} row={row} width={wrapWidth} />
+                ))}
+                {rowBottomSpacerHeight > 0 && (
+                  <Box height={rowBottomSpacerHeight} flexShrink={0} />
+                )}
+                {updateInfo?.updateAvailable && updateInfo.latest && (
+                  <Box
+                    marginTop={1}
+                    flexDirection="column"
+                    borderStyle="round"
+                    borderColor={COLORS.warning}
+                    paddingX={2}
+                    alignSelf="flex-start"
+                  >
+                    <Text color={COLORS.warning} bold>
+                      ↑ Update available: v{updateInfo.current} → v
+                      {updateInfo.latest}
+                    </Text>
+                    <Text>
+                      Run <Text color={COLORS.accent}>orbcode update</Text> to
+                      install the latest version, then relaunch.
                     </Text>
                   </Box>
-                </Box>
-              )}
-              {streamingTextDisplay && (
-                <Box marginTop={1}>
-                  <Text>
-                    <Text color={COLORS.primary}>● </Text>
-                    {streamingTextDisplay}
-                  </Text>
-                </Box>
-              )}
-              {taskLines.length > 0 && (
-                <Box flexDirection="column" marginTop={1} paddingLeft={1}>
+                )}
+                {streamingReasoning && (
+                  <Box flexDirection="column" marginTop={1}>
+                    <Spinner label="Thinking" showTip />
+                    <Box paddingLeft={2}>
+                      <Text color={COLORS.dim} italic>
+                        {streamingReasoningDisplay}
+                      </Text>
+                    </Box>
+                  </Box>
+                )}
+                {streamingTextDisplay && (
+                  <Box marginTop={1}>
+                    <Text>
+                      <Text color={COLORS.primary}>● </Text>
+                      {streamingTextDisplay}
+                    </Text>
+                  </Box>
+                )}
+                {taskLines.length > 0 && (
+                  <Box flexDirection="column" marginTop={1} paddingLeft={1}>
+                    <Text color={COLORS.dim} bold>
+                      Tasks
+                    </Text>
+                    {taskLines.slice(0, 10).map((line, i) => (
+                      <Text
+                        key={i}
+                        color={
+                          /^[-*]\s*\[x\]/i.test(line)
+                            ? COLORS.dim
+                            : COLORS.primary
+                        }
+                      >
+                        {line
+                          .replace(/^[-*]\s*\[x\]/i, "  ■")
+                          .replace(/^[-*]\s*\[-\]/, "  ◧")
+                          .replace(/^[-*]\s*\[ \]/, "  □")}
+                      </Text>
+                    ))}
+                    {taskLines.length > 10 && (
+                      <Text color={COLORS.dim}>
+                        {" "}
+                        … {taskLines.length - 10} more
+                      </Text>
+                    )}
+                  </Box>
+                )}
+                {pendingApproval && (
+                  <ApprovalPrompt
+                    request={pendingApproval.request}
+                    width={wrapWidth}
+                    maxDiffLines={approvalMaxDiffLines}
+                    onDecision={(decision) => {
+                      pendingApproval.resolve(decision);
+                      setPendingApproval(null);
+                    }}
+                  />
+                )}
+                {pendingHookTrust && (
+                  <HookTrustPrompt
+                    cwd={process.cwd()}
+                    commands={pendingHookTrust.commands}
+                    onDecision={resolveHookTrust}
+                  />
+                )}
+                {pendingMcpApproval && (
+                  <McpApprovalPrompt
+                    serverNames={pendingMcpApproval}
+                    onApprove={resolveMcpApproval}
+                  />
+                )}
+                {busy &&
+                  !pendingApproval &&
+                  !pendingFollowup &&
+                  !pendingHookTrust &&
+                  !pendingMcpApproval &&
+                  !mcpPickerOpen &&
+                  !mcpMigrationEntries &&
+                  !streamingText &&
+                  !streamingReasoning && (
+                    <Box marginTop={1}>
+                      <Spinner
+                        label={busyLabel}
+                        showTip={
+                          busyLabel === "Thinking" || busyLabel === "Working"
+                        }
+                      />
+                    </Box>
+                  )}
+              </Box>
+            </TranscriptViewport>
+            <Box flexDirection="column" flexShrink={0}>
+              {queuedMessages.length > 0 && (
+                <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
                   <Text color={COLORS.dim} bold>
-                    Tasks
+                    Queue ({queuedMessages.length})
                   </Text>
-                  {taskLines.slice(0, 10).map((line, i) => (
-                    <Text
-                      key={i}
-                      color={
-                        /^[-*]\s*\[x\]/i.test(line)
-                          ? COLORS.dim
-                          : COLORS.primary
-                      }
-                    >
-                      {line
-                        .replace(/^[-*]\s*\[x\]/i, "  ■")
-                        .replace(/^[-*]\s*\[-\]/, "  ◧")
-                        .replace(/^[-*]\s*\[ \]/, "  □")}
+                  {queuedMessages.slice(0, 5).map((msg, i) => (
+                    <Text key={i} color={COLORS.dim}>
+                      {i + 1}.{" "}
+                      {truncateForQueue(msg.text || "Attached files").replace(
+                        /\n/g,
+                        "↵",
+                      )}
+                      {msg.attachments.length > 0
+                        ? ` · 📎 ${msg.attachments.length}`
+                        : ""}
                     </Text>
                   ))}
-                  {taskLines.length > 10 && (
+                  {queuedMessages.length > 5 && (
                     <Text color={COLORS.dim}>
                       {" "}
-                      … {taskLines.length - 10} more
+                      … {queuedMessages.length - 5} more
                     </Text>
                   )}
                 </Box>
               )}
-              {pendingApproval && (
-                <ApprovalPrompt
-                  request={pendingApproval.request}
-                  width={wrapWidth}
-                  maxDiffLines={approvalMaxDiffLines}
-                  onDecision={(decision) => {
-                    pendingApproval.resolve(decision);
-                    setPendingApproval(null);
-                  }}
-                />
-              )}
-              {pendingHookTrust && (
-                <HookTrustPrompt
-                  cwd={process.cwd()}
-                  commands={pendingHookTrust.commands}
-                  onDecision={resolveHookTrust}
-                />
-              )}
-              {pendingMcpApproval && (
-                <McpApprovalPrompt
-                  serverNames={pendingMcpApproval}
-                  onApprove={resolveMcpApproval}
-                />
-              )}
-              {busy &&
-                !pendingApproval &&
-                !pendingFollowup &&
-                !pendingHookTrust &&
-                !pendingMcpApproval &&
-                !mcpPickerOpen &&
-                !mcpMigrationEntries &&
-                !streamingText &&
-                !streamingReasoning && (
-                  <Box marginTop={1}>
-                    <Spinner
-                      label={busyLabel}
-                      showTip={
-                        busyLabel === "Thinking" || busyLabel === "Working"
-                      }
-                    />
-                  </Box>
-                )}
+              <InputBox
+                active={inputActive}
+                width={wrapWidth}
+                slashCommands={SLASH_COMMANDS}
+                onSubmit={handleSubmit}
+                supportsImages={getModel(settings.model).supportsImages}
+                onHeightChange={setInputBoxHeight}
+              />
+              <StatusBar
+                modelId={settings.model}
+                contextTokens={contextTokens}
+                totalCost={totalCost}
+                state={busy ? busyLabel : ""}
+                approvalMode={approvalMode}
+                busy={busy}
+                exitConfirmationActive={exitConfirmationActive}
+                title={sessionTitle}
+                plan={usage?.plan}
+                usagePercentage={usage?.usagePercentage}
+                tieredUsage={usage?.tieredUsage}
+                workspaceMode={workspaceMode}
+              />
             </Box>
-          </TranscriptViewport>
-          <Box flexDirection="column" flexShrink={0}>
-            {queuedMessages.length > 0 && (
-              <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
-                <Text color={COLORS.dim} bold>
-                  Queue ({queuedMessages.length})
-                </Text>
-                {queuedMessages.slice(0, 5).map((msg, i) => (
-                  <Text key={i} color={COLORS.dim}>
-                    {i + 1}.{" "}
-                    {truncateForQueue(msg.text || "Attached files").replace(
-                      /\n/g,
-                      "↵",
-                    )}
-                    {msg.attachments.length > 0
-                      ? ` · 📎 ${msg.attachments.length}`
-                      : ""}
-                  </Text>
-                ))}
-                {queuedMessages.length > 5 && (
-                  <Text color={COLORS.dim}>
-                    {" "}
-                    … {queuedMessages.length - 5} more
-                  </Text>
-                )}
-              </Box>
-            )}
-            <InputBox
-              active={inputActive}
-              width={wrapWidth}
-              slashCommands={SLASH_COMMANDS}
-              onSubmit={handleSubmit}
-              supportsImages={getModel(settings.model).supportsImages}
-              onHeightChange={setInputBoxHeight}
-            />
-            <StatusBar
-              modelId={settings.model}
-              contextTokens={contextTokens}
-              totalCost={totalCost}
-              state={busy ? busyLabel : ""}
-              approvalMode={approvalMode}
-              busy={busy}
-              exitConfirmationActive={exitConfirmationActive}
-              title={sessionTitle}
-              plan={usage?.plan}
-              usagePercentage={usage?.usagePercentage}
-              tieredUsage={usage?.tieredUsage}
-            />
           </Box>
         </Box>
       )}

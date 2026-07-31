@@ -412,7 +412,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				setEditor("", 0)
 				return
 			}
-			if (key.ctrl && input === "f") {
+			if (key.ctrl && !key.shift && input === "f") {
 				openAttachmentPicker()
 				return
 			}

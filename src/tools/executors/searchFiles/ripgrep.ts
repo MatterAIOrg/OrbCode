@@ -72,9 +72,12 @@ function runRipgrep(
 	regex: string,
 	filePattern: string | undefined,
 	options: SearchOptions,
+	includeHidden: boolean,
+	maxMatchesPerFile: number,
 ): Promise<SearchPage> {
 	const offset = options.cursor?.engine === "ripgrep" ? options.cursor.offset : 0
 	const args = ["--json", "--no-messages", "--max-filesize", "10M", "--context", String(options.contextLines)]
+	if (includeHidden) args.push("--hidden")
 	if (filePattern && !filePattern.startsWith("!")) {
 		const basenamePattern = path.posix.basename(filePattern)
 		args.push("--type-add", `orbcode:${basenamePattern}`, "--type", "orbcode")
@@ -173,7 +176,7 @@ function runRipgrep(
 
 			rawMatchesSeen++
 			matchesSeenInFile++
-			if (rawMatchesSeen <= offset || matchesSeenInFile > MAX_MATCHES_PER_FILE) return
+			if (rawMatchesSeen <= offset || matchesSeenInFile > maxMatchesPerFile) return
 
 			const absoluteFile = path.isAbsolute(currentFile) ? currentFile : path.resolve(directoryPath, currentFile)
 			const match: SearchMatch = {
@@ -228,6 +231,8 @@ export async function searchFilesWithRipgrep(
 	regex: string,
 	filePattern: string | undefined,
 	options: SearchOptions,
+	includeHidden = false,
+	maxMatchesPerFile = MAX_MATCHES_PER_FILE,
 ): Promise<SearchPage> {
 	const epoch = await acquireRipgrepOperation()
 	try {
@@ -237,7 +242,16 @@ export async function searchFilesWithRipgrep(
 		let lastError: unknown
 		for (const executable of executables) {
 			try {
-				return await runRipgrep(executable, cwd, directoryPath, regex, filePattern, options)
+				return await runRipgrep(
+					executable,
+					cwd,
+					directoryPath,
+					regex,
+					filePattern,
+					options,
+					includeHidden,
+					maxMatchesPerFile,
+				)
 			} catch (error) {
 				lastError = error
 				if (epoch !== disposalEpoch) throw error

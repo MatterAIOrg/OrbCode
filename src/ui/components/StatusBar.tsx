@@ -52,6 +52,7 @@ interface StatusBarProps {
   plan?: string;
   usagePercentage?: number;
   tieredUsage?: AxonCodeTieredUsage;
+  workspaceMode?: "cli" | "editor";
 }
 
 function truncate(text: string, max: number): string {
@@ -114,6 +115,7 @@ export function StatusBar({
   plan: _plan,
   usagePercentage: _usagePercentage,
   tieredUsage,
+  workspaceMode = "cli",
 }: StatusBarProps) {
   const model = getModel(modelId);
   // Refresh after each agent turn, which also catches branch switches made by
@@ -139,6 +141,7 @@ export function StatusBar({
                 {MODE_LABELS[approvalMode]}
               </Text>
               {" (⇧tab)"}
+              {workspaceMode === "editor" && " · editor"}
               {busy && " · esc to interrupt"}
               {branch && ` · ${truncate(branch, 24)}`}
             </Text>

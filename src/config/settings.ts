@@ -8,6 +8,7 @@ import { isHookEvent, type HookMatcher, type HooksConfig } from "../core/hooks.j
 import type { McpServerConfig } from "../mcp/types.js"
 
 export type OrbCodeThemeMode = "dark" | "light"
+export type OrbCodeInterfaceMode = "cli" | "editor"
 
 export interface OrbCodeSettings {
 	/** login token, written by `orbcode login` (config.json only) */
@@ -18,6 +19,8 @@ export interface OrbCodeSettings {
 	autoApproveSafeCommands: boolean
 	/** OrbCode-owned TUI palette; terminal theme detection never overrides it. */
 	theme: OrbCodeThemeMode
+	/** Persisted layout selected by `/interface`. */
+	interfaceMode: OrbCodeInterfaceMode
 
 	// The fields below come from settings.json files (and env vars) and are
 	// never persisted back to config.json.
@@ -45,6 +48,7 @@ const DEFAULTS: OrbCodeSettings = {
 	autoApproveEdits: false,
 	autoApproveSafeCommands: false,
 	theme: "dark",
+	interfaceMode: "cli",
 }
 
 /** Keys that settings.json files may set, in increasing precedence order. */
@@ -239,6 +243,9 @@ export function loadSettings(): OrbCodeSettings {
 	if (settings.theme !== "dark" && settings.theme !== "light") {
 		settings.theme = DEFAULTS.theme
 	}
+	if (settings.interfaceMode !== "cli" && settings.interfaceMode !== "editor") {
+		settings.interfaceMode = DEFAULTS.interfaceMode
+	}
 	return settings
 }
 
@@ -261,6 +268,7 @@ export function saveSettings(settings: OrbCodeSettings): void {
 		autoApproveEdits: settings.autoApproveEdits,
 		autoApproveSafeCommands: settings.autoApproveSafeCommands,
 		theme: settings.theme,
+		interfaceMode: settings.interfaceMode,
 	}
 	fs.writeFileSync(getConfigPath(), JSON.stringify(toPersist, null, "\t") + "\n", { mode: 0o600 })
 }
