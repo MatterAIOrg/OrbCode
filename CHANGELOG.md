@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.7.1] - 2026-07-31
+
+### Added
+
+- **Organization usage metrics.** OrbCode now reports metadata-only user-message events, model/version-aware accepted agent line counts, and newly observed Git commit line totals for AI-share, active-user, leaderboard, conversation, and client-version analytics. Git remotes are credential-sanitized, and prompt/file contents are never included.
+
 ## [6.7.0] - 2026-07-29
 
 ### Added
@@ -856,7 +862,8 @@ non-interactive mode.
 - Cross-platform shell detection and path handling in
   `execute_command` (Windows vs POSIX, `cmd` vs `bash`, etc.).
 
-[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v6.7.0...HEAD
+[Unreleased]: https://github.com/MatterAIOrg/OrbCode/compare/v6.7.1...HEAD
+[6.7.1]: https://github.com/MatterAIOrg/OrbCode/compare/v6.7.0...v6.7.1
 [6.7.0]: https://github.com/MatterAIOrg/OrbCode/compare/v6.6.8...v6.7.0
 [6.6.7]: https://github.com/MatterAIOrg/OrbCode/compare/v0.6.0...v6.6.7
 [0.6.0]: https://github.com/MatterAIOrg/OrbCode/compare/v0.5.10...v0.6.0

@@ -37,6 +37,8 @@ export interface SessionData {
 	 */
 	contextTokens: number
 	todos: string
+	/** Last observed Git commit, used to report commits across resumed sessions. */
+	lastGitHead?: string
 	messages: OpenAI.Chat.ChatCompletionMessageParam[]
 	/** Exact visible TUI history. Optional for sessions written before v0.4.2. */
 	transcript?: SessionTranscriptEntry[]
