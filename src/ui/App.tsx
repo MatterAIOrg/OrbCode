@@ -27,10 +27,12 @@ import {
   BUILTIN_AXON_MODELS,
   DEFAULT_MODEL_ID,
   canUse400kContext,
+  canUseEidoProModels,
   canUseLumenModels,
   get200kAxonFallback,
   getModel,
   is400kAxonModel,
+  isEidoProAxonModel,
   isLumenAxonModel,
   isValidAxonModel,
 } from "../api/models.js";
@@ -456,6 +458,7 @@ export function App({
   } | null>(null);
   const activePlan = usage?.plan ?? usage?.tieredUsage?.plan;
   const has400kAccess = canUse400kContext(activePlan);
+  const hasEidoProAccess = canUseEidoProModels(activePlan);
   const hasLumenAccess = canUseLumenModels(activePlan);
 
   // Refresh plan/usage from /axoncode/profile (shown below the chat box).
@@ -834,6 +837,13 @@ export function App({
         });
         return;
       }
+      if (isEidoProAxonModel(modelId) && !hasEidoProAccess) {
+        pushRow({
+          kind: "error",
+          text: "Axon Eido 3 Pro models are only available on Pro and above plans.",
+        });
+        return;
+      }
       if (is400kAxonModel(modelId) && !has400kAccess) {
         pushRow({
           kind: "error",
@@ -850,7 +860,7 @@ export function App({
         text: `Model switched to ${getModel(modelId).name}`,
       });
     },
-    [has400kAccess, hasLumenAccess, pushRow],
+    [has400kAccess, hasEidoProAccess, hasLumenAccess, pushRow],
   );
 
   useEffect(() => {
@@ -864,10 +874,17 @@ export function App({
       switchModel(DEFAULT_MODEL_ID);
       return;
     }
+    // A stored Eido Pro selection on a plan without access falls back to the
+    // default Eido model; its 400k variant is covered by the Eido Pro check
+    // first since the 200k Eido Pro fallback would still be locked.
+    if (isEidoProAxonModel(settings.model) && !hasEidoProAccess) {
+      switchModel(DEFAULT_MODEL_ID);
+      return;
+    }
     if (!has400kAccess && is400kAxonModel(settings.model)) {
       switchModel(get200kAxonFallback(settings.model));
     }
-  }, [activePlan, has400kAccess, hasLumenAccess, settings.model, switchModel]);
+  }, [activePlan, has400kAccess, hasEidoProAccess, hasLumenAccess, settings.model, switchModel]);
 
   const switchTheme = useCallback(
     (mode: OrbCodeThemeMode) => {
@@ -2048,6 +2065,7 @@ export function App({
               <ModelPicker
                 currentId={settings.model}
                 canUse400k={has400kAccess}
+                canUseEidoPro={hasEidoProAccess}
                 canUseLumen={hasLumenAccess}
                 onSelect={(modelId) => {
                   setModelPickerOpen(false);

@@ -1,8 +1,10 @@
 import {
 	canUse400kContext,
+	canUseEidoProModels,
 	canUseLumenModels,
 	getModel,
 	is400kAxonModel,
+	isEidoProAxonModel,
 	isLumenAxonModel,
 	isValidAxonModel,
 	usesAiSdk,
@@ -42,11 +44,20 @@ export async function runHeadless(
 		process.exit(1)
 	}
 
-	if (token && (isLumenAxonModel(settings.model) || is400kAxonModel(settings.model))) {
+	if (
+		token &&
+		(isLumenAxonModel(settings.model) ||
+			isEidoProAxonModel(settings.model) ||
+			is400kAxonModel(settings.model))
+	) {
 		const profile = await fetchProfile(token)
 		const plan = profile.plan ?? profile.tieredUsage?.plan
 		if (isLumenAxonModel(settings.model) && !canUseLumenModels(plan)) {
 			console.error("Axon Lumen models are only available on Pro Plus and Ultra plans.")
+			process.exit(1)
+		}
+		if (isEidoProAxonModel(settings.model) && !canUseEidoProModels(plan)) {
+			console.error("Axon Eido 3 Pro models are only available on Pro and above plans.")
 			process.exit(1)
 		}
 		if (is400kAxonModel(settings.model) && !canUse400kContext(plan)) {

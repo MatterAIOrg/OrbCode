@@ -248,6 +248,7 @@ export const DEFAULT_MODEL_ID = "axon-eido-3-code-mini-200k";
 
 const EXTENDED_CONTEXT_PLANS = new Set(["proplus", "ultra"]);
 const LUMEN_MODEL_PLANS = new Set(["proplus", "ultra"]);
+const EIDO_PRO_MODEL_PLANS = new Set(["pro", "proplus", "ultra"]);
 
 function normalizePlan(plan?: string): string {
   return plan?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
@@ -263,6 +264,11 @@ export function canUseLumenModels(plan?: string): boolean {
   return LUMEN_MODEL_PLANS.has(normalizePlan(plan));
 }
 
+/** Whether an account plan includes the Axon Eido 3 Pro models. */
+export function canUseEidoProModels(plan?: string): boolean {
+  return EIDO_PRO_MODEL_PLANS.has(normalizePlan(plan));
+}
+
 export function is400kAxonModel(modelId: string): boolean {
   return (
     (modelId.startsWith("axon-eido-3-code-") ||
@@ -273,6 +279,10 @@ export function is400kAxonModel(modelId: string): boolean {
 
 export function isLumenAxonModel(modelId: string): boolean {
   return modelId.startsWith("axon-lumen-");
+}
+
+export function isEidoProAxonModel(modelId: string): boolean {
+  return modelId.startsWith("axon-eido-3-code-pro");
 }
 
 export function get200kAxonFallback(modelId: string): string {
