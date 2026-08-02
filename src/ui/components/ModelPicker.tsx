@@ -2,15 +2,29 @@ import React, { useState } from "react"
 import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
-import { BUILTIN_AXON_MODELS, isLumenAxonModel, type AxonModel } from "../../api/models.js"
+import { BUILTIN_AXON_MODELS, isEidoProAxonModel, isLumenAxonModel, type AxonModel } from "../../api/models.js"
 import { PopoverBox } from "./PopoverBox.js"
 
 const VISIBLE_ROWS = 6
 const CONTEXT_WINDOW_ORDER = [200000, 400000]
+// Display order within a context-window group: Flash, Mini, Pro, Lumen.
+const DISPLAY_ORDER = [
+	"axon-eido-3-flash",
+	"axon-eido-3-code-mini",
+	"axon-eido-3-code-pro",
+	"axon-lumen-4-code",
+]
+function displayRank(modelId: string): number {
+	for (let i = 0; i < DISPLAY_ORDER.length; i += 1) {
+		if (modelId === DISPLAY_ORDER[i] || modelId.startsWith(`${DISPLAY_ORDER[i]}-`)) return i
+	}
+	return DISPLAY_ORDER.length
+}
 
 interface ModelPickerProps {
 	currentId: string
 	canUse400k: boolean
+	canUseEidoPro: boolean
 	canUseLumen: boolean
 	onSelect: (modelId: string) => void
 	onCancel: () => void
@@ -22,15 +36,28 @@ function formatPrice(model: AxonModel): string {
 	return `${perMillion(model.inputPrice)} in / ${perMillion(model.outputPrice)} out per 1M tokens`
 }
 
-export function ModelPicker({ currentId, canUse400k, canUseLumen, onSelect, onCancel }: ModelPickerProps) {
+// The context-window header above each group already disambiguates 200k vs
+// 400k, so strip the "(NNNK context)" suffix from the row label to avoid
+// repeating it. The canonical `model.name` keeps the suffix for the StatusBar
+// and /status where the context window isn't shown separately.
+function displayName(model: AxonModel): string {
+	return model.name.replace(/\s*\(\d+K context\)$/, "")
+}
+
+export function ModelPicker({ currentId, canUse400k, canUseEidoPro, canUseLumen, onSelect, onCancel }: ModelPickerProps) {
 	const models = Object.values(BUILTIN_AXON_MODELS).sort((a, b) => {
 		const aIndex = CONTEXT_WINDOW_ORDER.indexOf(a.contextWindow)
 		const bIndex = CONTEXT_WINDOW_ORDER.indexOf(b.contextWindow)
-		return (aIndex === -1 ? CONTEXT_WINDOW_ORDER.length : aIndex) -
-			(bIndex === -1 ? CONTEXT_WINDOW_ORDER.length : bIndex)
+		if (aIndex !== bIndex) {
+			return (aIndex === -1 ? CONTEXT_WINDOW_ORDER.length : aIndex) -
+				(bIndex === -1 ? CONTEXT_WINDOW_ORDER.length : bIndex)
+		}
+		return displayRank(a.id) - displayRank(b.id)
 	})
 	const isLocked = (model: AxonModel) =>
-		(model.contextWindow === 400000 && !canUse400k) || (isLumenAxonModel(model.id) && !canUseLumen)
+		(model.contextWindow === 400000 && !canUse400k) ||
+		(isLumenAxonModel(model.id) && !canUseLumen) ||
+		(isEidoProAxonModel(model.id) && !canUseEidoPro)
 	const nextSelectableIndex = (from: number, direction: 1 | -1) => {
 		for (let offset = 1; offset <= models.length; offset += 1) {
 			const candidate = (from + direction * offset + models.length) % models.length
@@ -82,9 +109,12 @@ export function ModelPicker({ currentId, canUse400k, canUseLumen, onSelect, onCa
 				const isCurrent = model.id === currentId
 				const locked = isLocked(model)
 			// The 400k group header already carries the plan note, so only badge
-			// Lumen rows whose lock isn't explained by the context header.
-			const showPlanBadge =
-				isLumenAxonModel(model.id) && !canUseLumen && !(model.contextWindow === 400000 && !canUse400k)
+			// rows whose lock isn't explained by the context header.
+			const planRestricted =
+				(isLumenAxonModel(model.id) && !canUseLumen) ||
+				(isEidoProAxonModel(model.id) && !canUseEidoPro)
+			const showPlanBadge = planRestricted && !(model.contextWindow === 400000 && !canUse400k)
+			const planBadgeText = isLumenAxonModel(model.id) ? "Pro Plus and Ultra only" : "Pro and above only"
 				const showContextHeader = i === 0 || visible[i - 1].contextWindow !== model.contextWindow
 				const contextLabel = `Context: ${model.contextWindow / 1000}k`
 				const contextAccessLabel =
@@ -103,10 +133,10 @@ export function ModelPicker({ currentId, canUse400k, canUseLumen, onSelect, onCa
 						<Box flexDirection="column">
 							<Text color={locked ? COLORS.dim : isSelected ? COLORS.accent : undefined}>
 								{isSelected ? "❯ " : "  "}
-								{index + 1}. {model.name}
+								{index + 1}. {displayName(model)}
 								{isCurrent && <Text color={COLORS.success}> ✓ current</Text>}
 								<Text color={COLORS.dim}> · {formatPrice(model)}</Text>
-								{showPlanBadge && <Text color={COLORS.dim}> · Pro Plus and Ultra only</Text>}
+								{showPlanBadge && <Text color={COLORS.dim}> · {planBadgeText}</Text>}
 							</Text>
 							{isSelected && (
 								<Box paddingLeft={5}>

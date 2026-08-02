@@ -5,10 +5,12 @@ import {
   BUILTIN_AXON_MODELS,
   DEFAULT_MODEL_ID,
   canUse400kContext,
+  canUseEidoProModels,
   canUseLumenModels,
   get200kAxonFallback,
   getGatewayModelId,
   is400kAxonModel,
+  isEidoProAxonModel,
   isLumenAxonModel,
 } from "../src/api/models.js";
 
@@ -86,4 +88,20 @@ test("isLumenAxonModel identifies every Lumen variant", () => {
   assert.equal(isLumenAxonModel("axon-lumen-4-code-400k"), true);
   assert.equal(isLumenAxonModel("axon-eido-3-code-pro-200k"), false);
   assert.equal(isLumenAxonModel("axon-eido-3-flash"), false);
+});
+
+test("Eido 3 Pro models are limited to Pro and above plans", () => {
+  for (const plan of ["Pro", "pro", "Pro Plus", "pro_plus", "ULTRA"]) {
+    assert.equal(canUseEidoProModels(plan), true);
+  }
+  for (const plan of [undefined, "free", "Enterprise"]) {
+    assert.equal(canUseEidoProModels(plan), false);
+  }
+});
+
+test("isEidoProAxonModel identifies every Eido Pro variant", () => {
+  assert.equal(isEidoProAxonModel("axon-eido-3-code-pro-200k"), true);
+  assert.equal(isEidoProAxonModel("axon-eido-3-code-pro-400k"), true);
+  assert.equal(isEidoProAxonModel("axon-eido-3-code-mini-200k"), false);
+  assert.equal(isEidoProAxonModel("axon-lumen-4-code-200k"), false);
 });

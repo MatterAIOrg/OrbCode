@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.7.2] - 2026-08-02
+
+### Changed
+
+- **Axon Eido 3 Pro is gated to Pro and above plans.** The model picker now
+  locks the Eido 3 Pro 200k option on the free plan with a "Pro and above
+  only" badge, and keeps the 400k option on Pro Plus and Ultra. Selecting an
+  Eido 3 Pro model on an ineligible plan emits an error row, headless mode
+  exits with a descriptive message, and a stored Eido 3 Pro selection on an
+  ineligible plan auto-falls back to the default Eido model.
+
 ## [6.7.1] - 2026-07-31
 
 ### Added
