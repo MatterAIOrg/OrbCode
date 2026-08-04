@@ -33,6 +33,45 @@ interface InputBoxProps {
 const MAX_FILE_MATCHES = 8
 const POPUP_PADDING_X = 2
 
+// Pastes at least this long are collapsed into a paste chip shown above the
+// prompt. The full text is merged back into the message at the recorded cursor
+// position on submit, as if the text had been pasted there directly.
+const PASTE_CHIP_THRESHOLD = 500
+
+// Two newlines separate a merged chip's text from the surrounding prompt text.
+const PASTE_CHIP_SEPARATOR = "\n\n"
+
+interface PasteChip {
+	id: number
+	text: string
+	insertPosition: number
+	name: string
+}
+
+// Name shown on a paste chip: first few words of the pasted text, normalized
+// and truncated so it fits on one line.
+function formatPasteChipName(text: string): string {
+	const normalized = text.replace(/\s+/g, " ").trim()
+	const words = normalized.split(" ").slice(0, 4).join(" ")
+	return words.length > 32 ? `${words.slice(0, 29)}…` : words || "Pasted text"
+}
+
+// Merge paste chips back into the message text at their recorded cursor
+// positions. Chips are inserted from the end backwards so earlier positions
+// stay valid.
+function mergePasteChips(text: string, chips: PasteChip[]): string {
+	const sorted = [...chips].sort((a, b) => b.insertPosition - a.insertPosition)
+	let result = text
+	for (const chip of sorted) {
+		const position = Math.max(0, Math.min(chip.insertPosition, result.length))
+		const content = chip.text.trim()
+		const prefix = position > 0 ? PASTE_CHIP_SEPARATOR : ""
+		const suffix = position < result.length ? PASTE_CHIP_SEPARATOR : ""
+		result = result.slice(0, position) + prefix + content + suffix + result.slice(position)
+	}
+	return result
+}
+
 function fitText(text: string, maxWidth: number): string {
 	if (text.length <= maxWidth) return text
 	if (maxWidth <= 1) return text.slice(0, Math.max(0, maxWidth))
@@ -104,6 +143,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	const cursorRef = useRef(0)
 	const [attachments, setAttachments] = useState<Attachment[]>([])
 	const attachmentsRef = useRef<Attachment[]>([])
+	// Paste chips: large text pastes shown as chips above the prompt and merged
+	// back into the message at their recorded cursor position on submit.
+	const [pasteChips, setPasteChips] = useState<PasteChip[]>([])
+	const pasteChipsRef = useRef<PasteChip[]>([])
+	const nextPasteChipIdRef = useRef(0)
 	const parseQueueRef = useRef<Promise<void>>(Promise.resolve())
 	const pendingParsesRef = useRef(0)
 	const composerGenerationRef = useRef(0)
@@ -159,7 +203,10 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	}, [value])
 
 	const submit = (text: string) => {
-		const trimmed = text.trim()
+		// Paste chips are merged back into the message at their recorded cursor
+		// positions first, then cleared (the text is now part of the prompt).
+		const merged = mergePasteChips(text, pasteChipsRef.current)
+		const trimmed = merged.trim()
 		if (trimmed === "/attach") {
 			setEditor("", 0)
 			setHistoryIndex(-1)
@@ -173,6 +220,8 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 		}
 		setHistoryIndex(-1)
 		setEditor("", 0)
+		pasteChipsRef.current = []
+		setPasteChips([])
 		const submittedAttachments = attachmentsRef.current
 		composerGenerationRef.current++
 		attachmentsRef.current = []
@@ -186,6 +235,8 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 		setEditor("", 0)
 		attachmentsRef.current = []
 		setAttachments([])
+		pasteChipsRef.current = []
+		setPasteChips([])
 		setAttachmentMessage(null)
 		setHistoryIndex(-1)
 		setFileIndex(0)
@@ -271,6 +322,31 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 		setEditor(next, currentCursor + clean.length)
 	}
 
+	const addPasteChip = (text: string, insertPosition: number) => {
+		const next = [
+			...pasteChipsRef.current,
+			{ id: nextPasteChipIdRef.current++, text, insertPosition, name: formatPasteChipName(text) },
+		]
+		pasteChipsRef.current = next
+		setPasteChips(next)
+		setHistoryIndex(-1)
+	}
+
+	const removePasteChip = (id: number) => {
+		const next = pasteChipsRef.current.filter((chip) => chip.id !== id)
+		pasteChipsRef.current = next
+		setPasteChips(next)
+	}
+
+	// Large text pastes become a chip; smaller ones are inserted inline.
+	const insertPaste = (input: string) => {
+		if (input.length >= PASTE_CHIP_THRESHOLD) {
+			addPasteChip(input.replace(/\r\n?/g, "\n"), cursorRef.current)
+			return
+		}
+		insertPastedText(input)
+	}
+
 	const handlePaste = (input: string, kind?: "text" | "binary" | "unknown") => {
 		const droppedPaths = droppedAttachmentPaths(input, process.cwd())
 		if (droppedPaths.length > 0) {
@@ -287,10 +363,10 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 			.then((filePaths) => {
 				if (generation !== composerGenerationRef.current) return
 				if (filePaths.length > 0) addDroppedAttachments(filePaths)
-				else insertPastedText(input)
+				else insertPaste(input)
 			})
 			.catch(() => {
-				if (generation === composerGenerationRef.current) insertPastedText(input)
+				if (generation === composerGenerationRef.current) insertPaste(input)
 			})
 		return true
 	}
@@ -394,6 +470,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 					attachmentsRef.current = next
 					setAttachments(next)
 					setAttachmentMessage(null)
+				} else if (currentValue.length === 0 && pasteChipsRef.current.length > 0) {
+					// Backspace with an empty prompt removes the most recent paste chip.
+					const next = pasteChipsRef.current.slice(0, -1)
+					pasteChipsRef.current = next
+					setPasteChips(next)
 				}
 				return
 			}
@@ -427,8 +508,9 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				}
 				// Multi-char chunks (paste) are inserted as-is. Newlines inside
 				// the chunk are literal newlines, not a submit signal — press
-				// Enter when you're ready to send.
-				insertPastedText(input)
+				// Enter when you're ready to send. Large chunks collapse into a
+				// paste chip instead (see insertPaste).
+				insertPaste(input)
 			}
 		},
 		{
@@ -449,7 +531,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	)
 	const slashPopupHeight = slashMatches.length > 0 ? slashMatches.length + 3 : 0
 	const filePopupHeight = fileMatches.length > 0 ? fileMatches.length + 3 : 0
-	const attachmentRows = attachments.length + (attachmentMessage ? 1 : 0)
+	const attachmentRows = attachments.length + pasteChips.length + (attachmentMessage ? 1 : 0)
 	const renderedHeight = 2 + promptHeight + attachmentRows + slashPopupHeight + filePopupHeight
 
 	// Parent viewport calculations must use the real bottom-stack height. A
@@ -531,6 +613,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 						</Text>
 					)
 				})}
+				{pasteChips.map((chip) => (
+					<Text key={chip.id} color={COLORS.primary}>
+						{fitText(`📋 ${chip.name}`, Math.max(1, width - 4))}
+					</Text>
+				))}
 				{attachmentMessage && (
 					<Text color={attachmentMessage.isError ? COLORS.error : COLORS.dim}>
 						{fitText(attachmentMessage.text, Math.max(1, width - 4))}
