@@ -149,9 +149,9 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     contextWindow: 200000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0,
-    outputPrice: 0.0,
-    free: true,
+    inputPrice: 0.0000005,
+    outputPrice: 0.0000015,
+    free: false,
   },
   "axon-eido-3-code-pro-200k": {
     id: "axon-eido-3-code-pro-200k",

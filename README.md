@@ -188,7 +188,7 @@ sessions.
 | `axon-eido-3-code-pro-400k`    | 400k    | 64k        | $3/M in · $9/M out     |
 | `axon-eido-3-code-mini-200k`   | 200k    | 64k        | $1.5/M in · $4.5/M out |
 | `axon-eido-3-code-mini-400k`   | 400k    | 64k        | $1.5/M in · $4.5/M out |
-| `axon-eido-3-flash`            | 200k    | 64k        | free                   |
+| `axon-eido-3-flash`            | 200k    | 64k        | $0.5/M in · $1.5/M out |
 
 `axon-eido-3-code-mini-200k` is the default. The context suffix controls
 OrbCode's local context window; requests still send the underlying base model ID
