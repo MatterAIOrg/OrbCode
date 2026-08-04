@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.7.4] - 2026-08-04
+
+### Added
+
+- **Paste chips for large pasted text.** Pasting 500+ characters into the
+  prompt input collapses the text into a removable chip above the prompt,
+  named after the first few words of the pasted text. On submit the full text
+  is merged back into the message at the exact cursor position where the paste
+  happened, separated by two blank lines. Backspace with an empty prompt
+  removes the most recent chip.
+
 ## [6.7.3] - 2026-08-04
 
 ### Changed
