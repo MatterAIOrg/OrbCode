@@ -20,6 +20,8 @@ export interface AxonModel {
   /** USD per token */
   outputPrice: number;
   free: boolean;
+  /** Human-readable pricing shown when the gateway chooses the billable model dynamically. */
+  pricingLabel?: string;
   /**
    * Which transport serves this model. Absent (or "matterai"/"axon") routes
    * through the MatterAI gateway (OpenAI `/chat/completions`). Any other value
@@ -141,6 +143,34 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
  * interactive picker for now.
  */
 export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
+  "axon-auto-200k": {
+    id: "axon-auto-200k",
+    gatewayModelId: "axon-auto",
+    name: "Axon Auto (200K context)",
+    description:
+      "Starts with Code Flash, then dynamically selects Code Flash, Mini, or Pro as the task develops.",
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.0000005,
+    outputPrice: 0.0000015,
+    free: false,
+    pricingLabel: "dynamic pricing",
+  },
+  "axon-auto-400k": {
+    id: "axon-auto-400k",
+    gatewayModelId: "axon-auto",
+    name: "Axon Auto (400K context)",
+    description:
+      "Starts with Code Flash, then dynamically selects Code Flash, Mini, or Pro as the task develops.",
+    contextWindow: 400000,
+    maxOutputTokens: 64000,
+    supportsImages: true,
+    inputPrice: 0.0000005,
+    outputPrice: 0.0000015,
+    free: false,
+    pricingLabel: "dynamic pricing",
+  },
   "axon-eido-3-flash": {
     id: "axon-eido-3-flash",
     name: "Axon Eido 3 Flash",
@@ -271,7 +301,8 @@ export function canUseEidoProModels(plan?: string): boolean {
 
 export function is400kAxonModel(modelId: string): boolean {
   return (
-    (modelId.startsWith("axon-eido-3-code-") ||
+    (modelId.startsWith("axon-auto-") ||
+      modelId.startsWith("axon-eido-3-code-") ||
       modelId.startsWith("axon-lumen-4-code-")) &&
     modelId.endsWith("-400k")
   );
