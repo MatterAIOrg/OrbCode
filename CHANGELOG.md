@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Axon Eido 3 Flash 400K context option.** Added `axon-eido-3-flash-400k`,
+  a 400K context variant of the flash model that maps to the same
+  `axon-eido-3-flash` gateway model. Gated to Pro Plus and Ultra plans like
+  the other 400K options; the picker renders it under the 400K group and the
+  200K fallback resolves to the bare `axon-eido-3-flash` id.
+
 ## [6.7.4] - 2026-08-04
 
 ### Added
