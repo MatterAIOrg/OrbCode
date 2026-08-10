@@ -1,6 +1,5 @@
 import { AiSdkClient } from "./aiSdkClient.js"
 import { AxonClient, type AxonClientOptions } from "./client.js"
-import { ContextWindowGuardClient } from "./contextWindowGuard.js"
 import type { LLMClient } from "./llmClient.js"
 import { getModel, usesAiSdk } from "./models.js"
 
@@ -12,6 +11,8 @@ import { getModel, usesAiSdk } from "./models.js"
  */
 export function createLLMClient(options: AxonClientOptions): LLMClient {
 	const model = getModel(options.modelId)
-	const client = usesAiSdk(model) ? new AiSdkClient({ model }) : new AxonClient(options)
-	return new ContextWindowGuardClient(client, model)
+	if (usesAiSdk(model)) {
+		return new AiSdkClient({ model })
+	}
+	return new AxonClient(options)
 }

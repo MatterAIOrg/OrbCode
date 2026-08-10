@@ -5,17 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Fixed
-
-- Added a final context-window guard around every Axon and AI SDK request,
-  including normal agent turns, retries, and `/compact`. The guard reserves the
-  selected model's full output allowance and a safety margin, counts system
-  prompts, history, tool results, tool arguments, images, and native/MCP tool
-  schemas, then safely compacts oversized input or stops locally before making
-  an unsafe provider call.
-
 ## [6.7.4] - 2026-08-04
 
 ### Added

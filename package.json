@@ -34,7 +34,6 @@
     "dev": "bun src/index.tsx",
     "start": "bun dist/index.js",
     "test:attachments": "node --import tsx --test test/attachments.test.ts",
-    "test:context": "node --import tsx --test test/context-window-guard.test.ts",
     "test:mcp": "node --import tsx --test test/mcp-client.test.ts",
     "test:plugins": "node --import tsx --test test/plugins.test.ts",
     "test:metrics": "node --import tsx --test test/metrics.test.ts",
