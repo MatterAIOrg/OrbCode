@@ -7,8 +7,9 @@ import { PopoverBox } from "./PopoverBox.js"
 
 const VISIBLE_ROWS = 6
 const CONTEXT_WINDOW_ORDER = [200000, 400000]
-// Display order within a context-window group: Flash, Mini, Pro, Lumen.
+// Display order within a context-window group: Auto, Flash, Mini, Pro, Lumen.
 const DISPLAY_ORDER = [
+	"axon-auto",
 	"axon-eido-3-flash",
 	"axon-eido-3-code-mini",
 	"axon-eido-3-code-pro",
@@ -31,6 +32,7 @@ interface ModelPickerProps {
 }
 
 function formatPrice(model: AxonModel): string {
+	if (model.pricingLabel) return model.pricingLabel
 	if (model.free) return "free"
 	const perMillion = (price: number) => `$${(price * 1_000_000).toFixed(2)}`
 	return `${perMillion(model.inputPrice)} in / ${perMillion(model.outputPrice)} out per 1M tokens`
