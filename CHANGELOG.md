@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Default model is now `axon-auto-232k`.** The previous default
+  (`axon-eido-3.2-code-mini-232k`) is preserved as a paid option (`axon-auto`
+  now dynamically picks Code, Code Pro, or Flash for each task). Auto is
+  available on every plan; the underlying Code, Code Pro, and 400K options it
+  picks from still require the relevant paid plan to actually run.
+
+### Changed
+
+- **Eido 3.2 Mini tag removed; the default-tier option is `axon-eido-3.2-code`.**
+  The bare-id model that used to carry the `-Mini` variant
+  (`axon-eido-3.2-code-mini-{232k,400k}`) is now `axon-eido-3.2-code-{232k,400k}`,
+  maps to the gateway id `axon-eido-3.2-code`, and is gated to Pro and above
+  plans like Code Pro. Only the 232K Eido 3.2 Flash
+  (`axon-eido-3.2-flash`) remains available on the Free plan — every 400K
+  variant, including `axon-eido-3.2-flash-400k`, still requires Pro Plus or
+  Ultra.
+- **Two-window context convention (232K and 400K).** Auto
+  (`axon-auto-200k` → `axon-auto-232k`) and Lumen
+  (`axon-lumen-4-code-200k` → `axon-lumen-4-code-232k`) now share Eido 3.2's
+  default context window of 232K. The 200K window is retired; every built-in
+  Axon model exposes exactly a 232K and a 400K option. The
+  `get200kAxonFallback` helper has been renamed to `get232kAxonFallback` and
+  simplified to a single `-400k → -232k` rewrite (with a special case for the
+  bare `axon-eido-3.2-flash` id).
+- **Axon Eido 3.2 model family.** All built-in Eido 3 models (`axon-eido-3-flash`,
+  `axon-eido-3-code-{pro,mini}-200k`, and their 400K variants) have been bumped
+  to Eido 3.2 as `axon-eido-3.2-flash` and
+  `axon-eido-3.2-code-{pro,mini}-{232k,400k}`. The default-tier options now
+  advertise a 232K context window (`contextWindow: 232_000`) and the 232K suffix
+  in their model id, while the 400K variants are unchanged. Default model
+  updated to `axon-eido-3.2-code-mini-232k`. Mini pricing is now $2/M in and
+  $6/M out; Flash pricing is now $0.6/M in and $1.8/M out, matching the
+  gateway's Eido 3.2 rates. The `isEidoProAxonModel` and `is400kAxonModel`
+  helpers recognise the new ids.
 - **Axon Eido 3 Flash 400K context option.** Added `axon-eido-3-flash-400k`,
   a 400K context variant of the flash model that maps to the same
   `axon-eido-3-flash` gateway model. Gated to Pro Plus and Ultra plans like

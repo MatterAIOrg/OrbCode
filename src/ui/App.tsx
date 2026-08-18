@@ -27,11 +27,13 @@ import {
   BUILTIN_AXON_MODELS,
   DEFAULT_MODEL_ID,
   canUse400kContext,
+  canUseEidoBaseModels,
   canUseEidoProModels,
   canUseLumenModels,
-  get200kAxonFallback,
+  get232kAxonFallback,
   getModel,
   is400kAxonModel,
+  isEidoBaseAxonModel,
   isEidoProAxonModel,
   isLumenAxonModel,
   isValidAxonModel,
@@ -458,6 +460,7 @@ export function App({
   } | null>(null);
   const activePlan = usage?.plan ?? usage?.tieredUsage?.plan;
   const has400kAccess = canUse400kContext(activePlan);
+  const hasEidoBaseAccess = canUseEidoBaseModels(activePlan);
   const hasEidoProAccess = canUseEidoProModels(activePlan);
   const hasLumenAccess = canUseLumenModels(activePlan);
 
@@ -837,6 +840,13 @@ export function App({
         });
         return;
       }
+      if (isEidoBaseAxonModel(modelId) && !hasEidoBaseAccess) {
+        pushRow({
+          kind: "error",
+          text: "Axon Eido 3.2 Code models are only available on Pro and above plans.",
+        });
+        return;
+      }
       if (isEidoProAxonModel(modelId) && !hasEidoProAccess) {
         pushRow({
           kind: "error",
@@ -860,7 +870,7 @@ export function App({
         text: `Model switched to ${getModel(modelId).name}`,
       });
     },
-    [has400kAccess, hasEidoProAccess, hasLumenAccess, pushRow],
+    [has400kAccess, hasEidoBaseAccess, hasEidoProAccess, hasLumenAccess, pushRow],
   );
 
   useEffect(() => {
@@ -869,22 +879,28 @@ export function App({
     }
     // A stored Lumen selection on a plan without access falls back to the
     // default Eido model; its 400k variant is covered by the Lumen check
-    // first since the 200k Lumen fallback would still be locked.
+    // first since the 232k Lumen fallback would still be locked.
     if (isLumenAxonModel(settings.model) && !hasLumenAccess) {
+      switchModel(DEFAULT_MODEL_ID);
+      return;
+    }
+    // A stored Eido Base selection on a plan without access falls back to the
+    // default Eido model; its 400k variant is covered by the Base check first.
+    if (isEidoBaseAxonModel(settings.model) && !hasEidoBaseAccess) {
       switchModel(DEFAULT_MODEL_ID);
       return;
     }
     // A stored Eido Pro selection on a plan without access falls back to the
     // default Eido model; its 400k variant is covered by the Eido Pro check
-    // first since the 200k Eido Pro fallback would still be locked.
+    // first since the 232k Eido Pro fallback would still be locked.
     if (isEidoProAxonModel(settings.model) && !hasEidoProAccess) {
       switchModel(DEFAULT_MODEL_ID);
       return;
     }
     if (!has400kAccess && is400kAxonModel(settings.model)) {
-      switchModel(get200kAxonFallback(settings.model));
+      switchModel(get232kAxonFallback(settings.model));
     }
-  }, [activePlan, has400kAccess, hasEidoProAccess, hasLumenAccess, settings.model, switchModel]);
+  }, [activePlan, has400kAccess, hasEidoBaseAccess, hasEidoProAccess, hasLumenAccess, settings.model, switchModel]);
 
   const switchTheme = useCallback(
     (mode: OrbCodeThemeMode) => {
@@ -959,16 +975,16 @@ export function App({
               text: `Model "${arg}" is only available in non-interactive mode. Run: orbcode -p "..." --model ${arg}`,
             });
           } else if (arg) {
-            // Allow short suffixes like "pro" or "mini" to resolve to a
-            // matching registered id, preferring the default 200k context.
+            // Allow short suffixes like "pro" or "code" to resolve to a
+            // matching registered id, preferring the default 232k context.
             const matches = pickerIds
               .filter(
                 (id) => id.endsWith(`-${arg}`) || id.includes(`-${arg}-`),
               )
               .sort((a, b) => {
-                const aIs200k = a.endsWith("-200k");
-                const bIs200k = b.endsWith("-200k");
-                if (aIs200k !== bIs200k) return aIs200k ? -1 : 1;
+                const aIs232k = a.endsWith("-232k");
+                const bIs232k = b.endsWith("-232k");
+                if (aIs232k !== bIs232k) return aIs232k ? -1 : 1;
                 return b.localeCompare(a);
               });
             if (matches.length > 0) {
@@ -2065,6 +2081,7 @@ export function App({
               <ModelPicker
                 currentId={settings.model}
                 canUse400k={has400kAccess}
+                canUseEidoBase={hasEidoBaseAccess}
                 canUseEidoPro={hasEidoProAccess}
                 canUseLumen={hasLumenAccess}
                 onSelect={(modelId) => {

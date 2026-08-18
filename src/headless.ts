@@ -1,9 +1,11 @@
 import {
 	canUse400kContext,
+	canUseEidoBaseModels,
 	canUseEidoProModels,
 	canUseLumenModels,
 	getModel,
 	is400kAxonModel,
+	isEidoBaseAxonModel,
 	isEidoProAxonModel,
 	isLumenAxonModel,
 	isValidAxonModel,
@@ -47,6 +49,7 @@ export async function runHeadless(
 	if (
 		token &&
 		(isLumenAxonModel(settings.model) ||
+			isEidoBaseAxonModel(settings.model) ||
 			isEidoProAxonModel(settings.model) ||
 			is400kAxonModel(settings.model))
 	) {
@@ -56,12 +59,16 @@ export async function runHeadless(
 			console.error("Axon Lumen models are only available on Pro Plus and Ultra plans.")
 			process.exit(1)
 		}
+		if (isEidoBaseAxonModel(settings.model) && !canUseEidoBaseModels(plan)) {
+			console.error("Axon Eido 3.2 Code models are only available on Pro and above plans.")
+			process.exit(1)
+		}
 		if (isEidoProAxonModel(settings.model) && !canUseEidoProModels(plan)) {
 			console.error("Axon Eido 3 Pro models are only available on Pro and above plans.")
 			process.exit(1)
 		}
 		if (is400kAxonModel(settings.model) && !canUse400kContext(plan)) {
-			console.error("400k context is only available on Pro Plus and Ultra plans. Use the matching -200k model.")
+			console.error("400k context is only available on Pro Plus and Ultra plans. Use the matching -232k model.")
 			process.exit(1)
 		}
 	}

@@ -143,13 +143,13 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
  * interactive picker for now.
  */
 export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
-  "axon-auto-200k": {
-    id: "axon-auto-200k",
+  "axon-auto-232k": {
+    id: "axon-auto-232k",
     gatewayModelId: "axon-auto",
-    name: "Axon Auto (200K context)",
+    name: "Axon Auto (232K context)",
     description:
-      "Starts with Code Flash, then dynamically selects Code Flash, Mini, or Pro as the task develops.",
-    contextWindow: 200000,
+      "Starts with Code Flash, then dynamically selects Code Flash, Code, or Pro as the task develops.",
+    contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
     inputPrice: 0.0000005,
@@ -162,7 +162,7 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     gatewayModelId: "axon-auto",
     name: "Axon Auto (400K context)",
     description:
-      "Starts with Code Flash, then dynamically selects Code Flash, Mini, or Pro as the task develops.",
+      "Starts with Code Flash, then dynamically selects Code Flash, Code, or Pro as the task develops.",
     contextWindow: 400000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -171,50 +171,50 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     free: false,
     pricingLabel: "dynamic pricing",
   },
-  "axon-eido-3-flash": {
-    id: "axon-eido-3-flash",
-    name: "Axon Eido 3 Flash",
+  "axon-eido-3.2-flash": {
+    id: "axon-eido-3.2-flash",
+    name: "Axon Eido 3.2 Flash",
     description:
-      "Axon Eido is a fast and low cost general purpose model for low-effort day-to-day tasks",
-    contextWindow: 200000,
+      "Axon Eido 3.2 is a fast and low cost general purpose model for low-effort day-to-day tasks",
+    contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000005,
-    outputPrice: 0.0000015,
+    inputPrice: 0.0000006,
+    outputPrice: 0.0000018,
     free: false,
   },
-  "axon-eido-3-flash-400k": {
-    id: "axon-eido-3-flash-400k",
-    gatewayModelId: "axon-eido-3-flash",
-    name: "Axon Eido 3 Flash (400K context)",
+  "axon-eido-3.2-flash-400k": {
+    id: "axon-eido-3.2-flash-400k",
+    gatewayModelId: "axon-eido-3.2-flash",
+    name: "Axon Eido 3.2 Flash (400K context)",
     description:
-      "Axon Eido is a fast and low cost general purpose model for low-effort day-to-day tasks",
+      "Axon Eido 3.2 is a fast and low cost general purpose model for low-effort day-to-day tasks",
     contextWindow: 400000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000005,
-    outputPrice: 0.0000015,
+    inputPrice: 0.0000006,
+    outputPrice: 0.0000018,
     free: false,
   },
-  "axon-eido-3-code-pro-200k": {
-    id: "axon-eido-3-code-pro-200k",
-    gatewayModelId: "axon-eido-3-code-pro",
-    name: "Axon Eido 3 Pro (200K context)",
+  "axon-eido-3.2-code-pro-232k": {
+    id: "axon-eido-3.2-code-pro-232k",
+    gatewayModelId: "axon-eido-3.2-code-pro",
+    name: "Axon Eido 3.2 Pro (232K context)",
     description:
-      "Axon Eido 3 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
-    contextWindow: 200000,
+      "Axon Eido 3.2 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
+    contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
     inputPrice: 0.000003,
     outputPrice: 0.000009,
     free: false,
   },
-  "axon-eido-3-code-pro-400k": {
-    id: "axon-eido-3-code-pro-400k",
-    gatewayModelId: "axon-eido-3-code-pro",
-    name: "Axon Eido 3 Pro (400K context)",
+  "axon-eido-3.2-code-pro-400k": {
+    id: "axon-eido-3.2-code-pro-400k",
+    gatewayModelId: "axon-eido-3.2-code-pro",
+    name: "Axon Eido 3.2 Pro (400K context)",
     description:
-      "Axon Eido 3 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
+      "Axon Eido 3.2 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
     contextWindow: 400000,
     maxOutputTokens: 64000,
     supportsImages: true,
@@ -222,39 +222,39 @@ export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
     outputPrice: 0.000009,
     free: false,
   },
-  "axon-eido-3-code-mini-200k": {
-    id: "axon-eido-3-code-mini-200k",
-    gatewayModelId: "axon-eido-3-code-mini",
-    name: "Axon Eido 3 Mini (200K context)",
+  "axon-eido-3.2-code-232k": {
+    id: "axon-eido-3.2-code-232k",
+    gatewayModelId: "axon-eido-3.2-code",
+    name: "Axon Eido 3.2 Code (232K context)",
     description:
-      "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
-    contextWindow: 200000,
+      "Axon Eido 3.2 Code is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
+    contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000015,
-    outputPrice: 0.0000045,
+    inputPrice: 0.000002,
+    outputPrice: 0.000006,
     free: false,
   },
-  "axon-eido-3-code-mini-400k": {
-    id: "axon-eido-3-code-mini-400k",
-    gatewayModelId: "axon-eido-3-code-mini",
-    name: "Axon Eido 3 Mini (400K context)",
+  "axon-eido-3.2-code-400k": {
+    id: "axon-eido-3.2-code-400k",
+    gatewayModelId: "axon-eido-3.2-code",
+    name: "Axon Eido 3.2 Code (400K context)",
     description:
-      "Axon Eido 3 Mini is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
+      "Axon Eido 3.2 Code is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
     contextWindow: 400000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000015,
-    outputPrice: 0.0000045,
+    inputPrice: 0.000002,
+    outputPrice: 0.000006,
     free: false,
   },
-  "axon-lumen-4-code-200k": {
-    id: "axon-lumen-4-code-200k",
+  "axon-lumen-4-code-232k": {
+    id: "axon-lumen-4-code-232k",
     gatewayModelId: "axon-lumen-4-code",
-    name: "Axon Lumen 4 (200K context)",
+    name: "Axon Lumen 4 (232K context)",
     description:
       "Axon Lumen 4 Code is the ultra-intelligent frontier model for complex agentic coding tasks and general intelligence.",
-    contextWindow: 200000,
+    contextWindow: 232000,
     maxOutputTokens: 128000,
     supportsImages: true,
     inputPrice: 0.000005,
@@ -287,11 +287,12 @@ export const AXON_MODELS: Record<string, AxonModel> = {
   ...ANTHROPIC_MODELS,
 };
 
-export const DEFAULT_MODEL_ID = "axon-eido-3-code-mini-200k";
+export const DEFAULT_MODEL_ID = "axon-auto-232k";
 
 const EXTENDED_CONTEXT_PLANS = new Set(["proplus", "ultra"]);
 const LUMEN_MODEL_PLANS = new Set(["proplus", "ultra"]);
 const EIDO_PRO_MODEL_PLANS = new Set(["pro", "proplus", "ultra"]);
+const EIDO_BASE_MODEL_PLANS = new Set(["pro", "proplus", "ultra"]);
 
 function normalizePlan(plan?: string): string {
   return plan?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
@@ -312,11 +313,16 @@ export function canUseEidoProModels(plan?: string): boolean {
   return EIDO_PRO_MODEL_PLANS.has(normalizePlan(plan));
 }
 
+/** Whether an account plan includes the Axon Eido 3.2 Code (base) models. */
+export function canUseEidoBaseModels(plan?: string): boolean {
+  return EIDO_BASE_MODEL_PLANS.has(normalizePlan(plan));
+}
+
 export function is400kAxonModel(modelId: string): boolean {
   return (
     (modelId.startsWith("axon-auto-") ||
-      modelId.startsWith("axon-eido-3-code-") ||
-      modelId.startsWith("axon-eido-3-flash-") ||
+      modelId.startsWith("axon-eido-3.2-code-") ||
+      modelId.startsWith("axon-eido-3.2-flash-") ||
       modelId.startsWith("axon-lumen-4-code-")) &&
     modelId.endsWith("-400k")
   );
@@ -327,14 +333,25 @@ export function isLumenAxonModel(modelId: string): boolean {
 }
 
 export function isEidoProAxonModel(modelId: string): boolean {
-  return modelId.startsWith("axon-eido-3-code-pro");
+  return modelId.startsWith("axon-eido-3.2-code-pro");
 }
 
-export function get200kAxonFallback(modelId: string): string {
-  // The 200K Flash option uses the bare id (no "-200k" suffix), so the
-  // generic -400k → -200k rewrite would point at a non-existent model.
-  if (modelId === "axon-eido-3-flash-400k") return "axon-eido-3-flash";
-  return modelId.replace(/-400k$/, "-200k");
+export function isEidoBaseAxonModel(modelId: string): boolean {
+  return (
+    (modelId === "axon-eido-3.2-code-232k" || modelId === "axon-eido-3.2-code-400k") &&
+    !isEidoProAxonModel(modelId)
+  );
+}
+
+/**
+ * Return the 232K (default) sibling of an extended-context (400K) Axon model id.
+ * Auto, Eido 3.2, and Lumen all share the same two-window convention now.
+ */
+export function get232kAxonFallback(modelId: string): string {
+  // The default-tier Flash option uses the bare id (no "-232k" suffix), so the
+  // generic -400k → -232k rewrite would point at a non-existent model.
+  if (modelId === "axon-eido-3.2-flash-400k") return "axon-eido-3.2-flash";
+  return modelId.replace(/-400k$/, "-232k");
 }
 
 /** A model declared in settings.json; everything except the id is optional. */

@@ -184,18 +184,29 @@ sessions.
 
 | id                             | context | max output | pricing                |
 | ------------------------------ | ------- | ---------- | ---------------------- |
-| `axon-eido-3-code-pro-200k`    | 200k    | 64k        | $3/M in · $9/M out     |
-| `axon-eido-3-code-pro-400k`    | 400k    | 64k        | $3/M in · $9/M out     |
-| `axon-eido-3-code-mini-200k`   | 200k    | 64k        | $1.5/M in · $4.5/M out |
-| `axon-eido-3-code-mini-400k`   | 400k    | 64k        | $1.5/M in · $4.5/M out |
-| `axon-eido-3-flash`            | 200k    | 64k        | $0.5/M in · $1.5/M out |
+| `axon-auto-232k`               | 232k    | 64k        | dynamic pricing        |
+| `axon-auto-400k`               | 400k    | 64k        | dynamic pricing        |
+| `axon-eido-3.2-flash`          | 232k    | 64k        | $0.6/M in · $1.8/M out |
+| `axon-eido-3.2-flash-400k`     | 400k    | 64k        | $0.6/M in · $1.8/M out |
+| `axon-eido-3.2-code-232k`      | 232k    | 64k        | $2/M in · $6/M out     |
+| `axon-eido-3.2-code-400k`      | 400k    | 64k        | $2/M in · $6/M out     |
+| `axon-eido-3.2-code-pro-232k`  | 232k    | 64k        | $3/M in · $9/M out     |
+| `axon-eido-3.2-code-pro-400k`  | 400k    | 64k        | $3/M in · $9/M out     |
+| `axon-lumen-4-code-232k`       | 232k    | 128k       | $5/M in · $25/M out    |
+| `axon-lumen-4-code-400k`       | 400k    | 128k       | $5/M in · $25/M out    |
 
-`axon-eido-3-code-mini-200k` is the default. The context suffix controls
-OrbCode's local context window; requests still send the underlying base model ID
-to the MatterAI gateway. The 400k options require a Pro Plus or Ultra plan and
-are unavailable on Free and Pro. All five options support native JSON tool calls and
-image input. Cost comes from the API's usage chunks (`is_byok`-aware) and is
-shown in the status bar.
+`axon-auto-232k` is the default. The context suffix controls OrbCode's local
+context window; requests still send the underlying base model ID to the
+MatterAI gateway. Plan gating:
+
+- **Free**: `axon-eido-3.2-flash` (232K) only.
+- **Pro**: adds `axon-eido-3.2-code-{232k,400k}` and `axon-eido-3.2-code-pro-{232k,400k}`.
+- **Pro Plus / Ultra**: adds `axon-lumen-4-code-{232k,400k}` and unlocks every 400K variant (including `axon-eido-3.2-flash-400k`).
+
+Every 400K option — `axon-eido-3.2-flash-400k` included — is gated to Pro Plus
+and Ultra. All five options support native JSON tool calls and image input.
+Cost comes from the API's usage chunks (`is_byok`-aware) and is shown in the
+status bar.
 
 ### Other providers (Anthropic, OpenAI-compatible)
 
@@ -306,7 +317,7 @@ MatterAI gateway untouched.
 | ------------ | ----------------------------------------------------------------------------------------------------- |
 | `/help`      | list commands                                                                                         |
 | `/attach`    | open the native file picker and add one or more attachments                                           |
-| `/model`     | scrollable model picker (`/model pro` / `/model mini` / full id selects directly)                     |
+| `/model`     | scrollable model picker (`/model pro` / `/model code` / full id selects directly)                    |
 | `/theme`     | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
 | `/clear`     | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
 | `/new`       | start a fresh conversation/session with a clean slate                                                 |
