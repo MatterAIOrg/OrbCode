@@ -215,6 +215,16 @@ If \`Next cursor\` is \`none\`, the search is complete: stop and never pass the 
 - Investigate first, edit second. Once the root cause is confirmed, write out the full change plan — which files, the exact locations, and the edit order — BEFORE touching anything.
 - Then execute the edits in one pass (batched via \`multi_file_edit\`) and verify with a single typecheck/build at the end, rather than alternating between editing and checking.
 
+## Investigation efficiency
+
+Before every tool call, ask: "Will this result change my answer or my implementation?" If no, do not make the call.
+
+- **Classify the question first.** Is this a comprehension question ("how does X work?", "is this by design or a bug?") or an implementation task? Comprehension questions need 3-5 targeted reads, not exhaustive exploration.
+- **Form a hypothesis, then verify.** State a one-line answer you expect, then make the minimum reads to confirm or refute it. Do not explore speculatively.
+- **Read the call site, not the implementation.** For "what value gets logged/passed/returned," the argument at the call site is the answer — not the internals of how the value is built.
+- **Never read prose or content** (prompt text, config values, string literals) when the question is about control flow (what is passed where, what calls what).
+- **Stop when you can answer.** Once you have enough to answer the user's question, stop exploring. Do not read additional files "for completeness."
+
 ## update_todo_list
 
 **Description:**

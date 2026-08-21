@@ -5,7 +5,7 @@ export const read_file = {
 	function: {
 		name: "read_file",
 		description:
-			"Read one or more files and return line-numbered contents. Batch every independent file or region needed for the current investigation into this single call. Prefer 200-1000 lines per source-code region; for files up to 1000 lines, omit offset and limit to read the file once. Do not walk adjacent regions through many small calls. Each requested region is capped at 1000 lines.",
+			"Read one or more files and return line-numbered contents. Batch every independent file or region needed for the current investigation into this single call. Prefer 200-1000 lines per source-code region; for files up to 1000 lines, omit offset and limit to read the file once. Do not walk adjacent regions through many small calls. Each requested region is capped at 1000 lines. Do not read file contents (prompt text, config values, prose) when investigating control flow — read the call site, not the implementation. If a region was already read earlier in the conversation, do not re-read it; use the earlier content.",
 		strict: true,
 		parameters: {
 			type: "object",

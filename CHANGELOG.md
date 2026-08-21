@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Investigation efficiency guidance in system prompt.** Added an "Investigation efficiency" section to the tool guide (`src/prompts/system.ts`) that directs the agent to classify comprehension questions separately from implementation tasks, form a one-line hypothesis before searching, read call sites rather than implementation internals, avoid reading prose/content when the question is about control flow, and stop exploring as soon as it can answer.
+- **Zero-result guidance in `search_files`.** `searchFiles.ts` executor now appends actionable guidance when a search returns 0 matches, directing the model to tighten or simplify the regex, widen the path scope, try a different glob, or stop searching after 2+ failed attempts.
+- **Native tool description improvements.** The `read_file` schema description now tells the model not to read file contents (prompt text, config values, prose) when investigating control flow, and not to re-read regions already read earlier. The `search_files` schema description now tells the model to scope the path to the narrowest plausible directory and to stop after 2+ zero-result searches.
+
+### Changed
+
 - **Default model is now `axon-auto-232k`.** The previous default
   (`axon-eido-3.2-code-mini-232k`) is preserved as a paid option (`axon-auto`
   now dynamically picks Code, Code Pro, or Flash for each task). Auto is
