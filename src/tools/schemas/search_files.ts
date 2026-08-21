@@ -5,7 +5,7 @@ export default {
 	function: {
 		name: "search_files",
 		description:
-			"Search file contents recursively under a directory using a Rust-compatible regex and optional file glob. Returns a compact, paginated page with at most three matches per file; use context_lines 0 for discovery, then read the relevant file. Continue only with the opaque cursor returned by the same path, regex, and file_pattern; pass JSON null without quotes for the first page. If Next cursor is none, the search is complete: stop and never pass the word none. A rare FFF continuation failure may restart with ripgrep and is marked Restarted: yes.",
+			"Search file contents recursively under a directory using a Rust-compatible regex and optional file glob. Returns a compact, paginated page with at most three matches per file; use context_lines 0 for discovery, then read the relevant file. Continue only with the opaque cursor returned by the same path, regex, and file_pattern; pass JSON null without quotes for the first page. If Next cursor is none, the search is complete: stop and never pass the word none. A rare FFF continuation failure may restart with ripgrep and is marked Restarted: yes. Scope path to the narrowest plausible directory instead of searching from the repository root. If a search returns 0 matches, tighten or simplify the regex rather than retrying with a slightly different pattern. After 2+ searches with no results, stop and reason from what you already know.",
 		strict: true,
 		parameters: {
 			type: "object",

@@ -82,7 +82,18 @@ export async function searchFiles(args: Record<string, unknown>, context: ToolCo
 			}
 		}
 
-		return { text: formatSearchPage(page) }
+		const output = formatSearchPage(page)
+
+		// forked_change: append guidance when a search returns no matches,
+		// steering the model toward tightening/loosening the regex or scoping
+		// the path instead of blindly retrying with a slightly different pattern.
+		if (output.includes("Matches: 0")) {
+			return {
+				text: output + "\n\nNo matches found. Before retrying:\n- Tighten or simplify the regex (e.g. use a shorter, more specific pattern).\n- Widen the path scope (e.g. search from the repo root instead of a subdirectory).\n- Try a different file_pattern glob.\n- If you have already searched 2+ times with no results, stop searching and reason from what you already know.",
+			}
+		}
+
+		return { text: output }
 	} catch (error) {
 		return { text: `Error searching files:\n${error instanceof Error ? error.message : String(error)}`, isError: true }
 	} finally {
