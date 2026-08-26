@@ -174,6 +174,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/logout", description: "sign out and remove the saved token" },
   { name: "/version", description: "show the OrbCode CLI version" },
   { name: "/exit", description: "quit OrbCode CLI" },
+  { name: "/quit", description: "quit OrbCode CLI" },
 ];
 
 const WHEEL_SCROLL_LINES = 3;
@@ -1259,6 +1260,7 @@ export function App({
           break;
         }
         case "/exit":
+        case "/quit":
           endAndExit("prompt_input_exit");
           break;
         default:
