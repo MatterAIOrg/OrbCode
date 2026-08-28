@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.8.0] - 2026-08-28
+
+### Changed
+
+- **Ported the 6.8.2 coding-harness update from the Orbital extension.**
+  - `search_files` is now one-shot: ripgrep-first with FFF fallback, results bounded to the first 100 matches (default `max_results` 100), and cursor pagination removed from the model-facing schema and output. Capped results tell the model to refine the query instead of paginating.
+  - Independent read-only tool calls (`read_file`, `search_files`, `list_files`, `list_code_definition_names`, `codebase_search`, `lsp`) at the start of an assistant response now execute concurrently (max 4) with results committed in model order; mutating and interactive tools stay serialized.
+  - Malformed tool-call JSON now returns a corrective tool result that includes the raw arguments, so the model can re-issue the call with valid JSON instead of dead-ending.
+  - Native tool schemas tightened for strict mode: optional parameters are now required with nullable types (`replace_all`, `recursive`, `follow_up`, `offset`/`limit`, `cwd`/`message`/`isDangerous`, and the inactive-in-CLI tool schemas), and `execute_command` guidance asks for an explicit safety classification.
+  - System-prompt `search_files` guidance updated to the bounded one-shot behavior.
 
 ### Added
 
