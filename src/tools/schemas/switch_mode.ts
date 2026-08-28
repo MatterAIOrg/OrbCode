@@ -19,7 +19,7 @@ export default {
 					description: "Optional explanation for why the mode switch is needed",
 				},
 			},
-			required: ["mode_slug"],
+			required: ["mode_slug", "reason"],
 			additionalProperties: false,
 		},
 	},

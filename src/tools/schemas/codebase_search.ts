@@ -19,7 +19,7 @@ export default {
 					description: "Optional subdirectory (relative to the workspace) to limit the search scope",
 				},
 			},
-			required: ["query"],
+			required: ["query", "path"],
 			additionalProperties: false,
 		},
 	},

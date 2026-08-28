@@ -19,7 +19,7 @@ export default {
 					description: "Optional additional context or arguments for the command",
 				},
 			},
-			required: ["command"],
+			required: ["command", "args"],
 			additionalProperties: false,
 		},
 	},

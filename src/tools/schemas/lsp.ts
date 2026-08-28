@@ -4,7 +4,7 @@ export default {
 	type: "function",
 	function: {
 		name: "lsp",
-		description: `Interact with Language Server Protocol (LSP) servers to get code intelligence features like go-to-definition, find-references, hover information, and symbol search.
+		description: `Use language-server code intelligence when textual search is ambiguous. Supported operations are go_to_definition, find_references, hover, document_symbol, and workspace_symbol.
 
 Supported operations:
 - go_to_definition: Find where a symbol is defined
@@ -13,10 +13,7 @@ Supported operations:
 - document_symbol: Get all symbols (functions, classes, variables) in a document
 - workspace_symbol: Search for symbols across the entire workspace
 
-All operations require:
-- file_path: The absolute path to the file to operate on
-- line: The line number (1-based, as shown in editors)
-- character: The character offset (1-based, as shown in editors)
+Position-based operations require file_path, line, and character. document_symbol and workspace_symbol also accept a position to identify the document or symbol query.
 
 Note: LSP servers must be configured for the file type. If no server is available, an error will be returned.`,
 		strict: true,

@@ -25,7 +25,7 @@ export function stripSearchPageMetadataForDisplay(text: string): string {
 	let firstVisibleLine = 0
 	while (
 		firstVisibleLine < lines.length &&
-		/^(?:Engine|Matches|Next cursor|Restarted|Warning):/.test(lines[firstVisibleLine])
+		/^(?:Engine|Matches|Next cursor|Restarted|Warning):|^Additional matches omitted/.test(lines[firstVisibleLine])
 	) {
 		firstVisibleLine++
 	}
@@ -35,9 +35,10 @@ export function stripSearchPageMetadataForDisplay(text: string): string {
 
 export function formatSearchPage(page: SearchPage): string {
 	const cursor = serializeSearchCursor(page.nextCursor)
-	const nextCursor = cursor ?? "none (search complete; do not continue)"
-	const header = [`Engine: ${page.engine}`, `Matches: ${page.matches.length}`, `Next cursor: ${nextCursor}`]
-	if (page.restarted) header.push("Restarted: yes")
+	const header = [`Engine: ${page.engine}`, `Matches: ${page.matches.length}`]
+	if (cursor) {
+		header.push("Additional matches omitted; refine the search pattern or path instead of paginating.")
+	}
 	if (page.warning) header.push(`Warning: ${page.warning}`)
 	if (page.matches.length === 0) return header.join("\n")
 

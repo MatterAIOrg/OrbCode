@@ -63,33 +63,31 @@ export async function searchFiles(args: Record<string, unknown>, context: ToolCo
 		const options = parseSearchOptions(args, fingerprint)
 		let page: SearchPage
 
-		if (options.cursor?.engine === "ripgrep") {
-			page = await searchFilesWithRipgrep(context.cwd, directoryPath, regex, filePattern, options)
+		if (options.cursor?.engine === "fff") {
+			page = await searchFilesWithFff(context.cwd, directoryPath, regex, filePattern, options)
 		} else {
 			try {
-				page = await searchFilesWithFff(context.cwd, directoryPath, regex, filePattern, options)
+				// Ripgrep is the fast, deterministic default used by coding agents. FFF
+				// remains available as a fallback for installations where the bundled
+				// ripgrep binary is unavailable or cannot execute the requested pattern.
+				page = await searchFilesWithRipgrep(context.cwd, directoryPath, regex, filePattern, options)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
-				const restarted = options.cursor?.engine === "fff"
-				page = await searchFilesWithRipgrep(context.cwd, directoryPath, regex, filePattern, {
+				page = await searchFilesWithFff(context.cwd, directoryPath, regex, filePattern, {
 					...options,
 					cursor: null,
 				})
-				page.warning = restarted
-					? `FFF continuation failed; ripgrep fallback restarted from the first page and may repeat earlier results (${message})`
-					: `FFF failed; used ripgrep fallback (${message})`
-				page.restarted = restarted
+				page.warning = `ripgrep failed; used FFF fallback (${message})`
 			}
 		}
 
 		const output = formatSearchPage(page)
 
-		// forked_change: append guidance when a search returns no matches,
-		// steering the model toward tightening/loosening the regex or scoping
-		// the path instead of blindly retrying with a slightly different pattern.
+		// Append guidance when a search returns no matches so the model changes
+		// the query instead of repeating the same search unchanged.
 		if (page.matches.length === 0) {
 			return {
-				text: output + "\n\nNo matches found. Before retrying:\n- Tighten or simplify the regex (e.g. use a shorter, more specific pattern).\n- Widen the path scope (e.g. search from the repo root instead of a subdirectory).\n- Try a different file_pattern glob.\n- If you have already searched 2+ times with no results, stop searching and reason from what you already know.",
+				text: output + "\n\nNo matches found. Change the regex, path, or file_pattern before retrying; do not repeat this unchanged search.",
 			}
 		}
 
