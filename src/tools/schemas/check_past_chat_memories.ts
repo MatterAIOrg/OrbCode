@@ -15,11 +15,11 @@ export default {
 					description: "Regular expression pattern to search memory contents",
 				},
 				workspace: {
-					type: "string",
+					type: ["string", "null"],
 					description: "Filter by workspace directory (optional, defaults to current workspace)",
 				},
 			},
-			required: ["regex"],
+			required: ["regex", "workspace"],
 			additionalProperties: false,
 		},
 	},

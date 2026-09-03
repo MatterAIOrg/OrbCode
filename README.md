@@ -122,6 +122,7 @@ runtime — bumping the version there is all that's needed.
 orbcode                 start an interactive session in the current directory
 orbcode "<prompt>"      start an interactive session with an initial prompt
 orbcode login           sign in to MatterAI (browser device flow)
+orbcode usage           show plan usage windows and per-model usage
 orbcode -p "<prompt>"   run a single prompt non-interactively, print only the final response
 orbcode -p "…" --yolo   non-interactive with edits/commands auto-approved
 orbcode --model <id>    use a specific model for this run (also -m)
@@ -177,40 +178,30 @@ Sign out with `/logout` (removes the saved token).
 
 ## Models
 
-The built-in Axon models are listed below; `/model` opens a scroll-and-select
-picker (`/model <id>` still selects directly). Additional models can be
-declared via `customModels` in settings.json. The choice persists across
-sessions.
+The built-in models are listed below; `/model` opens a scroll-and-select
+picker (`/model <id>` still selects directly). The live catalog is fetched
+from the backend at startup and kept in sync while the session runs — the
+table below is the offline fallback. Additional models can be declared via
+`customModels` in settings.json. The choice persists across sessions.
 
-| id                             | context | max output | pricing                |
-| ------------------------------ | ------- | ---------- | ---------------------- |
-| `axon-auto-232k`               | 232k    | 64k        | dynamic pricing        |
-| `axon-auto-400k`               | 400k    | 64k        | dynamic pricing        |
-| `axon-eido-3.2-flash`          | 232k    | 64k        | $0.6/M in · $1.8/M out |
-| `axon-eido-3.2-flash-400k`     | 400k    | 64k        | $0.6/M in · $1.8/M out |
-| `axon-eido-3.2-code-232k`      | 232k    | 64k        | $2/M in · $6/M out     |
-| `axon-eido-3.2-code-400k`      | 400k    | 64k        | $2/M in · $6/M out     |
-| `axon-eido-3.2-code-pro-232k`  | 232k    | 64k        | $3/M in · $9/M out     |
-| `axon-eido-3.2-code-pro-400k`  | 400k    | 64k        | $3/M in · $9/M out     |
-| `axon-lumen-4-code-232k`       | 232k    | 128k       | $5/M in · $25/M out    |
-| `axon-lumen-4-code-400k`       | 400k    | 128k       | $5/M in · $25/M out    |
+| id                                | context | max output | pricing                  |
+| --------------------------------- | ------- | ---------- | ------------------------ |
+| `zai/glm-5.3-flash`               | 232k    | 64k        | $0.15/M in · $0.5/M out  |
+| `zai/glm-5.3`                     | 232k    | 64k        | $1.4/M in · $4.4/M out   |
+| `deepseek/deepseek-v4-flash-0731` | 232k    | 64k        | $0.14/M in · $0.28/M out |
+| `meta/muse-spark-1.3-contributor` | 232k    | 64k        | $0.1/M in · $0.2/M out   |
+| `gpt-5.6-luna`                    | 232k    | 64k        | $0.2/M in · $1.2/M out   |
+| `gpt-5.6-sol`                     | 232k    | 64k        | $5/M in · $30/M out      |
+| `gemini-3.8-flash`                | 232k    | 64k        | $0.75/M in · $3.75/M out |
 
-`axon-auto-232k` is the default. The context suffix controls OrbCode's local
-context window; requests still send the underlying base model ID to the
-MatterAI gateway. Plan gating:
-
-- **Free**: `axon-eido-3.2-flash` (232K) only.
-- **Pro**: adds `axon-eido-3.2-code-{232k,400k}` and `axon-eido-3.2-code-pro-{232k,400k}`.
-- **Pro Plus / Ultra**: adds `axon-lumen-4-code-{232k,400k}` and unlocks every 400K variant (including `axon-eido-3.2-flash-400k`).
-
-Every 400K option — `axon-eido-3.2-flash-400k` included — is gated to Pro Plus
-and Ultra. All five options support native JSON tool calls and image input.
-Cost comes from the API's usage chunks (`is_byok`-aware) and is shown in the
-status bar.
+`zai/glm-5.3-flash` is the default. Every model is available on every plan,
+supports native JSON tool calls and image input, and is served through the
+MatterAI gateway. Cost comes from the API's usage chunks (`is_byok`-aware)
+and is shown in the status bar.
 
 ### Other providers (Anthropic, OpenAI-compatible)
 
-The Axon models go through the MatterAI gateway as before. A `customModels`
+The built-in models go through the MatterAI gateway as before. A `customModels`
 entry that sets a `provider` is instead served through the
 [Vercel AI SDK](https://sdk.vercel.ai), reusing the same agent loop, tools, and
 approvals — auth is the provider's own key (env var or `apiKey`), not the
@@ -412,7 +403,7 @@ Two kinds of files under `~/.orbcode/`:
 ```
 
 All keys are optional. `customModels` entries appear in the `/model` picker
-alongside the built-in Axon models; `baseUrl` points the chat client at any
+alongside the built-in models; `baseUrl` points the chat client at any
 OpenAI-compatible gateway; `env` is applied to the process at startup; `hooks`
 configures lifecycle hooks (see [Hooks](#hooks)). Precedence: env vars > project
 settings.json > user settings.json > config.json.

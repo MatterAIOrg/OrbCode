@@ -57,7 +57,7 @@ export default {
 					description: "Text to type when performing the type action",
 				},
 			},
-			required: ["action"],
+			required: ["action", "url", "coordinate", "size", "text"],
 			additionalProperties: false,
 		},
 	},

@@ -37,7 +37,7 @@ export const read_file = {
 									"Lines to read from offset. Prefer 500-1000. Use null to read from offset up to the 1000-line cap.",
 							},
 						},
-						required: ["file_path"],
+						required: ["file_path", "offset", "limit"],
 						additionalProperties: false,
 					},
 				},

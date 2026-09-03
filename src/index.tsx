@@ -2,6 +2,7 @@ import { PRODUCT_NAME, VERSION } from "./branding.js"
 import { runHeadless } from "./headless.js"
 import { runMcpCommand } from "./commands/mcp.js"
 import { runPluginCommand } from "./commands/plugin.js"
+import { runUsageCommand } from "./commands/usage.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
 import { loadSettings } from "./config/settings.js"
 import {
@@ -23,6 +24,7 @@ Usage:
   orbcode                 start an interactive session
   orbcode "<prompt>"      start an interactive session with an initial prompt
   orbcode login           sign in to MatterAI
+  orbcode usage           show plan usage windows and per-model usage
   orbcode update          install the latest version from npm
   orbcode update --force  force a global install even if this CLI doesn't look global
   orbcode mcp add ...     add an MCP server (see: orbcode mcp help)
@@ -150,6 +152,12 @@ async function main(): Promise<void> {
 
 	if (args[0] === "plugin" || args[0] === "plugins") {
 		const code = await runPluginCommand(args.slice(1))
+		process.exit(code)
+	}
+
+	// `orbcode usage` — print plan windows and per-model usage (read-only).
+	if (args[0] === "usage") {
+		const code = await runUsageCommand()
 		process.exit(code)
 	}
 

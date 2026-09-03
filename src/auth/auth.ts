@@ -134,6 +134,13 @@ export interface AxonCodeWeeklyResetAvailability {
   nextAvailableAt: string | null;
 }
 
+export interface AxonCodeModelUsage {
+  model: string;
+  multiplier: number;
+  weeklyPercentage: number;
+  monthlyPercentage: number;
+}
+
 export interface ProfileData {
   user?: { name?: string; email?: string; image?: string };
   organizations?: Array<{ id: string; name: string; role?: string }>;
@@ -144,6 +151,9 @@ export interface ProfileData {
   creditsResetDate?: string;
   // Tiered usage windows (weekly / monthly).
   tieredUsage?: AxonCodeTieredUsage;
+  // Per-model usage for the tracked OSS models (share of the shared plan
+  // pool, as percentages — no credit amounts are exposed).
+  modelUsage?: AxonCodeModelUsage[];
   weeklyReset?: AxonCodeWeeklyResetAvailability;
   [key: string]: unknown;
 }

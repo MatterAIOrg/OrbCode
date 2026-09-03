@@ -31,7 +31,7 @@ after(async () => {
 	await Promise.all(roots.map((root) => fs.rm(root, { recursive: true, force: true })))
 })
 
-test("uses FFF by default with compact file filtering", async () => {
+test("uses ripgrep by default with compact file filtering", async () => {
 	const cwd = await fixture()
 	const result = await searchFiles(
 		{ path: "src", regex: "needle", file_pattern: "*.ts", cursor: "null", max_results: 50, context_lines: 0 },
@@ -39,33 +39,27 @@ test("uses FFF by default with compact file filtering", async () => {
 	)
 
 	assert.equal(result.isError, undefined)
-	assert.match(result.text, /^Engine: fff/m)
+	assert.match(result.text, /^Engine: ripgrep/m)
 	assert.match(result.text, /# src\/alpha\.ts/)
 	assert.doesNotMatch(result.text, /notes\.md/)
 	assert.doesNotMatch(result.text, /outside\.ts/)
 })
 
-test("continues native FFF pagination without dropping matches", async () => {
+test("returns one-shot bounded results without model-facing cursors", async () => {
 	const cwd = await fixture()
 	await fs.writeFile(path.join(cwd, "src", "beta.ts"), "const needle = 2\n")
 	const context = { cwd, token: "", getTodos: () => "", setTodos: () => {} }
-	const args = {
-		path: "src",
-		regex: "needle",
-		file_pattern: "*.ts",
-		cursor: null as string | null,
-		max_results: 1,
-		context_lines: 0,
-	}
-	const first = await searchFiles(args, context)
-	assert.match(first.text, /^Engine: fff/m)
-	const cursor = /^Next cursor: (fff:\S+)$/m.exec(first.text)?.[1]
-	assert.ok(cursor)
+	const result = await searchFiles(
+		{ path: "src", regex: "needle", file_pattern: "*.ts", cursor: null, max_results: 1, context_lines: 0 },
+		context,
+	)
 
-	const second = await searchFiles({ ...args, cursor }, context)
-	assert.match(second.text, /^Engine: fff/m)
-	assert.match(`${first.text}\n${second.text}`, /src\/alpha\.ts/)
-	assert.match(`${first.text}\n${second.text}`, /src\/beta\.ts/)
+	assert.equal(result.isError, undefined)
+	assert.match(result.text, /^Engine: ripgrep/m)
+	assert.match(result.text, /^Matches: 1$/m)
+	assert.equal((result.text.match(/# src\//g) ?? []).length, 1)
+	assert.match(result.text, /Additional matches omitted; refine the search pattern or path instead of paginating\./)
+	assert.doesNotMatch(result.text, /Next cursor:/)
 })
 
 test("treats route-directory metacharacters literally and anchors nested globs to path", async () => {
@@ -104,7 +98,7 @@ test("treats route-directory metacharacters literally and anchors nested globs t
 	)
 
 	assert.equal(result.isError, undefined)
-	assert.match(result.text, /^Engine: fff/m)
+	assert.match(result.text, /^Engine: ripgrep/m)
 	assert.match(result.text, /components\/view\.ts/)
 	assert.doesNotMatch(result.text, /other\.ts/)
 })
@@ -206,8 +200,16 @@ test("keeps generated-directory exclusions and negative globs consistent across 
 	await fs.writeFile(path.join(cwd, "src", "negative.md"), "negativeNeedle markdown\n")
 	const context = { cwd, token: "", getTodos: () => "", setTodos: () => {} }
 
+	const fffFingerprint = createSearchFingerprint(cwd, "excludedNeedle", "*.ts")
 	const fff = await searchFiles(
-		{ path: ".", regex: "excludedNeedle", file_pattern: "*.ts", cursor: null, max_results: 50, context_lines: 0 },
+		{
+			path: ".",
+			regex: "excludedNeedle",
+			file_pattern: "*.ts",
+			cursor: `fff:0:${fffFingerprint}`,
+			max_results: 50,
+			context_lines: 0,
+		},
 		context,
 	)
 	assert.match(fff.text, /^Engine: fff/m)
@@ -233,7 +235,7 @@ test("keeps generated-directory exclusions and negative globs consistent across 
 		{ path: "dist", regex: "excludedNeedle", file_pattern: "*.ts", cursor: null, max_results: 50, context_lines: 0 },
 		context,
 	)
-	assert.match(explicitDist.text, /^Engine: fff/m)
+	assert.match(explicitDist.text, /^Engine: ripgrep/m)
 	assert.match(explicitDist.text, /dist\/generated\.ts/)
 	const explicitDistFingerprint = createSearchFingerprint(path.join(cwd, "dist"), "excludedNeedle", "*.ts")
 	const explicitDistRg = await searchFiles(
@@ -249,12 +251,13 @@ test("keeps generated-directory exclusions and negative globs consistent across 
 	)
 	assert.match(explicitDistRg.text, /dist\/generated\.ts/)
 
+	const negationPathFingerprint = createSearchFingerprint(path.join(cwd, "src"), "negativeNeedle", "!components/**")
 	const pathNegation = await searchFiles(
 		{
 			path: "src",
 			regex: "negativeNeedle",
 			file_pattern: "!components/**",
-			cursor: null,
+			cursor: `fff:0:${negationPathFingerprint}`,
 			max_results: 50,
 			context_lines: 0,
 		},
@@ -301,25 +304,27 @@ test("ripgrep pagination preserves an adjacent match on the next page", async ()
 	assert.equal(first.isError, undefined)
 	assert.match(first.text, /^Engine: ripgrep/m)
 	assert.match(first.text, /> 1:1 /)
-	const cursor = /^Next cursor: (\S+)$/m.exec(first.text)?.[1]
-	assert.ok(cursor)
 
-	const second = await searchFiles({ ...args, cursor }, context)
+	// Cursors are no longer model-facing; construct the continuation cursor for
+	// the same search to verify the adjacent match survives pagination.
+	const second = await searchFiles({ ...args, cursor: `ripgrep:1:${fingerprint}` }, context)
 	assert.equal(second.isError, undefined)
 	assert.match(second.text, /> 2:1 /)
 })
 
 test("makes completed searches and tool summaries unambiguous", () => {
 	const completed = formatSearchPage({ engine: "fff", matches: [], nextCursor: null })
-	assert.match(completed, /Next cursor: none \(search complete; do not continue\)/)
+	assert.doesNotMatch(completed, /Next cursor:|Additional matches omitted/)
 	assert.equal(stripSearchPageMetadataForDisplay(completed), "")
 	const page = formatSearchPage({
 		engine: "fff",
 		matches: [{ file: "src/a.ts", line: 4, column: 2, text: "needle" }],
 		nextCursor: { engine: "fff", offset: 2, fingerprint: "0123456789abcdef" },
 	})
+	assert.doesNotMatch(page, /Next cursor:/)
+	assert.match(page, /Additional matches omitted; refine the search pattern or path instead of paginating\./)
 	const visiblePage = stripSearchPageMetadataForDisplay(page)
-	assert.doesNotMatch(visiblePage, /Engine:|Matches:|Next cursor:/)
+	assert.doesNotMatch(visiblePage, /Engine:|Matches:|Additional matches omitted/)
 	assert.match(visiblePage, /# src\/a\.ts\n> 4:2 \| needle/)
 	assert.equal(
 		describeToolCall("search_files", { path: "src", regex: "eido", file_pattern: "*.ts" }),
@@ -328,38 +333,28 @@ test("makes completed searches and tool summaries unambiguous", () => {
 	assert.equal(describeToolCall("search_files", { path: "src", regex: "eido", file_pattern: "null" }), "/eido/ in src")
 })
 
-test("marks and safely drains an FFF continuation fallback during cleanup", async () => {
+test("settles a search that overlaps session cleanup", async () => {
 	const cwd = await fixture()
 	await fs.writeFile(path.join(cwd, "space file.ts"), "needle spaced\n")
-	const filePattern = "space *.ts"
-	const fingerprint = createSearchFingerprint(cwd, "needle", filePattern)
 	const pending = searchFiles(
-		{
-			path: ".",
-			regex: "needle",
-			file_pattern: filePattern,
-			cursor: `fff:1:${fingerprint}`,
-			max_results: 50,
-			context_lines: 0,
-		},
+		{ path: ".", regex: "needle", file_pattern: null, cursor: null, max_results: 50, context_lines: 0 },
 		{ cwd, token: "", getTodos: () => "", setTodos: () => {} },
 	)
 	const disposing = disposeSearchFiles()
 	const result = await pending
 	await disposing
-	assert.equal(result.isError, undefined)
-	assert.match(result.text, /^Engine: ripgrep/m)
-	assert.match(result.text, /^Restarted: yes$/m)
-	assert.match(result.text, /space file\.ts/)
+	// The search either completes after cleanup or is cancelled by it; either
+	// way it must settle with a result instead of hanging.
+	assert.ok(result.text.length > 0)
 })
 
-test("can initialize FFF again after session cleanup", async () => {
+test("can initialize search engines again after session cleanup", async () => {
 	const cwd = await fixture()
 	const args = { path: "src", regex: "needle", file_pattern: "*.ts", cursor: null, max_results: 50, context_lines: 0 }
 	const context = { cwd, token: "", getTodos: () => "", setTodos: () => {} }
 	const first = await searchFiles(args, context)
-	assert.match(first.text, /^Engine: fff/m)
+	assert.match(first.text, /^Engine: ripgrep/m)
 	await disposeSearchFiles()
 	const second = await searchFiles(args, context)
-	assert.match(second.text, /^Engine: fff/m)
+	assert.match(second.text, /^Engine: ripgrep/m)
 })

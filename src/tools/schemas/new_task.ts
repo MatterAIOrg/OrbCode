@@ -24,7 +24,7 @@ export default {
 						"Optional initial todo list written as a markdown checklist; required when the workspace mandates todos",
 				},
 			},
-			required: ["mode", "message"],
+			required: ["mode", "message", "todos"],
 			additionalProperties: false,
 		},
 	},

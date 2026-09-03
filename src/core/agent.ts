@@ -50,6 +50,20 @@ import {
 
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
+/** Maximum number of independent read-only tools started at once. */
+const MAX_PARALLEL_READ_ONLY_TOOLS = 4
+
+/** These tools only observe repository state, so a leading run of them in one
+ *  assistant response can execute concurrently. Mutating, interactive, and
+ *  external tools stay serialized. */
+const PARALLEL_READ_ONLY_TOOLS = new Set([
+	"read_file",
+	"search_files",
+	"list_files",
+	"list_code_definition_names",
+	"codebase_search",
+	"lsp",
+])
 /** How many times to automatically re-establish a model request that fails
  *  before producing any output (transient/connection errors). */
 const MAX_STREAM_RETRIES = 3
@@ -1147,12 +1161,45 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 
 		let completed = false
-		for (const toolCall of toolCalls) {
+		const runToolCall = async (toolCall: PendingToolCall): Promise<void> => {
 			const resultText = await this.handleToolCall(toolCall)
 			this.messages.push({ role: "tool", tool_call_id: toolCall.id, content: resultText })
 			if (toolCall.name === "attempt_completion") {
 				completed = true
 			}
+		}
+
+		// Independent read-only calls (the leading run of the response) execute
+		// concurrently, at most MAX_PARALLEL_READ_ONLY_TOOLS at a time. Results are
+		// committed in model order so tool_call/tool_result pairing stays intact;
+		// mutating and interactive calls remain on the serialized path.
+		let batchEnd = 0
+		while (batchEnd < toolCalls.length && PARALLEL_READ_ONLY_TOOLS.has(toolCalls[batchEnd].name)) {
+			batchEnd++
+		}
+
+		if (batchEnd > 1) {
+			const batch = toolCalls.slice(0, batchEnd)
+			const results = new Array<string>(batch.length)
+			let nextIndex = 0
+			await Promise.all(
+				Array.from({ length: Math.min(MAX_PARALLEL_READ_ONLY_TOOLS, batch.length) }, async () => {
+					while (nextIndex < batch.length) {
+						const index = nextIndex++
+						results[index] = await this.handleToolCall(batch[index])
+					}
+				}),
+			)
+			for (const [index, toolCall] of batch.entries()) {
+				this.messages.push({ role: "tool", tool_call_id: toolCall.id, content: results[index] })
+			}
+		} else {
+			for (let index = 0; index < batchEnd; index++) {
+				await runToolCall(toolCalls[index])
+			}
+		}
+		for (let index = batchEnd; index < toolCalls.length; index++) {
+			await runToolCall(toolCalls[index])
 		}
 		return completed
 	}
@@ -1164,7 +1211,11 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		try {
 			args = toolCall.arguments ? JSON.parse(toolCall.arguments) : {}
 		} catch (error) {
-			const message = `Invalid JSON arguments for ${toolCall.name}: ${(error as Error).message}`
+			// Recover instead of dead-ending: the error result carries the raw
+			// arguments so the model can re-issue the call with valid, complete JSON.
+			const rawArgs = toolCall.arguments.trim()
+			const preview = rawArgs.length > 500 ? `${rawArgs.slice(0, 500)}...(truncated)` : rawArgs
+			const message = `Malformed tool call JSON for ${toolCall.name}: ${(error as Error).message}. The raw arguments were:\n\n${preview}\n\nPlease re-issue the tool call with valid, complete JSON arguments.`
 			onEvent({
 				type: "tool-end",
 				id: toolCall.id,

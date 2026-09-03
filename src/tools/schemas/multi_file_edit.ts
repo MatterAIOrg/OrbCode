@@ -32,13 +32,13 @@ export default {
 								description:
 									"Replacement text. This will be inserted in place of the matched section. Can be an empty string to delete the match.",
 							},
-							replace_all: {
-								type: "boolean",
-								description:
-									"Set to true to replace every occurrence of the matched text. Defaults to false (replace a single uniquely identified occurrence).",
-							},
+						replace_all: {
+							type: ["boolean", "null"],
+							description:
+								"Pass false (or null) unless the requested change intentionally applies to every occurrence. Never use it to bypass an ambiguity error.",
 						},
-						required: ["file_path", "old_string", "new_string"],
+					},
+					required: ["file_path", "old_string", "new_string", "replace_all"],
 						additionalProperties: false,
 					},
 				},

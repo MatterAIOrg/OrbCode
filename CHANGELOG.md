@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dynamic model catalog synchronization.** OrbCode now fetches the active model catalog dynamically from the backend (`/v1/models`) on startup and when refreshing usage (`fetchDynamicModels`), registering returned OSS models into `BUILTIN_AXON_MODELS` and `AXON_MODELS` so newly added models appear in the picker without requiring hardcoded updates. Models the backend retires are pruned after a successful fetch (empty or failed responses never wipe the offline fallback), and the catalog's `iconUrl` / `costMultiplier` fields are captured on each model.
+- **Provider badges in the model picker.** Terminals can't render the catalog's SVG provider icons, so picker rows show a text badge (`[Z.ai]`, `[Meta]`, `[DeepSeek]`, `[OpenAI]`, `[Google]`) — the TUI equivalent of the webapp's provider logos.
+- **`orbcode usage` command.** Prints the weekly/monthly plan usage windows
+  (percentage bars with reset times) and each tracked OSS model's share of
+  the shared plan pool as weekly/monthly percentages, alongside the model's
+  plan-cost multiplier (e.g. `5x cost`). The TUI's `/usage` and `/status`
+  commands show the same per-model block. Percentages only — no credit
+  amounts are exposed. Requires a logged-in token (`orbcode login`).
+
+### Changed
+
+- **Built-in model catalog is now OSS-first.** The built-in registry replaces
+  the Axon models with seven OSS models served through the MatterAI gateway:
+  `zai/glm-5.3-flash` (the new default), `zai/glm-5.3`,
+  `deepseek/deepseek-v4-flash-0731`, `meta/muse-spark-1.3-contributor`,
+  `gpt-5.6-luna`, `gpt-5.6-sol`, and `gemini-3.8-flash`. All seven expose a
+  232K context window with 64K max output, are available on every plan, and
+  carry their published per-token pricing. The 400K
+  context variants and `axon-auto` are gone from the picker; a stored Axon
+  model selection auto-resets to the new default on next launch, and a
+  requested Axon id (`--model` / `MATTERAI_MODEL`) now warns and falls back
+  to the default.
+
+## [6.8.0] - 2026-08-28
+
+### Changed
+
+- **Ported the 6.8.2 coding-harness update from the Orbital extension.**
+  - `search_files` is now one-shot: ripgrep-first with FFF fallback, results bounded to the first 100 matches (default `max_results` 100), and cursor pagination removed from the model-facing schema and output. Capped results tell the model to refine the query instead of paginating.
+  - Independent read-only tool calls (`read_file`, `search_files`, `list_files`, `list_code_definition_names`, `codebase_search`, `lsp`) at the start of an assistant response now execute concurrently (max 4) with results committed in model order; mutating and interactive tools stay serialized.
+  - Malformed tool-call JSON now returns a corrective tool result that includes the raw arguments, so the model can re-issue the call with valid JSON instead of dead-ending.
+  - Native tool schemas tightened for strict mode: optional parameters are now required with nullable types (`replace_all`, `recursive`, `follow_up`, `offset`/`limit`, `cwd`/`message`/`isDangerous`, and the inactive-in-CLI tool schemas), and `execute_command` guidance asks for an explicit safety classification.
+  - System-prompt `search_files` guidance updated to the bounded one-shot behavior.
+
+### Added
+
 - **Investigation efficiency guidance in system prompt.** Added an "Investigation efficiency" section to the tool guide (`src/prompts/system.ts`) that directs the agent to classify comprehension questions separately from implementation tasks, form a one-line hypothesis before searching, read call sites rather than implementation internals, avoid reading prose/content when the question is about control flow, and stop exploring as soon as it can answer.
 - **Zero-result guidance in `search_files`.** `searchFiles.ts` executor now appends actionable guidance when a search returns 0 matches, directing the model to tighten or simplify the regex, widen the path scope, try a different glob, or stop searching after 2+ failed attempts.
 - **Native tool description improvements.** The `read_file` schema description now tells the model not to read file contents (prompt text, config values, prose) when investigating control flow, and not to re-read regions already read earlier. The `search_files` schema description now tells the model to scope the path to the narrowest plausible directory and to stop after 2+ zero-result searches.

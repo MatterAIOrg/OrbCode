@@ -185,19 +185,17 @@ Command validity rules: a command is never empty, never just \`:\`, never a bare
 
 ## search_files
 
-Search file contents using a Rust-compatible regex. Results are compact, limited to three matches per file, and paginated.
+Search file contents using a Rust-compatible regex. Results are compact and bounded to the first 100 matches; refine the query instead of paginating.
 
 ### Parameters
 
 1. **path** (string, required): Directory to search recursively, relative to workspace
 2. **regex** (string, required): Rust-compatible regular expression pattern
 3. **file_pattern** (string or null, required): Glob pattern to filter files OR null
-4. **cursor** (string or null, required): Copy the opaque cursor from the same search exactly, or pass JSON null without quotes for the first page
-5. **max_results** (integer or null, required): Target 1-100 results; null defaults to 50
-6. **context_lines** (integer or null, required): 0-2 surrounding lines; null defaults to 0
+4. **max_results** (integer or null, required): Target 1-100 results; null defaults to 100
+5. **context_lines** (integer or null, required): 0-2 surrounding lines; null defaults to 0
 
-Use zero context for discovery, then read the relevant file region. Reuse a cursor only with the same path, regex, and file pattern; never invent or edit one.
-If \`Next cursor\` is \`none\`, the search is complete: stop and never pass the word \`none\`. If a result says \`Restarted: yes\`, the FFF continuation failed and ripgrep restarted at page one, so account for repeated matches and continue only with the new cursor.
+Use zero context for discovery, then read the relevant file region. If results are capped, refine the path, regex, or file pattern.
 
 ### Search Hygiene
 

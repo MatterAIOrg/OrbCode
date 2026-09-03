@@ -25,7 +25,7 @@ export default {
 						"Optional path (relative to the workspace) to an existing image to edit; supports PNG, JPG, JPEG, GIF, and WEBP",
 				},
 			},
-			required: ["prompt", "path"],
+			required: ["prompt", "path", "image"],
 			additionalProperties: false,
 		},
 	},

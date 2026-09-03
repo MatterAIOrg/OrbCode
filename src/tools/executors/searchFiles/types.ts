@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto"
 import * as path from "node:path"
 
-export const DEFAULT_SEARCH_RESULTS = 50
+// Keep the model-facing search operation one-shot. A larger first page is
+// cheaper than forcing the model through cursor continuation turns.
+export const DEFAULT_SEARCH_RESULTS = 100
 export const MAX_SEARCH_RESULTS = 100
 export const MAX_MATCHES_PER_FILE = 3
 export const MAX_SEARCH_CONTEXT_LINES = 2
@@ -48,7 +50,6 @@ export interface SearchPage {
 	matches: SearchMatch[]
 	nextCursor: SearchCursor | null
 	warning?: string
-	restarted?: boolean
 }
 
 export interface SearchOptions {
