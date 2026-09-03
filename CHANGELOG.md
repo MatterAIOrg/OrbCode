@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Dynamic model catalog synchronization.** OrbCode now fetches the active model catalog dynamically from the backend (`/v1/models`) on startup and when refreshing usage (`fetchDynamicModels`), registering returned OSS models into `BUILTIN_AXON_MODELS` and `AXON_MODELS` so newly added models appear in the picker without requiring hardcoded updates. Models the backend retires are pruned after a successful fetch (empty or failed responses never wipe the offline fallback), and the catalog's `iconUrl` / `costMultiplier` fields are captured on each model.
+- **Provider badges in the model picker.** Terminals can't render the catalog's SVG provider icons, so picker rows show a text badge (`[Z.ai]`, `[Meta]`, `[DeepSeek]`, `[OpenAI]`, `[Google]`) — the TUI equivalent of the webapp's provider logos.
+- **`orbcode usage` command.** Prints the weekly/monthly plan usage windows
+  (percentage bars with reset times) and each tracked OSS model's share of
+  the shared plan pool as weekly/monthly percentages, alongside the model's
+  plan-cost multiplier (e.g. `5x cost`). The TUI's `/usage` and `/status`
+  commands show the same per-model block. Percentages only — no credit
+  amounts are exposed. Requires a logged-in token (`orbcode login`).
+
+### Changed
+
+- **Built-in model catalog is now OSS-first.** The built-in registry replaces
+  the Axon models with seven OSS models served through the MatterAI gateway:
+  `zai/glm-5.3-flash` (the new default), `zai/glm-5.3`,
+  `deepseek/deepseek-v4-flash-0731`, `meta/muse-spark-1.3-contributor`,
+  `gpt-5.6-luna`, `gpt-5.6-sol`, and `gemini-3.8-flash`. All seven expose a
+  232K context window with 64K max output, are available on every plan, and
+  carry their published per-token pricing. The 400K
+  context variants and `axon-auto` are gone from the picker; a stored Axon
+  model selection auto-resets to the new default on next launch, and a
+  requested Axon id (`--model` / `MATTERAI_MODEL`) now warns and falls back
+  to the default.
+
 ## [6.8.0] - 2026-08-28
 
 ### Changed

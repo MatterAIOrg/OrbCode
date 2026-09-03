@@ -30,6 +30,7 @@ import {
   canUseEidoBaseModels,
   canUseEidoProModels,
   canUseLumenModels,
+  fetchDynamicModels,
   get232kAxonFallback,
   getModel,
   is400kAxonModel,
@@ -226,6 +227,19 @@ function usageLines(profile: ProfileData): string[] {
     }
   } else if (profile.creditsResetDate) {
     lines.push(`Resets      ${profile.creditsResetDate}`);
+  }
+  // Per-model usage: each tracked OSS model's share of the shared plan pool
+  // (percentages only — the backend never exposes credit amounts publicly).
+  const modelUsage = profile.modelUsage ?? [];
+  if (modelUsage.length > 0) {
+    lines.push("Models      share of the shared plan pool");
+    for (const entry of modelUsage) {
+      const weekly = Math.max(0, Math.min(100, entry.weeklyPercentage || 0));
+      const monthly = Math.max(0, Math.min(100, entry.monthlyPercentage || 0));
+      lines.push(
+        `  ${entry.model.padEnd(30)} ${entry.multiplier}x cost · wk ${weekly}% · mo ${monthly}%`,
+      );
+    }
   }
   return lines;
 }
@@ -465,10 +479,12 @@ export function App({
   const hasEidoProAccess = canUseEidoProModels(activePlan);
   const hasLumenAccess = canUseLumenModels(activePlan);
 
-  // Refresh plan/usage from /axoncode/profile (shown below the chat box).
+  // Refresh plan/usage from /axoncode/profile (shown below the chat box)
+  // and sync the dynamic model catalog from /v1/models.
   const refreshUsage = useCallback(() => {
     const token = getAuthToken(loadSettings());
     if (!token) return;
+    fetchDynamicModels(token).catch(() => {});
     fetchProfile(token)
       .then((profile) =>
         setUsage({
@@ -1615,6 +1631,7 @@ export function App({
       saveSettings(updated);
       agentRef.current = null;
       setView("chat");
+      fetchDynamicModels(token).catch(() => {});
       setUsage({
         plan: profile.plan,
         usagePercentage: profile.usagePercentage,

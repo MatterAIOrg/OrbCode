@@ -1,8 +1,11 @@
 import {
+	AXON_MODELS,
+	DEFAULT_MODEL_ID,
 	canUse400kContext,
 	canUseEidoBaseModels,
 	canUseEidoProModels,
 	canUseLumenModels,
+	fetchDynamicModels,
 	getModel,
 	is400kAxonModel,
 	isEidoBaseAxonModel,
@@ -24,6 +27,11 @@ export async function runHeadless(
 	systemPromptOverride?: string,
 ): Promise<void> {
 	const settings = loadSettings()
+	const token = getAuthToken(settings)
+
+	if (token) {
+		await fetchDynamicModels(token).catch(() => {})
+	}
 
 	// An unknown --model (or MATTERAI_MODEL) silently resolves to the default; say
 	// so on stderr instead of quietly running a different model than requested.
@@ -34,8 +42,6 @@ export async function runHeadless(
 				`Add it under "customModels" in settings.json (with a "provider") to use it.\n`,
 		)
 	}
-
-	const token = getAuthToken(settings)
 	// MatterAI/Axon models authenticate with the login token. AI-SDK providers
 	// (Anthropic, etc.) authenticate with their own key — resolved by the
 	// provider from the env (e.g. ANTHROPIC_API_KEY) or the model's `apiKey` —

@@ -22,6 +22,10 @@ export interface AxonModel {
   free: boolean;
   /** Human-readable pricing shown when the gateway chooses the billable model dynamically. */
   pricingLabel?: string;
+  /** Provider icon URL from the backend catalog. The TUI shows a text badge instead (terminals can't render SVGs). */
+  iconUrl?: string;
+  /** Plan-pool cost multiplier from the backend catalog (e.g. 4 = 4x plan cost). */
+  costMultiplier?: number;
   /**
    * Which transport serves this model. Absent (or "matterai"/"axon") routes
    * through the MatterAI gateway (OpenAI `/chat/completions`). Any other value
@@ -136,142 +140,95 @@ export const ANTHROPIC_MODELS: Record<string, AxonModel> = {
 };
 
 /**
- * Axon's own models (MatterAI gateway). These are the only models shown in
- * the TUI's `/model` picker and are the supported defaults. Third-party
- * providers (Anthropic, OpenAI-compatible) are registered under
+ * The OSS models served through the MatterAI gateway. These are the only
+ * models shown in the TUI's `/model` picker and are the supported defaults.
+ * Third-party providers (Anthropic, OpenAI-compatible) are registered under
  * `AXON_MODELS` for `-p --model` runs but are intentionally hidden from the
  * interactive picker for now.
  */
 export const BUILTIN_AXON_MODELS: Record<string, AxonModel> = {
-  "axon-auto-232k": {
-    id: "axon-auto-232k",
-    gatewayModelId: "axon-auto",
-    name: "Axon Auto (232K context)",
+  "meta/muse-spark-1.3-contributor": {
+    id: "meta/muse-spark-1.3-contributor",
+    name: "Muse Spark 1.3 Contributor",
     description:
-      "Starts with Code Flash, then dynamically selects Code Flash, Code, or Pro as the task develops.",
+      "Meta Muse Spark 1.3 Contributor is an open general purpose model for everyday coding tasks.",
     contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000005,
-    outputPrice: 0.0000015,
+    inputPrice: 0.0000001,
+    outputPrice: 0.0000002,
     free: false,
-    pricingLabel: "dynamic pricing",
   },
-  "axon-auto-400k": {
-    id: "axon-auto-400k",
-    gatewayModelId: "axon-auto",
-    name: "Axon Auto (400K context)",
+  "deepseek/deepseek-v4-flash-0731": {
+    id: "deepseek/deepseek-v4-flash-0731",
+    name: "DeepSeek V4 Flash",
     description:
-      "Starts with Code Flash, then dynamically selects Code Flash, Code, or Pro as the task develops.",
-    contextWindow: 400000,
-    maxOutputTokens: 64000,
-    supportsImages: true,
-    inputPrice: 0.0000005,
-    outputPrice: 0.0000015,
-    free: false,
-    pricingLabel: "dynamic pricing",
-  },
-  "axon-eido-3.2-flash": {
-    id: "axon-eido-3.2-flash",
-    name: "Axon Eido 3.2 Flash",
-    description:
-      "Axon Eido 3.2 is a fast and low cost general purpose model for low-effort day-to-day tasks",
+      "DeepSeek V4 Flash is a fast, low cost open model for low-effort day-to-day coding tasks.",
     contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.0000006,
-    outputPrice: 0.0000018,
+    inputPrice: 0.00000014,
+    outputPrice: 0.00000028,
     free: false,
   },
-  "axon-eido-3.2-flash-400k": {
-    id: "axon-eido-3.2-flash-400k",
-    gatewayModelId: "axon-eido-3.2-flash",
-    name: "Axon Eido 3.2 Flash (400K context)",
+  "zai/glm-5.3": {
+    id: "zai/glm-5.3",
+    name: "GLM 5.3",
     description:
-      "Axon Eido 3.2 is a fast and low cost general purpose model for low-effort day-to-day tasks",
-    contextWindow: 400000,
-    maxOutputTokens: 64000,
-    supportsImages: true,
-    inputPrice: 0.0000006,
-    outputPrice: 0.0000018,
-    free: false,
-  },
-  "axon-eido-3.2-code-pro-232k": {
-    id: "axon-eido-3.2-code-pro-232k",
-    gatewayModelId: "axon-eido-3.2-code-pro",
-    name: "Axon Eido 3.2 Pro (232K context)",
-    description:
-      "Axon Eido 3.2 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
+      "GLM 5.3 is Z.ai's frontier open model for complex coding tasks and long running agents.",
     contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.000003,
-    outputPrice: 0.000009,
+    inputPrice: 0.0000014,
+    outputPrice: 0.0000044,
     free: false,
   },
-  "axon-eido-3.2-code-pro-400k": {
-    id: "axon-eido-3.2-code-pro-400k",
-    gatewayModelId: "axon-eido-3.2-code-pro",
-    name: "Axon Eido 3.2 Pro (400K context)",
+  "zai/glm-5.3-flash": {
+    id: "zai/glm-5.3-flash",
+    name: "GLM 5.3 Flash",
     description:
-      "Axon Eido 3.2 Pro is the frontier Axon Code model for coding tasks, long running agents and general intelligence, fine-tuned on open source models.",
-    contextWindow: 400000,
-    maxOutputTokens: 64000,
-    supportsImages: true,
-    inputPrice: 0.000003,
-    outputPrice: 0.000009,
-    free: false,
-  },
-  "axon-eido-3.2-code-232k": {
-    id: "axon-eido-3.2-code-232k",
-    gatewayModelId: "axon-eido-3.2-code",
-    name: "Axon Eido 3.2 Code (232K context)",
-    description:
-      "Axon Eido 3.2 Code is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
+      "GLM 5.3 Flash is a fast, low cost open model for everyday coding tasks.",
     contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.000002,
-    outputPrice: 0.000006,
+    inputPrice: 0.00000015,
+    outputPrice: 0.0000005,
     free: false,
   },
-  "axon-eido-3.2-code-400k": {
-    id: "axon-eido-3.2-code-400k",
-    gatewayModelId: "axon-eido-3.2-code",
-    name: "Axon Eido 3.2 Code (400K context)",
+  "gpt-5.6-luna": {
+    id: "gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
     description:
-      "Axon Eido 3.2 Code is a general purpose super intelligent LLM coding model for high-effort day-to-day tasks",
-    contextWindow: 400000,
+      "GPT-5.6 Luna is a fast, low cost open model for everyday coding tasks.",
+    contextWindow: 232000,
     maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.000002,
-    outputPrice: 0.000006,
+    inputPrice: 0.0000002,
+    outputPrice: 0.0000012,
     free: false,
   },
-  "axon-lumen-4-code-232k": {
-    id: "axon-lumen-4-code-232k",
-    gatewayModelId: "axon-lumen-4-code",
-    name: "Axon Lumen 4 (232K context)",
+  "gpt-5.6-sol": {
+    id: "gpt-5.6-sol",
+    name: "GPT-5.6 Sol",
     description:
-      "Axon Lumen 4 Code is the ultra-intelligent frontier model for complex agentic coding tasks and general intelligence.",
+      "GPT-5.6 Sol is an open reasoning model for complex coding tasks and long running agents.",
     contextWindow: 232000,
-    maxOutputTokens: 128000,
+    maxOutputTokens: 64000,
     supportsImages: true,
     inputPrice: 0.000005,
-    outputPrice: 0.000025,
+    outputPrice: 0.00003,
     free: false,
   },
-  "axon-lumen-4-code-400k": {
-    id: "axon-lumen-4-code-400k",
-    gatewayModelId: "axon-lumen-4-code",
-    name: "Axon Lumen 4 (400K context)",
+  "gemini-3.8-flash": {
+    id: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash",
     description:
-      "Axon Lumen 4 Code is the ultra-intelligent frontier model for complex agentic coding tasks and general intelligence.",
-    contextWindow: 400000,
-    maxOutputTokens: 128000,
+      "Gemini 3.8 Flash is a fast, low cost model by Google for everyday coding tasks.",
+    contextWindow: 232000,
+    maxOutputTokens: 64000,
     supportsImages: true,
-    inputPrice: 0.000005,
-    outputPrice: 0.000025,
+    inputPrice: 0.00000075,
+    outputPrice: 0.00000375,
     free: false,
   },
 };
@@ -287,7 +244,15 @@ export const AXON_MODELS: Record<string, AxonModel> = {
   ...ANTHROPIC_MODELS,
 };
 
-export const DEFAULT_MODEL_ID = "axon-auto-232k";
+export const DEFAULT_MODEL_ID = "zai/glm-5.3-flash";
+
+/**
+ * Model ids owned by the static catalog or a previous dynamic fetch. A
+ * successful (non-empty) catalog fetch prunes any of these the backend no
+ * longer serves, so retired models disappear from the picker instead of
+ * lingering next to their replacement.
+ */
+const managedModelIds = new Set<string>(Object.keys(BUILTIN_AXON_MODELS));
 
 const EXTENDED_CONTEXT_PLANS = new Set(["proplus", "ultra"]);
 const LUMEN_MODEL_PLANS = new Set(["proplus", "ultra"]);
@@ -412,4 +377,93 @@ export function getModel(modelId: string): AxonModel {
 /** Resolve a local context-window option to the model ID understood by the gateway. */
 export function getGatewayModelId(model: AxonModel): string {
   return model.gatewayModelId ?? model.id;
+}
+
+/**
+ * Fetches dynamic models from the MatterAI backend (/v1/models) and registers them
+ * into BUILTIN_AXON_MODELS and AXON_MODELS so the model picker and agent loops can
+ * dynamically use newly added models without hardcoding.
+ */
+export async function fetchDynamicModels(
+  token?: string,
+): Promise<Record<string, AxonModel>> {
+  try {
+    const { getUrlFromToken } = await import("../auth/auth.js");
+    const targetUrl = token
+      ? getUrlFromToken("https://api.matterai.so/v1/models", token)
+      : "https://api.matterai.so/v1/models";
+
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(targetUrl, {
+      headers,
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) {
+      return BUILTIN_AXON_MODELS;
+    }
+
+    const json = (await res.json()) as any;
+    const items = Array.isArray(json?.data) ? json.data : [];
+
+    const fetched: AxonModel[] = [];
+    for (const item of items) {
+      if (!item?.id || typeof item.id !== "string" || item.id.startsWith("axon-")) {
+        continue;
+      }
+      fetched.push({
+        id: item.id,
+        name: item.name || item.id,
+        description: item.description || `${item.name || item.id} open model`,
+        contextWindow: item.context_length || 232000,
+        maxOutputTokens: item.max_output_length || 64000,
+        supportsImages: Array.isArray(item.input_modalities)
+          ? item.input_modalities.includes("image")
+          : true,
+        inputPrice:
+          typeof item.pricing?.prompt === "string"
+            ? parseFloat(item.pricing.prompt) || 0
+            : typeof item.pricing?.prompt === "number"
+              ? item.pricing.prompt
+              : 0,
+        outputPrice:
+          typeof item.pricing?.completion === "string"
+            ? parseFloat(item.pricing.completion) || 0
+            : typeof item.pricing?.completion === "number"
+              ? item.pricing.completion
+              : 0,
+        free: false,
+        iconUrl: typeof item.iconUrl === "string" ? item.iconUrl : undefined,
+        costMultiplier:
+          typeof item.costMultiplier === "number" ? item.costMultiplier : undefined,
+      });
+    }
+
+    // Reconcile only when the backend returned a usable catalog — an empty or
+    // failed response must never wipe the offline fallback. Retired models
+    // (e.g. a version bump the static fallback still lists) are pruned so they
+    // don't linger in the picker next to their replacement.
+    if (fetched.length > 0) {
+      const fetchedIds = new Set(fetched.map((model) => model.id));
+      for (const id of managedModelIds) {
+        if (id === DEFAULT_MODEL_ID || fetchedIds.has(id)) continue;
+        delete BUILTIN_AXON_MODELS[id];
+        delete AXON_MODELS[id];
+      }
+      managedModelIds.clear();
+      for (const model of fetched) {
+        managedModelIds.add(model.id);
+        BUILTIN_AXON_MODELS[model.id] = model;
+        AXON_MODELS[model.id] = model;
+      }
+    }
+    return BUILTIN_AXON_MODELS;
+  } catch {
+    return BUILTIN_AXON_MODELS;
+  }
 }

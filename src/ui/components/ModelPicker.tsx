@@ -6,17 +6,32 @@ import { BUILTIN_AXON_MODELS, isEidoBaseAxonModel, isEidoProAxonModel, isLumenAx
 import { PopoverBox } from "./PopoverBox.js"
 
 const VISIBLE_ROWS = 6
-const CONTEXT_WINDOW_ORDER = [232000, 400000]
-// Display order within a context-window group: Auto, Flash, Pro, Code, Lumen.
-// Pro must precede Code because `axon-eido-3.2-code-` is a prefix of
-// `axon-eido-3.2-code-pro-`, so the more specific prefix needs to win.
+const CONTEXT_WINDOW_ORDER = [232000]
+// Display order: the default (GLM 5.3 Flash) first, then the rest.
 const DISPLAY_ORDER = [
-	"axon-auto",
-	"axon-eido-3.2-flash",
-	"axon-eido-3.2-code-pro",
-	"axon-eido-3.2-code",
-	"axon-lumen-4-code",
+	"zai/glm-5.3-flash",
+	"zai/glm-5.3",
+	"deepseek/deepseek-v4-flash-0731",
+	"meta/muse-spark-1.3-contributor",
+	"gpt-5.6-luna",
+	"gpt-5.6-sol",
+	"gemini-3.8-flash",
 ]
+// Terminals can't render the catalog's SVG provider icons, so rows carry a
+// provider badge instead — the TUI equivalent of the webapp's provider logos.
+const PROVIDER_LABELS: Array<[prefix: string, label: string]> = [
+	["meta/", "Meta"],
+	["deepseek/", "DeepSeek"],
+	["zai/", "Z.ai"],
+	["gpt-", "OpenAI"],
+	["gemini-", "Google"],
+]
+function providerLabel(modelId: string): string {
+	for (const [prefix, label] of PROVIDER_LABELS) {
+		if (modelId.startsWith(prefix)) return label
+	}
+	return ""
+}
 function displayRank(modelId: string): number {
 	for (let i = 0; i < DISPLAY_ORDER.length; i += 1) {
 		if (modelId === DISPLAY_ORDER[i] || modelId.startsWith(`${DISPLAY_ORDER[i]}-`)) return i
@@ -114,6 +129,7 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 				const isSelected = index === selected
 				const isCurrent = model.id === currentId
 				const locked = isLocked(model)
+			const providerTag = providerLabel(model.id)
 			// The 400k group header already carries the plan note, so only badge
 			// rows whose lock isn't explained by the context header.
 			const planRestricted =
@@ -140,7 +156,8 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 						<Box flexDirection="column">
 							<Text color={locked ? COLORS.dim : isSelected ? COLORS.accent : undefined}>
 								{isSelected ? "❯ " : "  "}
-								{index + 1}. {displayName(model)}
+								{index + 1}. {providerTag ? <Text color={COLORS.dim}>[{providerTag}] </Text> : null}
+								{displayName(model)}
 								{isCurrent && <Text color={COLORS.success}> ✓ current</Text>}
 								<Text color={COLORS.dim}> · {formatPrice(model)}</Text>
 								{showPlanBadge && <Text color={COLORS.dim}> · {planBadgeText}</Text>}
