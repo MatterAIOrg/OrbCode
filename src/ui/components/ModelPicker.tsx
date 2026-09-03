@@ -5,7 +5,7 @@ import { COLORS } from "../../branding.js"
 import { BUILTIN_AXON_MODELS, isEidoBaseAxonModel, isEidoProAxonModel, isLumenAxonModel, type AxonModel } from "../../api/models.js"
 import { PopoverBox } from "./PopoverBox.js"
 
-const VISIBLE_ROWS = 6
+const VISIBLE_ROWS = 12
 const CONTEXT_WINDOW_ORDER = [232000]
 // Display order: the default (GLM 5.3 Flash) first, then the rest.
 const DISPLAY_ORDER = [
