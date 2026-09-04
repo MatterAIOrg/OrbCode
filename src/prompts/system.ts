@@ -175,7 +175,7 @@ The \`list_files\` tool lists files and directories within a given directory. Us
 ## Parameters
 
 - \`path\` (required): Directory path to inspect, relative to the workspace.
-- \`recursive\` (optional, default false): Set true to list contents recursively; omit or false for top-level only.
+- \`recursive\` (optional, default false): Set true to list contents recursively; omit or false for top-level only. Must be explicitly provided (boolean or null) when calling this tool.
 
 ## Guidance
 

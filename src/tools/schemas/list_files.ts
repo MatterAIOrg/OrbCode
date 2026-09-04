@@ -19,7 +19,7 @@ export default {
 					description: "Set true to list contents recursively; omit or false to show only the top level",
 				},
 			},
-			required: ["path", "recursive"],
+			required: ["path"],
 			additionalProperties: false,
 		},
 	},
