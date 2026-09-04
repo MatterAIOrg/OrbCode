@@ -1,7 +1,7 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "6.8.0",
-  "description": "OrbCode CLI — agentic coding in your terminal, powered by Axon models by MatterAI",
+  "version": "6.8.1",
+  "description": "OrbCode CLI — agentic coding in your terminal, by MatterAI",
   "type": "module",
   "bin": {
     "orbcode": "./bin/orbcode.js"

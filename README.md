@@ -8,7 +8,7 @@
 [![github issues](https://img.shields.io/github/issues/MatterAIOrg/OrbCode?logo=github)](https://github.com/MatterAIOrg/OrbCode/issues)
 [![docs](https://img.shields.io/badge/docs-docs.matterai.so-purple)](https://docs.matterai.so/orbcode-cli/overview)
 
-Agentic coding in your terminal — powered by **Axon models by MatterAI**.
+Agentic coding in your terminal — by MatterAI
 
 > 📖 **Full documentation: <https://docs.matterai.so/orbcode-cli/overview>**
 
@@ -304,30 +304,30 @@ MatterAI gateway untouched.
 
 ## Slash commands
 
-| command      | action                                                                                                |
-| ------------ | ----------------------------------------------------------------------------------------------------- |
-| `/help`      | list commands                                                                                         |
-| `/attach`    | open the native file picker and add one or more attachments                                           |
-| `/model`     | scrollable model picker (`/model pro` / `/model code` / full id selects directly)                    |
-| `/theme`     | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
-| `/clear`     | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
-| `/new`       | start a fresh conversation/session with a clean slate                                                 |
-| `/resume`    | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
-| `/analytics` | open the MatterAI analytics dashboard (app.matterai.so/orbital) in the browser                        |
-| `/compact`   | summarize the conversation and replace history with the summary                                       |
-| `/tasks`     | print the current task list                                                                           |
-| `/status`    | version, model, account, gateway, context usage, cost, approval modes                                 |
-| `/usage`     | fetch plan usage                                                                                      |
-| `/weekly-reset` | reset weekly usage (Pro and above, once per monthly billing cycle)                                    |
-| `/init`      | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
-| `/create-skill <description>` | create or update a repository skill under `.orb/skills/<skill-name>/` from a plain-language prompt |
-| `/task`      | reference a previous session as context for the current task — opens a picker if no ID is given |
-| `/link`      | link other repos on your machine so changes here are checked against them (enter a folder path) |
-| `/mcp`       | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
-| `/login`     | start the browser sign-in flow                                                                        |
-| `/logout`    | remove the saved token                                                                                |
-| `/version`   | print the CLI version                                                                                 |
-| `/exit`      | quit                                                                                                  |
+| command                       | action                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `/help`                       | list commands                                                                                         |
+| `/attach`                     | open the native file picker and add one or more attachments                                           |
+| `/model`                      | scrollable model picker (`/model pro` / `/model code` / full id selects directly)                     |
+| `/theme`                      | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
+| `/clear`                      | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
+| `/new`                        | start a fresh conversation/session with a clean slate                                                 |
+| `/resume`                     | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
+| `/analytics`                  | open the MatterAI analytics dashboard (app.matterai.so/orbital) in the browser                        |
+| `/compact`                    | summarize the conversation and replace history with the summary                                       |
+| `/tasks`                      | print the current task list                                                                           |
+| `/status`                     | version, model, account, gateway, context usage, cost, approval modes                                 |
+| `/usage`                      | fetch plan usage                                                                                      |
+| `/weekly-reset`               | reset weekly usage (Pro and above, once per monthly billing cycle)                                    |
+| `/init`                       | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
+| `/create-skill <description>` | create or update a repository skill under `.orb/skills/<skill-name>/` from a plain-language prompt    |
+| `/task`                       | reference a previous session as context for the current task — opens a picker if no ID is given       |
+| `/link`                       | link other repos on your machine so changes here are checked against them (enter a folder path)       |
+| `/mcp`                        | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
+| `/login`                      | start the browser sign-in flow                                                                        |
+| `/logout`                     | remove the saved token                                                                                |
+| `/version`                    | print the CLI version                                                                                 |
+| `/exit`                       | quit                                                                                                  |
 
 ## Keyboard shortcuts
 
@@ -411,8 +411,8 @@ settings.json > user settings.json > config.json.
 Sessions are stored in `~/.orbcode/sessions/<id>.json` and power `/resume`
 and `--resume <id>`.
 
-| env var               | effect                                                            |
-| --------------------- | ----------------------------------------------------------------- |
+| env var                | effect                                                            |
+| ---------------------- | ----------------------------------------------------------------- |
 | `MATTERAI_TOKEN`       | auth token (overrides everything)                                 |
 | `MATTERAI_API_KEY`     | same as `apiKey` in settings.json                                 |
 | `MATTERAI_BASE_URL`    | same as `baseUrl` in settings.json                                |
@@ -467,11 +467,24 @@ shell commands from a repo — see [Security](https://github.com/MatterAIOrg/Orb
     "PreToolUse": [
       {
         "matcher": "execute_command",
-        "hooks": [{ "type": "command", "command": "~/.orbcode/hooks/guard.sh", "timeout": 30 }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.orbcode/hooks/guard.sh",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "echo \"Git branch: $(git branch --show-current 2>/dev/null)\"" }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"Git branch: $(git branch --show-current 2>/dev/null)\""
+          }
+        ]
+      }
     ]
   }
 }
@@ -485,17 +498,17 @@ seconds, default 10).
 
 ### Events at a glance
 
-| event              | when it fires                                  | matcher tests |
-| ------------------ | ---------------------------------------------- | ------------- |
-| `SessionStart`     | first turn of a session (or after `--resume`)  | `source`      |
-| `UserPromptSubmit` | before each prompt is sent to the model        | —             |
-| `PreToolUse`       | before a tool runs (and before its approval)   | tool name     |
-| `PostToolUse`      | after a tool returns                           | tool name     |
-| `Notification`     | when OrbCode needs permission or a follow-up   | —             |
-| `Stop`             | when the model is about to finish the turn     | —             |
-| `PreCompact`       | before `/compact` summarizes the conversation  | `trigger`     |
-| `SessionEnd`       | on quit, `/logout`, or end of a `-p` run       | `reason`      |
-| `SubagentStop`     | reserved; OrbCode has no subagents yet         | —             |
+| event              | when it fires                                 | matcher tests |
+| ------------------ | --------------------------------------------- | ------------- |
+| `SessionStart`     | first turn of a session (or after `--resume`) | `source`      |
+| `UserPromptSubmit` | before each prompt is sent to the model       | —             |
+| `PreToolUse`       | before a tool runs (and before its approval)  | tool name     |
+| `PostToolUse`      | after a tool returns                          | tool name     |
+| `Notification`     | when OrbCode needs permission or a follow-up  | —             |
+| `Stop`             | when the model is about to finish the turn    | —             |
+| `PreCompact`       | before `/compact` summarizes the conversation | `trigger`     |
+| `SessionEnd`       | on quit, `/logout`, or end of a `-p` run      | `reason`      |
+| `SubagentStop`     | reserved; OrbCode has no subagents yet        | —             |
 
 ### How a hook talks back
 
@@ -614,7 +627,11 @@ happens automatically when they expire. For M2M grants (`client_credentials`,
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/me/projects"
+      ]
     },
     "github": {
       "type": "http",
@@ -800,6 +817,7 @@ when_to_use: the task involves writing or reviewing Go code
 # Go style skill
 
 When writing Go in this project:
+
 - Use `errors.Join` for multi-error aggregation
 - Prefer table-driven tests
 - ...
@@ -962,11 +980,11 @@ Active in the CLI (aligned with the extension's native tools, with CLI-specific 
 | `multi_file_edit`          | batched edits grouped per file, per-edit OK/FAILED results                                   |
 | `file_write`               | creates parent dirs, full-content writes                                                     |
 | `list_files`               | optional recursive, ignores node_modules/.git/build dirs, 800-entry cap                      |
-| `search_files`             | FFF-first Rust-regex search, compact pagination, and bundled/system ripgrep fallback          |
+| `search_files`             | FFF-first Rust-regex search, compact pagination, and bundled/system ripgrep fallback         |
 | `execute_command`          | user's shell, 120s timeout, 30k output cap, optional cwd                                     |
 | `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
 | `update_todo_list`         | drives the TUI todo panel                                                                    |
-| `use_skill`                | loads standalone or namespaced plugin skill instructions                                    |
+| `use_skill`                | loads standalone or namespaced plugin skill instructions                                     |
 | `ask_followup_question`    | interactive menu in the TUI                                                                  |
 | `attempt_completion`       | ends the turn with a completion card                                                         |
 | `mcp__<server>__<tool>`    | any tool exposed by a connected MCP server (see [MCP servers](#mcp-servers))                 |
