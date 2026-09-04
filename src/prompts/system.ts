@@ -1,16 +1,16 @@
-import * as os from "node:os"
+import * as os from "node:os";
 
-import { getShell } from "../utils/shell.js"
-import type { MemoryFile } from "../memory/types.js"
-import { renderMemorySection } from "../memory/loader.js"
-import type { Skill } from "../skills/types.js"
-import { renderSkillCatalog } from "../skills/loader.js"
+import { getShell } from "../utils/shell.js";
+import type { MemoryFile } from "../memory/types.js";
+import { renderMemorySection } from "../memory/loader.js";
+import type { Skill } from "../skills/types.js";
+import { renderSkillCatalog } from "../skills/loader.js";
 
 // Role definition and tool guide ported verbatim from the Orbital extension
 // (agent mode roleDefinition + applyDiffToolDescription). Only the system
 // information section is adapted from the IDE to the CLI environment.
 
-const roleDefinition = `You are OrbCode AI coding assistant, powered by axon models by MatterAI. You operate in OrbCode CLI.
+const roleDefinition = `You are OrbCode, AI coding assistant, by MatterAI. You operate in OrbCode CLI.
 
 You are pair programming with a USER to solve their coding task. Each time the USER sends a message, we may automatically attach some information about their current state, such as their working directory, project file structure, git status, and more. This information may or may not be relevant to the coding task, it is up for you to decide.
 
@@ -70,7 +70,7 @@ Your system prompt may include an "Available Skills" section listing skills by n
 
 Tools whose names start with \`mcp__\` are provided by external MCP servers the user has configured. They work exactly like native tools — call them with the standard tool call format when the task requires their capabilities. Their descriptions and parameter schemas come from the MCP servers.
 
-Use the update_todo_list tool to create and maintain a TODO list for any multi-step task (3 or more steps), keeping statuses up to date as you work. For trivial tasks that need only one or two steps, skip the todo list and just do the work.`
+Use the update_todo_list tool to create and maintain a TODO list for any multi-step task (3 or more steps), keeping statuses up to date as you work. For trivial tasks that need only one or two steps, skip the todo list and just do the work.`;
 
 const toolGuide = `
 Common tool calls and explanations
@@ -239,36 +239,41 @@ Replace the entire TODO list with an updated checklist reflecting the current st
 - Keep the todo list AHEAD of the work, not behind it: it is a steering tool, not a changelog. Lay out upcoming steps before you start them instead of only recording steps after they are finished.
 
 IMPORTANT: Use attempt_completion tool when you have completed the task. This signals that you are done.
-`
+`;
 
 function getSystemInfoSection(cwd: string): string {
-	return `# System Information
+  return `# System Information
 
 - Operating System: ${process.platform === "darwin" ? `macOS ${os.release()}` : `${process.platform} ${os.release()}`}
 - Default Shell: ${getShell()}
 - Home Directory: ${os.homedir()}
 - Current Workspace Directory: ${cwd}
 
-The Current Workspace Directory is the directory the user launched OrbCode CLI from, and is therefore the default directory for all tool operations. Commands run in the current workspace directory unless a different cwd is passed; changing directories inside a command does not modify the workspace directory. When the user initially gives you a task, a listing of filepaths in the current workspace directory will be included in the Environment Details section. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current workspace directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.`
+The Current Workspace Directory is the directory the user launched OrbCode CLI from, and is therefore the default directory for all tool operations. Commands run in the current workspace directory unless a different cwd is passed; changing directories inside a command does not modify the workspace directory. When the user initially gives you a task, a listing of filepaths in the current workspace directory will be included in the Environment Details section. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current workspace directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.`;
 }
 
 export interface SystemPromptOptions {
-	/** AGENTS.md memory files to inject (lowest precedence first). */
-	memoryFiles?: MemoryFile[]
-	/** Skills catalog to advertise to the model. */
-	skills?: Map<string, Skill>
+  /** AGENTS.md memory files to inject (lowest precedence first). */
+  memoryFiles?: MemoryFile[];
+  /** Skills catalog to advertise to the model. */
+  skills?: Map<string, Skill>;
 }
 
-export function buildSystemPrompt(cwd: string, options: SystemPromptOptions = {}): string {
-	const memorySection = options.memoryFiles ? renderMemorySection(options.memoryFiles) : ""
-	const skillSection = options.skills ? renderSkillCatalog(options.skills) : ""
-	return [
-		roleDefinition,
-		toolGuide,
-		getSystemInfoSection(cwd),
-		memorySection,
-		skillSection,
-	]
-		.filter(Boolean)
-		.join("\n\n")
+export function buildSystemPrompt(
+  cwd: string,
+  options: SystemPromptOptions = {},
+): string {
+  const memorySection = options.memoryFiles
+    ? renderMemorySection(options.memoryFiles)
+    : "";
+  const skillSection = options.skills ? renderSkillCatalog(options.skills) : "";
+  return [
+    roleDefinition,
+    toolGuide,
+    getSystemInfoSection(cwd),
+    memorySection,
+    skillSection,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

@@ -13,7 +13,7 @@ export const VERSION = (() => {
     return "0.0.0";
   }
 })();
-export const TAGLINE = "powered by Axon models by MatterAI";
+export const TAGLINE = "by MatterAI";
 
 // Semantic color tokens. The OpenTUI primitives resolve these against the
 // active OrbCode theme, so components never inherit terminal-defined colors.

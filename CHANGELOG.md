@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.1] - 2026-09-04
+
 ### Added
 
 - **Dynamic model catalog synchronization.** OrbCode now fetches the active model catalog dynamically from the backend (`/v1/models`) on startup and when refreshing usage (`fetchDynamicModels`), registering returned OSS models into `BUILTIN_AXON_MODELS` and `AXON_MODELS` so newly added models appear in the picker without requiring hardcoded updates. Models the backend retires are pruned after a successful fetch (empty or failed responses never wipe the offline fallback), and the catalog's `iconUrl` / `costMultiplier` fields are captured on each model.
@@ -31,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model selection auto-resets to the new default on next launch, and a
   requested Axon id (`--model` / `MATTERAI_MODEL`) now warns and falls back
   to the default.
+- **Model picker visible rows doubled to 12.** The scrollable model picker now shows 12 rows instead of 6 for better catalog visibility.
+- **Rebranded tagline and descriptions.** Removed "powered by Axon models by MatterAI" from the CLI description, branding tagline, and system prompt role definition; now reads "by MatterAI".
 
 ## [6.8.0] - 2026-08-28
 
