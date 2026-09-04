@@ -3,10 +3,11 @@
  *
  * Models occasionally emit almost-JSON: unquoted strings (`"file_pattern": *.tsx`),
  * unquoted keys, single quotes, trailing commas, Python literals (`True`/`None`),
- * comments, or output truncated mid-call. Failing the call outright burns a
- * round trip, and weaker models repeat the same mistake on retry. This module
- * repairs the common cases and reports whether it intervened so the agent can
- * tell the model which arguments actually ran.
+ * comments, XML-style tags interleaved where punctuation belongs, keys with
+ * dropped closing quotes, or output truncated mid-call. Failing the call
+ * outright burns a round trip, and weaker models repeat the same mistake on
+ * retry. This module repairs the common cases and reports whether it
+ * intervened so the agent can tell the model which arguments actually ran.
  */
 
 export interface ParsedToolCallArguments {
@@ -67,6 +68,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Characters that always terminate a bare (unquoted) token. */
 const BARE_TOKEN_TERMINATORS = new Set([",", "{", "}", "[", "]", '"', "'"]);
 
+/** XML-style tags (`<longcat_arg_key>`) some models interleave into
+ * arguments where JSON punctuation belongs. */
+const XML_TAG_PATTERN = /<\/?[A-Za-z_][A-Za-z0-9_.-]*>/g;
+
 /** Matching closer for each opening bracket. */
 const CLOSERS = new Map([
   ["{", "}"],
@@ -121,6 +126,14 @@ function formatBareValue(token: string): string {
   return quoteAsJsonString(token);
 }
 
+/** Index at which a broken key-position string should split: the first colon,
+ * else the first whitespace. -1 (or 0) when the content looks like a plain key. */
+function firstKeySplit(content: string): number {
+  const colonAt = content.indexOf(":");
+  if (colonAt > 0) return colonAt;
+  return content.search(/\s/);
+}
+
 /** Scan a bare (unquoted) token starting at `start`. In value position the
  * token may contain spaces and colons (`git status`, `https://…`); in key
  * position it ends at the first whitespace or colon. */
@@ -146,7 +159,11 @@ function scanBareToken(
  * Braceless object bodies are wrapped so `path: "src"` parses as an object.
  */
 function repairJsonSource(input: string): string | null {
-  const source = /^[[{]/.test(input) ? input : `{${input}}`;
+  // Strip XML-style tags first: some models interleave them where JSON
+  // punctuation belongs. Valid JSON never reaches this path, so legitimate
+  // `<` usage in strings is unaffected.
+  const stripped = input.replace(XML_TAG_PATTERN, "");
+  const source = /^[[{]/.test(stripped) ? stripped : `{${stripped}}`;
 
   let out = "";
   let index = 0;
@@ -160,9 +177,25 @@ function repairJsonSource(input: string): string | null {
 
     if (char === '"') {
       const end = findStringEnd(source, index, '"');
+      const content =
+        end === -1 ? source.slice(index + 1) : source.slice(index + 1, end);
+      if (!expectValue) {
+        // A key-position string containing a colon or whitespace means the
+        // model dropped the key's closing quote (`"offset: 600`) or put an
+        // XML-style tag where the colon belonged. Split at the first colon
+        // (else whitespace): the head becomes the key, the tail is re-scanned
+        // as the value.
+        const splitAt = firstKeySplit(content);
+        if (splitAt > 0) {
+          out += `${quoteAsJsonString(content.slice(0, splitAt))}:`;
+          index += 1 + splitAt + 1;
+          expectValue = true;
+          continue;
+        }
+      }
       if (end === -1) {
         // Truncated mid-string: close it and stop scanning.
-        out += quoteAsJsonString(source.slice(index + 1));
+        out += quoteAsJsonString(content);
         index = source.length;
       } else {
         out += source.slice(index, end + 1);

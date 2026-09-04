@@ -882,6 +882,17 @@ export function App({
       setSettings(updated);
       saveSettings(updated);
       agentRef.current?.setModel(modelId);
+      setRows((prev) => {
+        const headerIndex = prev.findIndex((row) => row.kind === "header");
+        if (headerIndex === -1) return prev;
+        const updatedHeader = {
+          ...prev[headerIndex]!,
+          modelName: getModel(modelId).name,
+        };
+        const next = [...prev];
+        next[headerIndex] = updatedHeader;
+        return next;
+      });
       pushRow({
         kind: "info",
         text: `Model switched to ${getModel(modelId).name}`,

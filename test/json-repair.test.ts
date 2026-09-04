@@ -110,6 +110,40 @@ test("repairs nested structures with bare tokens", () => {
   });
 });
 
+test("strips XML-style tags models interleave into arguments", () => {
+  const raw =
+    '{"files": [{"file_path": "/Users/x/project/src/ui/App.tsx", "offset</longcat_arg_key>\n    <longcat_arg_value>600, "limit": 40}';
+  const parsed = parseToolCallArguments(raw);
+  assert.equal(parsed?.repaired, true);
+  assert.deepEqual(parsed?.args, {
+    files: [{ file_path: "/Users/x/project/src/ui/App.tsx", offset: 600, limit: 40 }],
+  });
+
+  // Tags inside a properly quoted string are legitimate content: the JSON is
+  // valid, so it passes through strict parsing untouched.
+  const inline = parseToolCallArguments(
+    '{"path": "src", "regex": "a</longcat_arg_value>b"}',
+  );
+  assert.equal(inline?.repaired, false);
+  assert.deepEqual(inline?.args, { path: "src", regex: "a</longcat_arg_value>b" });
+});
+
+test("recovers keys with dropped closing quotes", () => {
+  const colon = parseToolCallArguments(
+    '{"files": [{"file_path": "a.ts", "offset: 600, "limit": 40}',
+  );
+  assert.equal(colon?.repaired, true);
+  assert.deepEqual(colon?.args, {
+    files: [{ file_path: "a.ts", offset: 600, limit: 40 }],
+  });
+
+  const dangling = parseToolCallArguments('{"path: "src"}');
+  assert.deepEqual(dangling?.args, { path: "src" });
+
+  const truncated = parseToolCallArguments('{"offset: 600}');
+  assert.deepEqual(truncated?.args, { offset: 600 });
+});
+
 test("returns null for unrecoverable input", () => {
   assert.equal(parseToolCallArguments("just some prose"), null);
   assert.equal(parseToolCallArguments('"a bare string"'), null);
