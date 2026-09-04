@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Malformed tool-call JSON is now repaired instead of rejected.** Models that emit almost-JSON — unquoted strings (`"file_pattern": *.tsx`), unquoted keys, single quotes, trailing commas, Python literals (`True`/`None`), comments, or output truncated mid-call — no longer burn a round trip on a corrective error (weaker models repeated the same mistake on retry). A best-effort repair pass (`src/utils/jsonRepair.ts`) recovers the intended arguments, the tool executes with them, and a note on the tool result tells the model what actually ran; only truly unrecoverable arguments still return the corrective error. Session replay and the AI SDK history path use the same repair so the model sees its own repaired calls. Covered by `test/json-repair.test.ts` (`npm run test:json-repair`).
+- **`search_files` numeric limits clamp instead of failing.** `max_results` and `context_lines` values that are fractional, out of range, or numeric strings now clamp to the nearest bound (or fall back to the default when non-numeric) instead of failing the whole search — e.g. `context_lines: 3` runs with 2.
+
 ## [6.8.2] - 2026-09-04
 
 ### Fixed

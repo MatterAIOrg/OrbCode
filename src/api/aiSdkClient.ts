@@ -17,6 +17,7 @@ import {
 } from "ai"
 import type OpenAI from "openai"
 
+import { parseToolCallArguments } from "../utils/jsonRepair.js"
 import { REASONING_DETAILS_FIELD, type LLMClient } from "./llmClient.js"
 
 // `ReasoningPart` isn't re-exported from "ai"; derive it from the exported
@@ -300,11 +301,9 @@ function contentToText(content: unknown): string {
 
 function safeParseJson(raw: string | undefined): unknown {
 	if (!raw) return {}
-	try {
-		return JSON.parse(raw)
-	} catch {
-		return {}
-	}
+	// Repair malformed arguments so history replay shows the model the same
+	// arguments the agent actually executed.
+	return parseToolCallArguments(raw)?.args ?? {}
 }
 
 function asError(error: unknown): Error {

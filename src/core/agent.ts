@@ -36,6 +36,7 @@ import { loadMemoryFiles } from "../memory/loader.js"
 import { loadSkills } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
 import { unifiedDiff } from "../utils/diff.js"
+import { parseToolCallArguments } from "../utils/jsonRepair.js"
 import {
 	countDiffLines,
 	detectGitRepo,
@@ -200,6 +201,14 @@ function contentToText(content: unknown): string {
 		.join("")
 }
 
+/** Note appended to a tool result whose arguments needed JSON repair, so the
+ * model sees what actually ran instead of repeating the same malformed call. */
+function jsonRepairNote(toolName: string, args: Record<string, unknown>): string {
+	const interpreted = JSON.stringify(args) ?? "{}"
+	const preview = interpreted.length > 500 ? `${interpreted.slice(0, 500)}…` : interpreted
+	return `[OrbCode] The ${toolName} arguments were malformed JSON and were auto-repaired before execution. Interpreted arguments: ${preview}. Emit strictly valid JSON in future tool calls — every key and string value must be double-quoted.`
+}
+
 function formatResultPreview(toolName: string, text: string): string {
 	const visibleText = toolName === "search_files" ? stripSearchPageMetadataForDisplay(text) : text
 	if (!visibleText) return ""
@@ -291,12 +300,9 @@ function legacyTranscript(messages: OpenAI.Chat.ChatCompletionMessageParam[]): S
 			if (text.trim()) entries.push({ kind: "assistant", text })
 			for (const call of message.tool_calls ?? []) {
 				if (call.type !== "function") continue
-				let args: Record<string, unknown> = {}
-				try {
-					args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>
-				} catch {
-					// Keep an empty argument object; the call name is still useful history.
-				}
+				// Repair when possible so old sessions with malformed arguments
+				// still produce useful summaries.
+				const args = parseToolCallArguments(call.function.arguments)?.args ?? {}
 				if (call.function.name === "attempt_completion") {
 					entries.push({ kind: "completion", text: String(args.result ?? "") })
 					continue
@@ -1207,15 +1213,13 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	private async handleToolCall(toolCall: PendingToolCall): Promise<string> {
 		const { onEvent, requestApproval, requestFollowup } = this.options.callbacks
 
-		let args: Record<string, unknown>
-		try {
-			args = toolCall.arguments ? JSON.parse(toolCall.arguments) : {}
-		} catch (error) {
+		const parsed = parseToolCallArguments(toolCall.arguments)
+		if (!parsed) {
 			// Recover instead of dead-ending: the error result carries the raw
 			// arguments so the model can re-issue the call with valid, complete JSON.
 			const rawArgs = toolCall.arguments.trim()
 			const preview = rawArgs.length > 500 ? `${rawArgs.slice(0, 500)}...(truncated)` : rawArgs
-			const message = `Malformed tool call JSON for ${toolCall.name}: ${(error as Error).message}. The raw arguments were:\n\n${preview}\n\nPlease re-issue the tool call with valid, complete JSON arguments.`
+			const message = `Malformed tool call JSON for ${toolCall.name}: the arguments could not be parsed or repaired. The raw arguments were:\n\n${preview}\n\nPlease re-issue the tool call with valid, complete JSON arguments.`
 			onEvent({
 				type: "tool-end",
 				id: toolCall.id,
@@ -1226,10 +1230,23 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			})
 			return message
 		}
+		let args = parsed.args
+		// A repair surfaces twice: a transcript event for the user, and a note on
+		// the tool result so the model sees the arguments that actually ran.
+		const repairNote = parsed.repaired ? jsonRepairNote(toolCall.name, args) : ""
+		if (parsed.repaired) {
+			onEvent({
+				type: "system",
+				message: `Repaired malformed JSON arguments for ${toolCall.name}.`,
+				isError: false,
+			})
+		}
 
 		if (toolCall.name === "attempt_completion") {
 			onEvent({ type: "completion", result: String(args.result ?? "") })
-			return "The user has been shown the completion result."
+			return repairNote
+				? `The user has been shown the completion result.\n\n${repairNote}`
+				: "The user has been shown the completion result."
 		}
 
 		if (toolCall.name === "ask_followup_question") {
@@ -1245,7 +1262,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			}
 			const answer = await requestFollowup(question, suggestions)
 			this.transcript.push({ kind: "user", text: answer })
-			return `<answer>\n${answer}\n</answer>`
+			return `<answer>\n${answer}\n</answer>${repairNote ? `\n\n${repairNote}` : ""}`
 		}
 
 		// PreToolUse runs before approval/execution. It can block the call,
@@ -1342,6 +1359,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		// model. PreToolUse additionalContext is delivered here too.
 		let resultText = result.text
 		const extras: string[] = []
+		if (repairNote) extras.push(repairNote)
 		if (preContext) extras.push(wrapHookContext("PreToolUse", preContext))
 		if (this.hooks.hasHooks("PostToolUse")) {
 			const post = await this.hooks.run("PostToolUse", {
