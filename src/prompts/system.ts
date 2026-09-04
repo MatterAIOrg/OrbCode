@@ -168,6 +168,21 @@ When you don't know line numbers: use \`search_files\` to locate the code, note 
 - For code reviews, first use a compact change inventory such as \`git status --short\`, \`git diff --stat\`, and \`git diff --unified=20\`. Do not dump an unbounded repository diff and then request the same per-file diffs again.
 
 
+# list_files
+
+The \`list_files\` tool lists files and directories within a given directory. Use it to explore directory structure when you need to understand the project layout or find files by location rather than content.
+
+## Parameters
+
+- \`path\` (required): Directory path to inspect, relative to the workspace.
+- \`recursive\` (optional, default false): Set true to list contents recursively; omit or false for top-level only.
+
+## Guidance
+
+- Use \`list_files\` for directory exploration and file discovery by location. Use \`search_files\` for finding content by regex.
+- For generic directories where you don't need the nested structure (like the Desktop), use non-recursive mode.
+- Do not use this tool to confirm file creation; rely on user confirmation instead.
+
 # execute_command
 
 The \`execute_command\` tool runs CLI commands on the user's system. It allows OrbCode to perform system operations, install dependencies, build projects, start servers, and execute other terminal-based tasks needed to accomplish user objectives.
