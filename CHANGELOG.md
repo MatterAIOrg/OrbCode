@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.2] - 2026-09-04
+
+### Fixed
+
+- **Update check now invalidates stale cache when the running version is newer than the cached `latest`.** Previously, a cached `latest` older than the running version (e.g. after `npm install -g` from another terminal) would hide a genuinely newer release until the 1-hour TTL expired. The cache is now treated as stale whenever `cached.latest < current`, forcing an immediate re-fetch.
+
 ## [6.8.1] - 2026-09-04
 
 ### Added

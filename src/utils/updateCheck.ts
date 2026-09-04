@@ -119,7 +119,15 @@ export async function getUpdateInfo(
   current: string,
 ): Promise<UpdateInfo> {
   const cached = readCache();
-  if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
+  const cacheValid =
+    cached &&
+    Date.now() - cached.checkedAt < CACHE_TTL_MS &&
+    // A cached `latest` older than the running version is stale by
+    // definition — the user updated through some path that didn't clear
+    // the cache (e.g. `npm install -g` from another terminal). Trusting it
+    // would hide the *real* newer version on npm.
+    (cached.latest === null || compareVersions(cached.latest, current) >= 0);
+  if (cacheValid) {
     return makeResult(current, cached.latest);
   }
   const latest = await fetchLatestNpmVersion(pkg);
