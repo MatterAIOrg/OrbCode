@@ -115,14 +115,37 @@ test("binds opaque cursors to the originating search", () => {
 	assert.throws(() => parseSearchCursor("none", fingerprint), /search is complete/)
 })
 
-test("rejects fractional result and context limits", async () => {
+test("clamps fractional, out-of-range, and string limits instead of failing", async () => {
 	const cwd = await fixture()
-	const result = await searchFiles(
+	const context = { cwd, token: "", getTodos: () => "", setTodos: () => {} }
+
+	const fractional = await searchFiles(
 		{ path: "src", regex: "needle", file_pattern: "*.ts", cursor: null, max_results: 1.5, context_lines: 0 },
-		{ cwd, token: "", getTodos: () => "", setTodos: () => {} },
+		context,
 	)
-	assert.equal(result.isError, true)
-	assert.match(result.text, /max_results must be an integer/)
+	assert.equal(fractional.isError, undefined)
+	assert.match(fractional.text, /^Matches: 1$/m)
+
+	const overflow = await searchFiles(
+		{ path: "src", regex: "needle", file_pattern: "*.ts", cursor: null, max_results: 500, context_lines: 9 },
+		context,
+	)
+	assert.equal(overflow.isError, undefined)
+	assert.match(overflow.text, /^Matches: 2$/m)
+
+	const numericStrings = await searchFiles(
+		{ path: "src", regex: "needle", file_pattern: "*.ts", cursor: null, max_results: "1", context_lines: "2" },
+		context,
+	)
+	assert.equal(numericStrings.isError, undefined)
+	assert.match(numericStrings.text, /^Matches: 1$/m)
+
+	const nonNumeric = await searchFiles(
+		{ path: "src", regex: "needle", file_pattern: "*.ts", cursor: null, max_results: "many", context_lines: null },
+		context,
+	)
+	assert.equal(nonNumeric.isError, undefined)
+	assert.match(nonNumeric.text, /^Matches: 2$/m)
 })
 
 test("ripgrep preserves ignores, normalized patterns, and path-relative nested globs", async () => {

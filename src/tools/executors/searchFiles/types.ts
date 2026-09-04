@@ -71,16 +71,18 @@ export function normalizeSearchFilePattern(value: unknown): string | undefined {
 	return pattern.startsWith(".") && !pattern.includes("*") ? `*${pattern}` : pattern
 }
 
-function boundedInteger(value: unknown, name: string, fallback: number, min: number, max: number): number {
+/** Coerce a model-supplied integer into [min, max]. Absent, empty, or
+ * non-numeric values fall back to `fallback`; fractional values truncate;
+ * out-of-range values clamp to the nearest bound. Result-shaping limits
+ * degrade gracefully instead of failing the whole search. */
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
 	if (value == null || value === "" || (typeof value === "string" && value.trim().toLowerCase() === "null")) {
 		return fallback
 	}
 
 	const parsed = typeof value === "number" ? value : Number(value)
-	if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
-		throw new Error(`${name} must be an integer from ${min} to ${max}, or null`)
-	}
-	return parsed
+	if (!Number.isFinite(parsed)) return fallback
+	return Math.min(max, Math.max(min, Math.trunc(parsed)))
 }
 
 export function createSearchFingerprint(directoryPath: string, regex: string, filePattern?: string): string {
@@ -123,8 +125,8 @@ export function serializeSearchCursor(cursor: SearchCursor | null): string | nul
 export function parseSearchOptions(args: Record<string, unknown>, fingerprint: string): SearchOptions {
 	return {
 		cursor: parseSearchCursor(args.cursor, fingerprint),
-		maxResults: boundedInteger(args.max_results, "max_results", DEFAULT_SEARCH_RESULTS, 1, MAX_SEARCH_RESULTS),
-		contextLines: boundedInteger(args.context_lines, "context_lines", 0, 0, MAX_SEARCH_CONTEXT_LINES),
+		maxResults: boundedInteger(args.max_results, DEFAULT_SEARCH_RESULTS, 1, MAX_SEARCH_RESULTS),
+		contextLines: boundedInteger(args.context_lines, 0, 0, MAX_SEARCH_CONTEXT_LINES),
 		fingerprint,
 	}
 }
