@@ -64,7 +64,7 @@ export function Spinner({ label, showTip = false }: { label: string; showTip?: b
 				{FRAMES[frame]} {label}
 				<Text color={COLORS.dim}> ({seconds}s · esc to interrupt)</Text>
 			</Text>
-			{tipVisible && <Text color={COLORS.dim}>└── TIP: {tip}</Text>}
+			{tipVisible && <Text color={COLORS.info}>└── TIP: {tip}</Text>}
 		</Box>
 	)
 }
