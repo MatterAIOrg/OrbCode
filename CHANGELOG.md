@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **TIP text under the spinner now renders in an info-purple color** (`#C792EA` dark / `#7C4DFF` light) so it's clearly distinct from the thinking spinner. Added a new `info` theme token.
-
 ## [6.8.4] - 2026-09-05
 
 ### Fixed
