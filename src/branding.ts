@@ -29,6 +29,7 @@ export const COLORS = {
   user: "$orbcode.user",
   inputBorder: "$orbcode.inputBorder",
   inputBorderInactive: "$orbcode.inputBorderInactive",
+  info: "$orbcode.info",
   diffAddedBackground: "$orbcode.diffAddedBackground",
   diffRemovedBackground: "$orbcode.diffRemovedBackground",
 } as const;

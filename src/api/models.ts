@@ -1,5 +1,25 @@
 // The Axon models served by the MatterAI backend. Ported from the
 // Orbital extension's model registry (kilocode-models.ts).
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+
+/**
+ * Read the currently selected model id from disk without triggering the full
+ * settings-load side effects (env application, custom-model registration).
+ * Used by fetchDynamicModels to avoid pruning the user's selection.
+ */
+function loadSettingsModel(): string {
+  try {
+    const dir = process.env.MATTERAI_CONFIG_DIR || path.join(os.homedir(), ".orbcode")
+    const raw = fs.readFileSync(path.join(dir, "config.json"), "utf8")
+    const parsed = JSON.parse(raw)
+    return typeof parsed.model === "string" ? parsed.model : ""
+  } catch {
+    return ""
+  }
+}
+
 /**
  * Reasoning-effort hint forwarded to providers that support it (e.g. Anthropic
  * `output_config.effort`). Ignored by providers that don't.
@@ -447,11 +467,13 @@ export async function fetchDynamicModels(
     // Reconcile only when the backend returned a usable catalog — an empty or
     // failed response must never wipe the offline fallback. Retired models
     // (e.g. a version bump the static fallback still lists) are pruned so they
-    // don't linger in the picker next to their replacement.
+    // don't linger in the picker next to their replacement. The user's current
+    // selection is never pruned — a transient backend gap shouldn't swap it.
     if (fetched.length > 0) {
       const fetchedIds = new Set(fetched.map((model) => model.id));
+      const currentModel = loadSettingsModel()
       for (const id of managedModelIds) {
-        if (id === DEFAULT_MODEL_ID || fetchedIds.has(id)) continue;
+        if (id === DEFAULT_MODEL_ID || fetchedIds.has(id) || id === currentModel) continue;
         delete BUILTIN_AXON_MODELS[id];
         delete AXON_MODELS[id];
       }

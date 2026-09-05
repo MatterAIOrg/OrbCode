@@ -27,6 +27,7 @@ export interface OrbCodeTheme {
   user: string;
   inputBorder: string;
   inputBorderInactive: string;
+  info: string;
   diffAddedBackground: string;
   diffRemovedBackground: string;
 }
@@ -47,6 +48,7 @@ export const DARK_THEME: OrbCodeTheme = {
   user: "#A5F3F6",
   inputBorder: "#535353",
   inputBorderInactive: "#52646C",
+  info: "#C792EA",
   diffAddedBackground: "#3FA2660D",
   diffRemovedBackground: "#E346710D",
 };
@@ -67,6 +69,7 @@ export const LIGHT_THEME: OrbCodeTheme = {
   user: "#293c3d",
   inputBorder: "#535353",
   inputBorderInactive: "#91A4AC",
+  info: "#7C4DFF",
   diffAddedBackground: "#3FA2660D",
   diffRemovedBackground: "#E346710D",
 };
