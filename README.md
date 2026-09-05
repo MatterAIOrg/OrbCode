@@ -17,7 +17,7 @@ models, the same native tool schemas, the same MatterAI auth backend — rebuilt
 scratch as an interactive TUI with streaming chat, live thinking display, tool
 activity rows, edit/command approvals, and todo tracking.
 
-![OrbCode CLI screenshot](assets/orbcode-screenshot.webp)
+![OrbCode CLI screenshot](https://res.cloudinary.com/dxvbskvxm/image/upload/v1788594608/Screenshot_2026-09-05_at_13.19.44_nbcyqq.png)
 
 ---
 
