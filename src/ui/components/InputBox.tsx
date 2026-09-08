@@ -33,10 +33,12 @@ interface InputBoxProps {
 const MAX_FILE_MATCHES = 8
 const POPUP_PADDING_X = 2
 
-// Pastes at least this long are collapsed into a paste chip shown above the
+// Pastes at least this long or with multiple lines are collapsed into a paste chip shown above the
 // prompt. The full text is merged back into the message at the recorded cursor
 // position on submit, as if the text had been pasted there directly.
-const PASTE_CHIP_THRESHOLD = 500
+const PASTE_CHIP_THRESHOLD = 200
+const PASTE_CHIP_LINE_THRESHOLD = 3
+const MAX_PROMPT_HEIGHT = 8
 
 // Two newlines separate a merged chip's text from the surrounding prompt text.
 const PASTE_CHIP_SEPARATOR = "\n\n"
@@ -340,11 +342,13 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 
 	// Large text pastes become a chip; smaller ones are inserted inline.
 	const insertPaste = (input: string) => {
-		if (input.length >= PASTE_CHIP_THRESHOLD) {
-			addPasteChip(input.replace(/\r\n?/g, "\n"), cursorRef.current)
+		const normalized = input.replace(/\r\n?/g, "\n")
+		const lineCount = normalized.split("\n").length
+		if (normalized.length >= PASTE_CHIP_THRESHOLD || lineCount >= PASTE_CHIP_LINE_THRESHOLD) {
+			addPasteChip(normalized, cursorRef.current)
 			return
 		}
-		insertPastedText(input)
+		insertPastedText(normalized)
 	}
 
 	const handlePaste = (input: string, kind?: "text" | "binary" | "unknown") => {
@@ -525,14 +529,57 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	// Border (2) + wrapped prompt content. The prompt glyph occupies two
 	// columns beside the editable text, while border and padding consume four.
 	const editableWidth = Math.max(1, width - 6)
-	const promptHeight = plainDisplay.split("\n").reduce(
+	const rawPromptHeight = plainDisplay.split("\n").reduce(
 		(sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / editableWidth)),
 		0,
 	)
+	const promptHeight = Math.min(MAX_PROMPT_HEIGHT, rawPromptHeight)
 	const slashPopupHeight = slashMatches.length > 0 ? slashMatches.length + 3 : 0
 	const filePopupHeight = fileMatches.length > 0 ? fileMatches.length + 3 : 0
 	const attachmentRows = attachments.length + pasteChips.length + (attachmentMessage ? 1 : 0)
 	const renderedHeight = 2 + promptHeight + attachmentRows + slashPopupHeight + filePopupHeight
+
+	const displayContent = useMemo(() => {
+		if (!active) {
+			return <Text color={COLORS.dim}>{value || "waiting…"}</Text>
+		}
+		const allLines = value.split("\n")
+		if (allLines.length <= MAX_PROMPT_HEIGHT) {
+			return (
+				<>
+					{value.slice(0, cursor)}
+					<Text underline>{value[cursor] ?? " "}</Text>
+					{value.slice(cursor + 1)}
+				</>
+			)
+		}
+		const linesBeforeCursor = value.slice(0, cursor).split("\n")
+		const cursorLineIdx = linesBeforeCursor.length - 1
+		const startLine = Math.max(
+			0,
+			Math.min(cursorLineIdx - Math.floor(MAX_PROMPT_HEIGHT / 2), allLines.length - MAX_PROMPT_HEIGHT),
+		)
+		const endLine = startLine + MAX_PROMPT_HEIGHT
+		const windowedLines = allLines.slice(startLine, endLine)
+
+		let charOffset = 0
+		for (let i = 0; i < startLine; i++) {
+			charOffset += allLines[i].length + 1
+		}
+		const windowedText = windowedLines.join("\n")
+		const relCursor = cursor - charOffset
+
+		if (relCursor >= 0 && relCursor <= windowedText.length) {
+			return (
+				<>
+					{windowedText.slice(0, relCursor)}
+					<Text underline>{windowedText[relCursor] ?? " "}</Text>
+					{windowedText.slice(relCursor + 1)}
+				</>
+			)
+		}
+		return <>{windowedText}</>
+	}, [active, value, cursor])
 
 	// Parent viewport calculations must use the real bottom-stack height. A
 	// layout effect updates it before OpenTUI paints the next frame, preventing a
@@ -626,15 +673,7 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 				<Box>
 					<Text wrap="wrap">
 						<Text color={COLORS.user} bold>{"❯ "}</Text>
-						{active ? (
-							<>
-							{value.slice(0, cursor)}
-							<Text underline>{value[cursor] ?? " "}</Text>
-							{value.slice(cursor + 1)}
-							</>
-						) : (
-							<Text color={COLORS.dim}>{value || "waiting…"}</Text>
-						)}
+						{displayContent}
 					</Text>
 				</Box>
 			</Box>

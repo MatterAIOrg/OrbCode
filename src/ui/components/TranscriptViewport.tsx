@@ -25,13 +25,9 @@ export function getTranscriptPlacement({
     return { anchorToBottom: false, marginTop: 0 };
   }
 
-  if (scrollOffset === 0) {
-    return { anchorToBottom: true, marginTop: 0 };
-  }
-
-  const maxScrollOffset = transcriptHeight - contentHeight;
+  const maxScrollOffset = Math.max(0, transcriptHeight - contentHeight);
   return {
-    anchorToBottom: false,
+    anchorToBottom: scrollOffset === 0,
     marginTop: -(maxScrollOffset - Math.min(scrollOffset, maxScrollOffset)),
   };
 }
