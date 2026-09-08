@@ -5,7 +5,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useTerminalDimensions } from "@opentui/react";
+import {
+  useRenderer,
+  useSelectionHandler,
+  useTerminalDimensions,
+} from "@opentui/react";
 import { Box, Text, useApp, useInput } from "./primitives.js";
 import {
   useTheme,
@@ -100,6 +104,9 @@ import {
   getTranscriptPlacement,
   TranscriptViewport,
 } from "./components/TranscriptViewport.js";
+import { ScrollToBottomChip } from "./components/ScrollToBottomChip.js";
+import { Toast } from "./components/Toast.js";
+import { copyToClipboard } from "../utils/clipboard.js";
 import {
   addLink,
   loadLinks,
@@ -387,9 +394,32 @@ export function App({
   updateCheck?: Promise<UpdateInfo>;
 }) {
   const { exit } = useApp();
+  const renderer = useRenderer();
   const theme = useTheme();
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { width: termCols, height: termRows } = useTerminalDimensions();
+  const [toast, setToast] = useState<{ message: string; id: number } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, id: Date.now() });
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  useSelectionHandler((selection) => {
+    try {
+      const text = selection.getSelectedText();
+      if (!text || text.trim().length === 0) return;
+      // Only confirm when a clipboard mechanism actually succeeded.
+      if (copyToClipboard(text, renderer)) {
+        showToast(termCols < 40 ? "✓ Text copied" : "✓ Text copied to clipboard");
+      }
+    } catch {}
+  });
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
     loadSettings(),
   );
@@ -582,6 +612,9 @@ export function App({
       if (exitConfirmationTimerRef.current !== null) {
         clearTimeout(exitConfirmationTimerRef.current);
       }
+      if (toastTimerRef.current !== null) {
+        clearTimeout(toastTimerRef.current);
+      }
     },
     [],
   );
@@ -643,7 +676,7 @@ export function App({
         case "text-delta":
           textBufferRef.current += event.text;
           setStreamingText(textBufferRef.current);
-          setBusyLabel("Responding");
+          setBusyLabel("Working");
           break;
         case "text-done":
           pushRow({ kind: "assistant", text: textBufferRef.current });
@@ -1740,13 +1773,23 @@ export function App({
   const streamingReasoningDisplay = streamingReasoning
     ? tailForHeight(streamingReasoning, 3, reasoningWrapWidth)
     : "";
+  const spinnerVisible =
+    busy &&
+    !pendingApproval &&
+    !pendingFollowup &&
+    !pendingHookTrust &&
+    !pendingMcpApproval &&
+    !mcpPickerOpen &&
+    !mcpMigrationEntries &&
+    !streamingReasoning;
+  const spinnerHeight = spinnerVisible ? 2 : 0;
   // Do not lay out the entire accumulated response on every token. Keep only
   // the live tail mounted; text-done commits the complete response to the
   // virtualized transcript, so nothing is lost from history.
   const streamingTextDisplay = streamingText
     ? tailForHeight(
         streamingText,
-        Math.max(1, contentHeight - 1),
+        Math.max(1, contentHeight - 1 - spinnerHeight),
         Math.max(20, wrapWidth - 2),
       )
     : "";
@@ -1791,17 +1834,7 @@ export function App({
   if (pendingMcpApproval) {
     dynamicHeight += 5 + Math.min(8, pendingMcpApproval.length);
   }
-  if (
-    busy &&
-    !pendingApproval &&
-    !pendingFollowup &&
-    !pendingHookTrust &&
-    !pendingMcpApproval &&
-    !mcpPickerOpen &&
-    !mcpMigrationEntries &&
-    !streamingText &&
-    !streamingReasoning
-  ) {
+  if (spinnerVisible) {
     dynamicHeight += 2;
   }
 
@@ -1876,10 +1909,17 @@ export function App({
     transcriptPlacement.marginTop + virtualRows.startY;
   const rowBottomSpacerHeight = Math.max(0, rowsHeight - virtualRows.endY);
   // Height estimates are only an approximation of OpenTUI's word wrapping.
-  // At the live edge, let Yoga align the rendered content itself so the last
-  // line always remains above the composer even when an earlier row wrapped to
-  // more lines than estimated. Estimates still drive virtualization/scrolling.
-  const anchorTranscriptToBottom = transcriptPlacement.anchorToBottom;
+  // The live edge is aligned by the estimate-based negative margin above
+  // rather than Yoga's flex-end anchoring, which squashed row containers;
+  // the virtualization overscan keeps neighbouring rows mounted so estimate
+  // drift stays local. Estimates still drive virtualization/scrolling.
+  const inTask =
+    view === "chat" &&
+    (rows.length > 1 ||
+      busy ||
+      taskLines.length > 0 ||
+      Boolean(streamingText) ||
+      Boolean(streamingReasoning));
 
   useEffect(() => {
     setScrollOffset((current) => Math.min(current, maxScrollOffset));
@@ -1916,13 +1956,11 @@ export function App({
           minHeight={0}
           overflow="hidden"
         >
-          <TranscriptViewport anchorToBottom={anchorTranscriptToBottom}>
+          <TranscriptViewport anchorToBottom={false}>
             <Box
               flexDirection="column"
               flexShrink={0}
-              marginTop={
-                anchorTranscriptToBottom ? 0 : virtualTranscriptMarginTop
-              }
+              marginTop={virtualTranscriptMarginTop}
             >
               {virtualRows.rows.map((row) => (
                 <RowView key={row.id} row={row} width={wrapWidth} />
@@ -2019,24 +2057,17 @@ export function App({
                   onApprove={resolveMcpApproval}
                 />
               )}
-              {busy &&
-                !pendingApproval &&
-                !pendingFollowup &&
-                !pendingHookTrust &&
-                !pendingMcpApproval &&
-                !mcpPickerOpen &&
-                !mcpMigrationEntries &&
-                !streamingText &&
-                !streamingReasoning && (
-                  <Box marginTop={1}>
-                    <Spinner
-                      label={busyLabel}
-                      showTip={
-                        busyLabel === "Thinking" || busyLabel === "Working"
-                      }
-                    />
-                  </Box>
-                )}
+              {spinnerVisible && (
+                <Box marginTop={1}>
+                  <Spinner
+                    key={busyLabel}
+                    label={busyLabel}
+                    showTip={
+                      busyLabel === "Thinking" || busyLabel === "Working"
+                    }
+                  />
+                </Box>
+              )}
             </Box>
           </TranscriptViewport>
           <Box flexDirection="column" flexShrink={0}>
@@ -2087,6 +2118,25 @@ export function App({
               tieredUsage={usage?.tieredUsage}
             />
           </Box>
+        </Box>
+      )}
+      {inTask && effectiveScrollOffset > 0 && (
+        <Box
+          position="absolute"
+          bottom={bottomControlsHeight + 1}
+          left={0}
+          right={0}
+          justifyContent="center"
+          zIndex={10}
+        >
+          <ScrollToBottomChip
+            scrollOffset={effectiveScrollOffset}
+            width={termCols}
+            onClick={() => {
+              smoothScrollPendingRef.current = 0;
+              setScrollOffset(0);
+            }}
+          />
         </Box>
       )}
       {popoverOpen && (
@@ -2204,6 +2254,16 @@ export function App({
               />
             )}
           </Box>
+        </Box>
+      )}
+      {toast && (
+        <Box
+          position="absolute"
+          top={termRows <= 4 ? 0 : 1}
+          right={termCols < 30 ? 1 : 2}
+          zIndex={150}
+        >
+          <Toast message={toast.message} />
         </Box>
       )}
     </Box>

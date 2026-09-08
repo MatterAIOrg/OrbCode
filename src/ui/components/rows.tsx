@@ -180,11 +180,12 @@ export function formatUserBlock(text: string, width: number, attachments: Attach
 	const lineWidth = Math.max(1, width)
 	const paddingX = Math.min(2, Math.floor((lineWidth - 1) / 2))
 	const contentWidth = Math.max(1, lineWidth - paddingX * 2)
+	const normalizedText = (text || "").replace(/\t/g, "  ")
 	const attachmentLines = attachments.map(
 		(attachment) =>
 			`  📎 ${attachment.name}${attachment.kind === "image" ? " · image" : ""}${attachment.truncated ? " · truncated" : ""}`,
 	)
-	const sourceLines = [`❯ ${text || (attachments.length > 0 ? "Attached files" : "")}`, ...attachmentLines].flatMap(
+	const sourceLines = [`❯ ${normalizedText || (attachments.length > 0 ? "Attached files" : "")}`, ...attachmentLines].flatMap(
 		(line) => line.split("\n"),
 	)
 	const blank = " ".repeat(lineWidth)
@@ -217,7 +218,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 			return <Header cwd={row.cwd} modelName={row.modelName} />
 		case "user":
 			return (
-				<Box marginTop={1}>
+				<Box marginTop={1} flexShrink={0}>
 					<Text color={COLORS.user}>
 						{formatUserBlock(row.text, width, row.attachments)}
 					</Text>
@@ -225,7 +226,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 			)
 		case "assistant":
 			return (
-				<Box marginTop={1} flexDirection="column">
+				<Box marginTop={1} flexDirection="column" flexShrink={0}>
 					<Text>
 						<Text color={COLORS.primary}>● </Text>
 						{renderMarkdown(row.text.trimEnd())}
@@ -234,13 +235,13 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 			)
 		case "reasoning":
 			return (
-				<Box marginTop={1} flexDirection="column">
+				<Box marginTop={1} flexDirection="column" flexShrink={0}>
 					<Text color={COLORS.thinking} italic>
 						✦ Thought for {formatDuration(row.durationMs)}
 						{!row.expanded && <Text color={COLORS.dim}> (ctrl+o to show thinking)</Text>}
 					</Text>
 					{row.expanded && (
-						<Box paddingLeft={2}>
+						<Box paddingLeft={2} flexShrink={0}>
 							<Text color={COLORS.dim} italic>
 								{row.text.trim()}
 							</Text>
@@ -250,7 +251,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 			)
 		case "tool":
 			return (
-				<Box flexDirection="column" marginTop={1}>
+				<Box flexDirection="column" marginTop={1} flexShrink={0}>
 					<Text>
 						<Text color={row.isError ? COLORS.error : COLORS.success}>
 							{row.isError ? "✗" : "✓"}{" "}
@@ -259,12 +260,12 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 						<Text color={COLORS.dim}> {row.summary}</Text>
 					</Text>
 					{row.diff ? (
-						<Box paddingLeft={2}>
+						<Box paddingLeft={2} flexShrink={0}>
 							<DiffView diff={row.diff} />
 						</Box>
 					) : (
 						row.resultPreview && (
-							<Box paddingLeft={2}>
+							<Box paddingLeft={2} flexShrink={0}>
 								<Text color={COLORS.dim}>{row.resultPreview}</Text>
 							</Box>
 						)
@@ -273,19 +274,19 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 			)
 		case "info":
 			return (
-				<Box marginTop={1}>
+				<Box marginTop={1} flexShrink={0}>
 					<Text color={COLORS.dim}>{row.text}</Text>
 				</Box>
 			)
 		case "error":
 			return (
-				<Box marginTop={1}>
+				<Box marginTop={1} flexShrink={0}>
 					<Text color={COLORS.error}>✗ {row.text}</Text>
 				</Box>
 			)
 		case "completion":
 			return (
-				<Box marginTop={1} flexDirection="column" borderStyle="round" borderColor={COLORS.success} paddingX={1}>
+				<Box marginTop={1} flexDirection="column" borderStyle="round" borderColor={COLORS.success} paddingX={1} flexShrink={0}>
 					<Text color={COLORS.success} bold>
 						✔ Task completed
 					</Text>

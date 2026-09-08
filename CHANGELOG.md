@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.5] - 2026-09-08
+
+### Added
+
+- **Auto-copy on text selection with toast notification.** Selecting text in the CLI TUI now automatically copies the selected text to the system clipboard (with fallback to OSC 52 terminal clipboard) and displays a floating toast notification ("✓ Text copied to clipboard") in the corner of the terminal that automatically dismisses after two seconds. The toast only appears when a clipboard mechanism actually succeeded.
+- **Scroll-to-bottom hover chip.** When scrolled up in an active task (`effectiveScrollOffset > 0`), a floating hover chip (`↓ Scroll to bottom`) appears centered above the composer. Hovering highlights the chip, and clicking it (or pressing Esc when input is idle) smoothly snaps the viewport back to the live transcript edge. The click handler fires exactly once per press.
+
+### Fixed
+
+- **Terminal no longer hangs after quitting a session.** `/quit`, `/exit`, and Ctrl+D printed the "Session saved" line but the process stayed alive whenever a background handle (an MCP server child process still closing, an in-flight fetch socket, or an FFF watcher) kept the event loop busy, requiring Ctrl+C to get the prompt back. The interactive path now exits explicitly after the renderer is destroyed, matching the headless mode's behavior.
+- **Working animation not triggered during response content streaming.** When reasoning finished and the model began streaming the final response content buffer, the "Working..." spinner animation failed to appear because the loading indicator was suppressed while `streamingText` was non-empty. In addition, `text-delta` set the busy state to "Responding" instead of "Working". Fixed by keeping the "Working..." spinner active below the streaming response text and accounting for its height during response streaming, ensuring the spinner animation runs throughout content generation.
+- **Terminal line overlapping when pasting large or multiline text.** When a multiline or large text was pasted or submitted, `TranscriptViewport`'s `justifyContent="flex-end"` caused Yoga flexbox to squash row containers and assign overlapping vertical coordinates to subsequent transcript rows and streaming text, resulting in permanent character and line overlap. Fixed by driving transcript alignment through negative `marginTop` derived from `maxScrollOffset`, disabling flexbox squashing (`flexShrink={0}` on row wrappers), expanding tab characters in user blocks to prevent unexpected terminal wrapping, capping prompt input display height (the prompt window is sliced by wrapped rows — the same math as the height cap — so the rendered prompt can never exceed the height reported to the viewport), and collapsing multi-line pastes (3+ lines) and large pastes (200+ characters) into paste chips.
+
 ## [6.8.4] - 2026-09-05
 
 ### Fixed

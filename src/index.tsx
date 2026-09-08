@@ -272,6 +272,12 @@ async function main(): Promise<void> {
 	if (process.env.ORBCODE_LAST_SESSION_ID) {
 		console.log(`\nSession saved. To resume: orbcode --resume ${process.env.ORBCODE_LAST_SESSION_ID}\n`)
 	}
+	// The renderer is destroyed, but lingering handles — an MCP child process
+	// whose close() didn't finish inside endAndExit's 3s cap, in-flight fetch
+	// sockets, FFF watchers — can keep the event loop alive after main()
+	// returns, leaving the terminal stuck until Ctrl+C. Exit explicitly,
+	// mirroring the headless path.
+	process.exit(0)
 }
 
 main().catch((error) => {

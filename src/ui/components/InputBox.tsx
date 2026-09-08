@@ -33,10 +33,12 @@ interface InputBoxProps {
 const MAX_FILE_MATCHES = 8
 const POPUP_PADDING_X = 2
 
-// Pastes at least this long are collapsed into a paste chip shown above the
+// Pastes at least this long or with multiple lines are collapsed into a paste chip shown above the
 // prompt. The full text is merged back into the message at the recorded cursor
 // position on submit, as if the text had been pasted there directly.
-const PASTE_CHIP_THRESHOLD = 500
+const PASTE_CHIP_THRESHOLD = 200
+const PASTE_CHIP_LINE_THRESHOLD = 3
+const MAX_PROMPT_HEIGHT = 8
 
 // Two newlines separate a merged chip's text from the surrounding prompt text.
 const PASTE_CHIP_SEPARATOR = "\n\n"
@@ -340,11 +342,13 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 
 	// Large text pastes become a chip; smaller ones are inserted inline.
 	const insertPaste = (input: string) => {
-		if (input.length >= PASTE_CHIP_THRESHOLD) {
-			addPasteChip(input.replace(/\r\n?/g, "\n"), cursorRef.current)
+		const normalized = input.replace(/\r\n?/g, "\n")
+		const lineCount = normalized.split("\n").length
+		if (normalized.length >= PASTE_CHIP_THRESHOLD || lineCount >= PASTE_CHIP_LINE_THRESHOLD) {
+			addPasteChip(normalized, cursorRef.current)
 			return
 		}
-		insertPastedText(input)
+		insertPastedText(normalized)
 	}
 
 	const handlePaste = (input: string, kind?: "text" | "binary" | "unknown") => {
@@ -525,14 +529,87 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	// Border (2) + wrapped prompt content. The prompt glyph occupies two
 	// columns beside the editable text, while border and padding consume four.
 	const editableWidth = Math.max(1, width - 6)
-	const promptHeight = plainDisplay.split("\n").reduce(
+	const rawPromptHeight = plainDisplay.split("\n").reduce(
 		(sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / editableWidth)),
 		0,
 	)
+	const promptHeight = Math.min(MAX_PROMPT_HEIGHT, rawPromptHeight)
 	const slashPopupHeight = slashMatches.length > 0 ? slashMatches.length + 3 : 0
 	const filePopupHeight = fileMatches.length > 0 ? fileMatches.length + 3 : 0
 	const attachmentRows = attachments.length + pasteChips.length + (attachmentMessage ? 1 : 0)
 	const renderedHeight = 2 + promptHeight + attachmentRows + slashPopupHeight + filePopupHeight
+
+	const displayContent = useMemo(() => {
+		if (!active) {
+			return <Text color={COLORS.dim}>{value || "waiting…"}</Text>
+		}
+		const renderWithCursor = (text: string, relCursor: number) => (
+			<>
+				{text.slice(0, relCursor)}
+				<Text underline>{text[relCursor] ?? " "}</Text>
+				{text.slice(relCursor + 1)}
+			</>
+		)
+		// Window by wrapped rows (the same math as the promptHeight cap), not
+		// logical lines, so the rendered prompt can never exceed the height
+		// reported to the viewport via onHeightChange. Row counts come from
+		// plainDisplay, whose cursor line already includes the caret cell the
+		// render appends when the cursor sits at a line's end.
+		const rowsFor = (line: string) =>
+			Math.max(1, Math.ceil(Math.max(1, line.length) / editableWidth))
+		const displayLines = plainDisplay.split("\n")
+		const valueLines = value.split("\n")
+		const cursorLineIdx = value.slice(0, cursor).split("\n").length - 1
+		const totalRows = displayLines.reduce((sum, line) => sum + rowsFor(line), 0)
+		if (totalRows <= MAX_PROMPT_HEIGHT) {
+			return renderWithCursor(value, cursor)
+		}
+		const cursorLine = valueLines[cursorLineIdx] ?? ""
+		const cursorLineRows = rowsFor(displayLines[cursorLineIdx] ?? "")
+		if (cursorLineRows > MAX_PROMPT_HEIGHT) {
+			// The cursor line alone overflows the cap: show a character window
+			// of that line sized to the cap, keeping the caret in view.
+			const maxChars = MAX_PROMPT_HEIGHT * editableWidth
+			const posInLine = cursor - (value.slice(0, cursor).lastIndexOf("\n") + 1)
+			const windowStart = Math.max(
+				0,
+				Math.min(posInLine - Math.floor(maxChars / 2), cursorLine.length - maxChars),
+			)
+			let windowed = cursorLine.slice(windowStart, windowStart + maxChars)
+			if (posInLine - windowStart >= windowed.length) {
+				// The caret appends a cell at the slice end; drop one character
+				// so the rendered cells stay within the cap.
+				windowed = windowed.slice(0, Math.max(0, windowed.length - 1))
+			}
+			return renderWithCursor(windowed, posInLine - windowStart)
+		}
+		// Expand outward from the cursor line, preferring the side with fewer
+		// rows, and only take a line that still fits under the cap.
+		let startLine = cursorLineIdx
+		let endLine = cursorLineIdx + 1
+		let rowsUsed = cursorLineRows
+		while (rowsUsed < MAX_PROMPT_HEIGHT) {
+			const rowsUp = startLine > 0 ? rowsFor(displayLines[startLine - 1] ?? "") : Infinity
+			const rowsDown = endLine < displayLines.length ? rowsFor(displayLines[endLine] ?? "") : Infinity
+			const upFits = rowsUp !== Infinity && rowsUsed + rowsUp <= MAX_PROMPT_HEIGHT
+			const downFits = rowsDown !== Infinity && rowsUsed + rowsDown <= MAX_PROMPT_HEIGHT
+			if (upFits && (rowsUp <= rowsDown || !downFits)) {
+				startLine -= 1
+				rowsUsed += rowsUp
+			} else if (downFits) {
+				endLine += 1
+				rowsUsed += rowsDown
+			} else {
+				break
+			}
+		}
+		let charOffset = 0
+		for (let i = 0; i < startLine; i++) {
+			charOffset += (valueLines[i] ?? "").length + 1
+		}
+		const windowedText = valueLines.slice(startLine, endLine).join("\n")
+		return renderWithCursor(windowedText, cursor - charOffset)
+	}, [active, value, cursor, plainDisplay, editableWidth])
 
 	// Parent viewport calculations must use the real bottom-stack height. A
 	// layout effect updates it before OpenTUI paints the next frame, preventing a
@@ -623,19 +700,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 						{fitText(attachmentMessage.text, Math.max(1, width - 4))}
 					</Text>
 				)}
-				<Box>
-					<Text wrap="wrap">
-						<Text color={COLORS.user} bold>{"❯ "}</Text>
-						{active ? (
-							<>
-							{value.slice(0, cursor)}
-							<Text underline>{value[cursor] ?? " "}</Text>
-							{value.slice(cursor + 1)}
-							</>
-						) : (
-							<Text color={COLORS.dim}>{value || "waiting…"}</Text>
-						)}
-					</Text>
+				<Box flexDirection="row">
+					<Text color={COLORS.user} bold>{"❯ "}</Text>
+					<Box width={editableWidth} flexShrink={1}>
+						<Text wrap="wrap">{displayContent}</Text>
+					</Box>
 				</Box>
 			</Box>
 		</Box>
