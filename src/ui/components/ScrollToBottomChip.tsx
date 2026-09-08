@@ -31,10 +31,6 @@ export function ScrollToBottomChip({
         e.stopPropagation?.();
         onClick();
       }}
-      onMouseUp={(e) => {
-        e.stopPropagation?.();
-        onClick();
-      }}
       onMouseMove={(e) => {
         e.stopPropagation?.();
         if (!hovered) setHovered(true);
@@ -45,10 +41,6 @@ export function ScrollToBottomChip({
         bold={hovered}
         selectable={false}
         onMouseDown={(e) => {
-          e.stopPropagation?.();
-          onClick();
-        }}
-        onMouseUp={(e) => {
           e.stopPropagation?.();
           onClick();
         }}

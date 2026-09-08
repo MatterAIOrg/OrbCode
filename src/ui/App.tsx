@@ -414,8 +414,10 @@ export function App({
     try {
       const text = selection.getSelectedText();
       if (!text || text.trim().length === 0) return;
-      copyToClipboard(text, renderer);
-      showToast(termCols < 40 ? "✓ Text copied" : "✓ Text copied to clipboard");
+      // Only confirm when a clipboard mechanism actually succeeded.
+      if (copyToClipboard(text, renderer)) {
+        showToast(termCols < 40 ? "✓ Text copied" : "✓ Text copied to clipboard");
+      }
     } catch {}
   });
   const [settings, setSettings] = useState<OrbCodeSettings>(() =>
@@ -1907,10 +1909,10 @@ export function App({
     transcriptPlacement.marginTop + virtualRows.startY;
   const rowBottomSpacerHeight = Math.max(0, rowsHeight - virtualRows.endY);
   // Height estimates are only an approximation of OpenTUI's word wrapping.
-  // At the live edge, let Yoga align the rendered content itself so the last
-  // line always remains above the composer even when an earlier row wrapped to
-  // more lines than estimated. Estimates still drive virtualization/scrolling.
-  const anchorTranscriptToBottom = transcriptPlacement.anchorToBottom;
+  // The live edge is aligned by the estimate-based negative margin above
+  // rather than Yoga's flex-end anchoring, which squashed row containers;
+  // the virtualization overscan keeps neighbouring rows mounted so estimate
+  // drift stays local. Estimates still drive virtualization/scrolling.
   const inTask =
     view === "chat" &&
     (rows.length > 1 ||

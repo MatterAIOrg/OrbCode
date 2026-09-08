@@ -543,43 +543,73 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 		if (!active) {
 			return <Text color={COLORS.dim}>{value || "waiting…"}</Text>
 		}
-		const allLines = value.split("\n")
-		if (allLines.length <= MAX_PROMPT_HEIGHT) {
-			return (
-				<>
-					{value.slice(0, cursor)}
-					<Text underline>{value[cursor] ?? " "}</Text>
-					{value.slice(cursor + 1)}
-				</>
-			)
-		}
-		const linesBeforeCursor = value.slice(0, cursor).split("\n")
-		const cursorLineIdx = linesBeforeCursor.length - 1
-		const startLine = Math.max(
-			0,
-			Math.min(cursorLineIdx - Math.floor(MAX_PROMPT_HEIGHT / 2), allLines.length - MAX_PROMPT_HEIGHT),
+		const renderWithCursor = (text: string, relCursor: number) => (
+			<>
+				{text.slice(0, relCursor)}
+				<Text underline>{text[relCursor] ?? " "}</Text>
+				{text.slice(relCursor + 1)}
+			</>
 		)
-		const endLine = startLine + MAX_PROMPT_HEIGHT
-		const windowedLines = allLines.slice(startLine, endLine)
-
+		// Window by wrapped rows (the same math as the promptHeight cap), not
+		// logical lines, so the rendered prompt can never exceed the height
+		// reported to the viewport via onHeightChange. Row counts come from
+		// plainDisplay, whose cursor line already includes the caret cell the
+		// render appends when the cursor sits at a line's end.
+		const rowsFor = (line: string) =>
+			Math.max(1, Math.ceil(Math.max(1, line.length) / editableWidth))
+		const displayLines = plainDisplay.split("\n")
+		const valueLines = value.split("\n")
+		const cursorLineIdx = value.slice(0, cursor).split("\n").length - 1
+		const totalRows = displayLines.reduce((sum, line) => sum + rowsFor(line), 0)
+		if (totalRows <= MAX_PROMPT_HEIGHT) {
+			return renderWithCursor(value, cursor)
+		}
+		const cursorLine = valueLines[cursorLineIdx] ?? ""
+		const cursorLineRows = rowsFor(displayLines[cursorLineIdx] ?? "")
+		if (cursorLineRows > MAX_PROMPT_HEIGHT) {
+			// The cursor line alone overflows the cap: show a character window
+			// of that line sized to the cap, keeping the caret in view.
+			const maxChars = MAX_PROMPT_HEIGHT * editableWidth
+			const posInLine = cursor - (value.slice(0, cursor).lastIndexOf("\n") + 1)
+			const windowStart = Math.max(
+				0,
+				Math.min(posInLine - Math.floor(maxChars / 2), cursorLine.length - maxChars),
+			)
+			let windowed = cursorLine.slice(windowStart, windowStart + maxChars)
+			if (posInLine - windowStart >= windowed.length) {
+				// The caret appends a cell at the slice end; drop one character
+				// so the rendered cells stay within the cap.
+				windowed = windowed.slice(0, Math.max(0, windowed.length - 1))
+			}
+			return renderWithCursor(windowed, posInLine - windowStart)
+		}
+		// Expand outward from the cursor line, preferring the side with fewer
+		// rows, and only take a line that still fits under the cap.
+		let startLine = cursorLineIdx
+		let endLine = cursorLineIdx + 1
+		let rowsUsed = cursorLineRows
+		while (rowsUsed < MAX_PROMPT_HEIGHT) {
+			const rowsUp = startLine > 0 ? rowsFor(displayLines[startLine - 1] ?? "") : Infinity
+			const rowsDown = endLine < displayLines.length ? rowsFor(displayLines[endLine] ?? "") : Infinity
+			const upFits = rowsUp !== Infinity && rowsUsed + rowsUp <= MAX_PROMPT_HEIGHT
+			const downFits = rowsDown !== Infinity && rowsUsed + rowsDown <= MAX_PROMPT_HEIGHT
+			if (upFits && (rowsUp <= rowsDown || !downFits)) {
+				startLine -= 1
+				rowsUsed += rowsUp
+			} else if (downFits) {
+				endLine += 1
+				rowsUsed += rowsDown
+			} else {
+				break
+			}
+		}
 		let charOffset = 0
 		for (let i = 0; i < startLine; i++) {
-			charOffset += allLines[i].length + 1
+			charOffset += (valueLines[i] ?? "").length + 1
 		}
-		const windowedText = windowedLines.join("\n")
-		const relCursor = cursor - charOffset
-
-		if (relCursor >= 0 && relCursor <= windowedText.length) {
-			return (
-				<>
-					{windowedText.slice(0, relCursor)}
-					<Text underline>{windowedText[relCursor] ?? " "}</Text>
-					{windowedText.slice(relCursor + 1)}
-				</>
-			)
-		}
-		return <>{windowedText}</>
-	}, [active, value, cursor])
+		const windowedText = valueLines.slice(startLine, endLine).join("\n")
+		return renderWithCursor(windowedText, cursor - charOffset)
+	}, [active, value, cursor, plainDisplay, editableWidth])
 
 	// Parent viewport calculations must use the real bottom-stack height. A
 	// layout effect updates it before OpenTUI paints the next frame, preventing a
@@ -670,11 +700,11 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 						{fitText(attachmentMessage.text, Math.max(1, width - 4))}
 					</Text>
 				)}
-				<Box>
-					<Text wrap="wrap">
-						<Text color={COLORS.user} bold>{"❯ "}</Text>
-						{displayContent}
-					</Text>
+				<Box flexDirection="row">
+					<Text color={COLORS.user} bold>{"❯ "}</Text>
+					<Box width={editableWidth} flexShrink={1}>
+						<Text wrap="wrap">{displayContent}</Text>
+					</Box>
 				</Box>
 			</Box>
 		</Box>

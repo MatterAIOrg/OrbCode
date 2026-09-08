@@ -227,6 +227,49 @@ test("renders scroll-to-bottom chip when scrolled up in a task and clears on cli
   }
 });
 
+test("caps wrapped prompt rendering to the height reported to the viewport", async () => {
+  let reportedHeight = 0;
+  const screen = await testRender(
+    <InputBox
+      active
+      width={80}
+      slashCommands={[]}
+      onSubmit={() => {}}
+      supportsImages={false}
+      onHeightChange={(h) => {
+        reportedHeight = h;
+      }}
+    />,
+    { width: 80, height: 24 },
+  );
+
+  try {
+    await screen.renderOnce();
+    // A single 700-char line wraps to ~10 rows at width 80 (editable width 74),
+    // exceeding the 8-row prompt cap. Typed in sub-threshold chunks with a
+    // flush after each so they stay inline instead of collapsing into a chip.
+    await act(async () => {
+      for (let i = 0; i < 7; i++) {
+        await screen.mockInput.typeText("x".repeat(100));
+        await screen.flush();
+      }
+    });
+    await screen.renderOnce();
+
+    const rows = screen.captureCharFrame().split("\n");
+    const top = rows.findIndex((row) => row.includes("╭"));
+    const bottom = rows.findIndex((row) => row.includes("╰"));
+    assert.notEqual(top, -1);
+    assert.notEqual(bottom, -1);
+    // The rendered box (borders + content) must occupy exactly the height
+    // reported via onHeightChange, or the composer overflows onto the
+    // transcript above it.
+    assert.equal(bottom - top + 1, reportedHeight);
+  } finally {
+    act(() => screen.renderer.destroy());
+  }
+});
+
 test("renders Toast component with success border and message", async () => {
   const screen = await testRender(
     <Toast message="✓ Text copied to clipboard" />,
