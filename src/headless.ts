@@ -6,6 +6,7 @@ import {
 	canUseEidoProModels,
 	canUseLumenModels,
 	fetchDynamicModels,
+	getDefaultModelId,
 	getModel,
 	is400kAxonModel,
 	isEidoBaseAxonModel,
@@ -36,6 +37,16 @@ export async function runHeadless(
 	// An unknown --model (or MATTERAI_MODEL) silently resolves to the default; say
 	// so on stderr instead of quietly running a different model than requested.
 	const requestedModel = process.env.MATTERAI_MODEL
+
+	// No explicit model requested and the stored one is still the static default:
+	// resolve the plan-aware default from the live catalog (free plans get the
+	// catalog's free model, paid plans the first catalog entry).
+	if (token && !requestedModel && settings.model === DEFAULT_MODEL_ID) {
+		const profile = await fetchProfile(token).catch(() => null)
+		const plan = profile?.plan ?? profile?.tieredUsage?.plan
+		const preferred = getDefaultModelId(plan)
+		if (preferred !== settings.model) settings.model = preferred
+	}
 	if (requestedModel && !isValidAxonModel(requestedModel)) {
 		process.stderr.write(
 			`warning: unknown model "${requestedModel}"; using "${settings.model}". ` +

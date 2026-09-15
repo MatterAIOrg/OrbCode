@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.6] - 2026-09-15
+
+### Fixed
+
+- **Plan-aware default model.** The default model is now resolved from the live catalog instead of the hardcoded `DEFAULT_MODEL_ID`: free accounts default to the catalog entry the backend flags `freePlan`, every other plan to the first catalog entry (index 0, ordered by the catalog's `sortOrder`). `fetchDynamicModels` records the catalog order and each model's `freePlan` flag, and the new `getDefaultModelId(plan)` helper resolves the default. The TUI applies it once the catalog and the account plan have both loaded — only while the selection is still the untouched default, so an explicit pick is never overwritten — and headless mode applies it when no `--model` / `MATTERAI_MODEL` was requested.
+
 ## [6.8.5] - 2026-09-08
 
 ### Added
