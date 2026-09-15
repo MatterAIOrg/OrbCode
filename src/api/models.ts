@@ -46,6 +46,8 @@ export interface AxonModel {
   iconUrl?: string;
   /** Plan-pool cost multiplier from the backend catalog (e.g. 4 = 4x plan cost). */
   costMultiplier?: number;
+  /** True when the backend catalog marks this model as the free-plan model. */
+  freePlan?: boolean;
   /**
    * Which transport serves this model. Absent (or "matterai"/"axon") routes
    * through the MatterAI gateway (OpenAI `/chat/completions`). Any other value
@@ -274,6 +276,14 @@ export const DEFAULT_MODEL_ID = "zai/glm-5.3-flash";
  */
 const managedModelIds = new Set<string>(Object.keys(BUILTIN_AXON_MODELS));
 
+/**
+ * Model ids in backend catalog order (the order `/v1/models` returns, i.e.
+ * `sortOrder` then `created`). Index 0 is the default for paid plans; the entry
+ * flagged `freePlan` is the default for free plans. Empty until a successful
+ * dynamic fetch, so the static fallback is used before then.
+ */
+let catalogOrder: string[] = [];
+
 const EXTENDED_CONTEXT_PLANS = new Set(["proplus", "ultra"]);
 const LUMEN_MODEL_PLANS = new Set(["proplus", "ultra"]);
 const EIDO_PRO_MODEL_PLANS = new Set(["pro", "proplus", "ultra"]);
@@ -394,6 +404,29 @@ export function getModel(modelId: string): AxonModel {
   return AXON_MODELS[modelId] ?? AXON_MODELS[DEFAULT_MODEL_ID];
 }
 
+/** Whether an AxonCode plan string is the free tier (a missing plan counts as free). */
+export function isFreePlan(plan?: string): boolean {
+  const normalized = plan?.trim().toLowerCase() ?? "";
+  return normalized === "" || normalized === "free";
+}
+
+/**
+ * Default model for the live catalog: free accounts get the entry the backend
+ * flags `freePlan`, every other plan gets the first entry the backend serves
+ * (index 0, ordered by the catalog's `sortOrder`). Falls back to
+ * DEFAULT_MODEL_ID until a catalog fetch succeeds.
+ */
+export function getDefaultModelId(plan?: string): string {
+  if (catalogOrder.length === 0) return DEFAULT_MODEL_ID;
+  if (isFreePlan(plan)) {
+    const freeModelId = catalogOrder.find(
+      (id) => BUILTIN_AXON_MODELS[id]?.freePlan === true,
+    );
+    if (freeModelId) return freeModelId;
+  }
+  return catalogOrder[0]!;
+}
+
 /** Resolve a local context-window option to the model ID understood by the gateway. */
 export function getGatewayModelId(model: AxonModel): string {
   return model.gatewayModelId ?? model.id;
@@ -458,6 +491,7 @@ export async function fetchDynamicModels(
               ? item.pricing.completion
               : 0,
         free: false,
+        freePlan: item.freePlan === true,
         iconUrl: typeof item.iconUrl === "string" ? item.iconUrl : undefined,
         costMultiplier:
           typeof item.costMultiplier === "number" ? item.costMultiplier : undefined,
@@ -470,6 +504,7 @@ export async function fetchDynamicModels(
     // don't linger in the picker next to their replacement. The user's current
     // selection is never pruned — a transient backend gap shouldn't swap it.
     if (fetched.length > 0) {
+      catalogOrder = fetched.map((model) => model.id);
       const fetchedIds = new Set(fetched.map((model) => model.id));
       const currentModel = loadSettingsModel()
       for (const id of managedModelIds) {

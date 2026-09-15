@@ -36,6 +36,7 @@ import {
   canUseLumenModels,
   fetchDynamicModels,
   get232kAxonFallback,
+  getDefaultModelId,
   getModel,
   is400kAxonModel,
   isEidoBaseAxonModel,
@@ -503,6 +504,10 @@ export function App({
     usagePercentage?: number;
     tieredUsage?: import("../auth/auth.js").AxonCodeTieredUsage;
   } | null>(null);
+  // Set once the dynamic catalog and the account plan have loaded, so the
+  // plan-aware default model is only resolved against real data.
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [planLoaded, setPlanLoaded] = useState(false);
   const activePlan = usage?.plan ?? usage?.tieredUsage?.plan;
   const has400kAccess = canUse400kContext(activePlan);
   const hasEidoBaseAccess = canUseEidoBaseModels(activePlan);
@@ -514,15 +519,18 @@ export function App({
   const refreshUsage = useCallback(() => {
     const token = getAuthToken(loadSettings());
     if (!token) return;
-    fetchDynamicModels(token).catch(() => {});
+    fetchDynamicModels(token)
+      .then(() => setCatalogReady(true))
+      .catch(() => {});
     fetchProfile(token)
-      .then((profile) =>
+      .then((profile) => {
         setUsage({
           plan: profile.plan,
           usagePercentage: profile.usagePercentage,
           tieredUsage: profile.tieredUsage,
-        }),
-      )
+        });
+        setPlanLoaded(true);
+      })
       .catch(() => {});
   }, []);
 
@@ -882,7 +890,7 @@ export function App({
   );
 
   const switchModel = useCallback(
-    (modelId: string) => {
+    (modelId: string, options?: { silent?: boolean }) => {
       if (isLumenAxonModel(modelId) && !hasLumenAccess) {
         pushRow({
           kind: "error",
@@ -926,13 +934,26 @@ export function App({
         next[headerIndex] = updatedHeader;
         return next;
       });
-      pushRow({
-        kind: "info",
-        text: `Model switched to ${getModel(modelId).name}`,
-      });
+      if (!options?.silent) {
+        pushRow({
+          kind: "info",
+          text: `Model switched to ${getModel(modelId).name}`,
+        });
+      }
     },
     [has400kAccess, hasEidoBaseAccess, hasEidoProAccess, hasLumenAccess, pushRow],
   );
+
+  // Resolve the plan-aware default once the catalog and the account plan are
+  // both known: free plans default to the catalog's free model, paid plans to
+  // the first catalog entry. Only an untouched static default is re-resolved —
+  // an explicit user pick is never overwritten.
+  useEffect(() => {
+    if (!catalogReady || !planLoaded) return;
+    if (settings.model !== DEFAULT_MODEL_ID) return;
+    const preferred = getDefaultModelId(activePlan);
+    if (preferred !== settings.model) switchModel(preferred, { silent: true });
+  }, [activePlan, catalogReady, planLoaded, settings.model, switchModel]);
 
   useEffect(() => {
     if (!activePlan) {
