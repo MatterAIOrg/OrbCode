@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Force-send a queued message.** Messages typed while the agent is streaming are held in a FIFO queue and drained one per turn, so a queued message previously had to wait for the whole in-flight turn (including every tool call) to finish. The queue panel now shows a clickable `[send now]` action beside each message, and `ctrl+s` force-sends the next one in line. Either path jumps that message to the front of the queue and aborts the in-flight turn so it starts immediately; when nothing is in flight the queue drains directly.
+- **Organization-scoped dynamic model catalog.** `fetchDynamicModels` now sends `X-KiloCode-OrganizationId` and `X-Org-Id` headers — from the new optional `organizationId` argument, falling back to `settings.organizationId` when omitted — so the gateway returns the models available to the user's organization instead of the global registry.
 
 ### Fixed
 

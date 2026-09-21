@@ -439,6 +439,7 @@ export function getGatewayModelId(model: AxonModel): string {
  */
 export async function fetchDynamicModels(
   token?: string,
+  organizationId?: string,
 ): Promise<Record<string, AxonModel>> {
   try {
     const { getUrlFromToken } = await import("../auth/auth.js");
@@ -451,6 +452,17 @@ export async function fetchDynamicModels(
     };
     if (token) {
       headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (!organizationId) {
+      try {
+        const { loadSettings } = await import("../config/settings.js");
+        organizationId = loadSettings().organizationId;
+      } catch {}
+    }
+    if (organizationId) {
+      headers["X-KiloCode-OrganizationId"] = organizationId;
+      headers["X-Org-Id"] = organizationId;
     }
 
     const res = await fetch(targetUrl, {
