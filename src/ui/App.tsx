@@ -106,6 +106,7 @@ import {
   TranscriptViewport,
 } from "./components/TranscriptViewport.js";
 import { ScrollToBottomChip } from "./components/ScrollToBottomChip.js";
+import { QueuedMessages } from "./components/QueuedMessages.js";
 import { Toast } from "./components/Toast.js";
 import { copyToClipboard } from "../utils/clipboard.js";
 import {
@@ -834,6 +835,50 @@ export function App({
     }
     return agentRef.current;
   }, [createAgent]);
+
+  // Force-send: jump a queued message to the front of the queue, then skip
+  // the wait for the in-flight turn. Aborting makes the agent's `finally`
+  // emit `turn-end`, whose handler drains the queue and starts the next
+  // turn — the same path a normal turn end takes, so the conversation
+  // history stays consistent.
+  const forceSendQueued = useCallback(
+    (index = 0) => {
+      const queue = queueRef.current;
+      if (queue.length === 0) {
+        pushRow({ kind: "info", text: "No queued messages to send." });
+        return;
+      }
+      const clamped = Math.min(Math.max(index, 0), queue.length - 1);
+      const target = queue[clamped]!;
+      queueRef.current = [
+        target,
+        ...queue.slice(0, clamped),
+        ...queue.slice(clamped + 1),
+      ];
+      setQueuedMessages(queueRef.current);
+      const agent = agentRef.current;
+      if (!busy || !agent) {
+        // Nothing in flight — drain the queue directly.
+        const next = drainQueue();
+        if (next === null) return;
+        pushRow({
+          kind: "user",
+          text: next.text,
+          attachments: next.attachments.map(attachmentSummary),
+        });
+        setBusy(true);
+        setBusyLabel("Thinking");
+        void getAgent().runTurn(next.text, next.attachments);
+        return;
+      }
+      pushRow({
+        kind: "info",
+        text: `Force-sending queued message (${queueRef.current.length} in queue)…`,
+      });
+      agent.abort();
+    },
+    [busy, drainQueue, getAgent, pushRow],
+  );
 
   const handleResume = useCallback(
     (session: SessionData) => {
@@ -1687,6 +1732,17 @@ export function App({
       );
       // The terminal adapter replaces the retained screen rows in place.
     }
+    // Ctrl+S force-sends the next queued message without waiting for the
+    // in-flight turn (the queue panel advertises this next to each message).
+    if (
+      key.ctrl &&
+      input === "s" &&
+      inputActive &&
+      queueRef.current.length > 0
+    ) {
+      forceSendQueued(0);
+      return;
+    }
   });
 
   const handleLogin = useCallback(
@@ -2093,29 +2149,11 @@ export function App({
           </TranscriptViewport>
           <Box flexDirection="column" flexShrink={0}>
             {queuedMessages.length > 0 && (
-              <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
-                <Text color={COLORS.dim} bold>
-                  Queue ({queuedMessages.length})
-                </Text>
-                {queuedMessages.slice(0, 5).map((msg, i) => (
-                  <Text key={i} color={COLORS.dim}>
-                    {i + 1}.{" "}
-                    {truncateForQueue(msg.text || "Attached files").replace(
-                      /\n/g,
-                      "↵",
-                    )}
-                    {msg.attachments.length > 0
-                      ? ` · 📎 ${msg.attachments.length}`
-                      : ""}
-                  </Text>
-                ))}
-                {queuedMessages.length > 5 && (
-                  <Text color={COLORS.dim}>
-                    {" "}
-                    … {queuedMessages.length - 5} more
-                  </Text>
-                )}
-              </Box>
+              <QueuedMessages
+                messages={queuedMessages}
+                width={wrapWidth}
+                onForceSend={forceSendQueued}
+              />
             )}
             <InputBox
               active={inputActive}
@@ -2414,12 +2452,6 @@ function estimateRowLines(row: Row, width: number): number {
     default:
       return 1;
   }
-}
-
-const QUEUE_PREVIEW_LIMIT = 80;
-function truncateForQueue(text: string): string {
-  if (text.length <= QUEUE_PREVIEW_LIMIT) return text;
-  return text.slice(0, QUEUE_PREVIEW_LIMIT - 1) + "…";
 }
 
 function LoginSection({
