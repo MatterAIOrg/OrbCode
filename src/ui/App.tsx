@@ -1674,9 +1674,28 @@ export function App({
       scrollTranscriptBy(-Math.max(1, contentHeight - 2));
       return;
     }
-    // Require two presses so an accidental Ctrl+D cannot discard the session.
-    // The ref makes rapid repeated presses reliable before React re-renders.
-    if (key.ctrl && input === "d") {
+    // Ctrl+C interrupts the running turn (like Esc); when idle it exits via
+    // the same double-press confirmation as Ctrl+D. Previously Ctrl+C did
+    // nothing, leaving zombie processes whose next save could overwrite
+    // newer session data written by a resumed process.
+    if (key.ctrl && input === "c") {
+      if (busy) {
+        if (
+          !pendingApproval &&
+          !pendingFollowup &&
+          !pendingHookTrust &&
+          !pendingMcpApproval
+        ) {
+          agentRef.current?.abort();
+        }
+        return;
+      }
+      // Idle: fall through to the shared double-press exit below.
+    }
+    // Require two presses so an accidental Ctrl+D/Ctrl+C cannot discard the
+    // session. The ref makes rapid repeated presses reliable before React
+    // re-renders.
+    if (key.ctrl && (input === "d" || input === "c")) {
       if (exitConfirmationRef.current) {
         exitConfirmationRef.current = false;
         setExitConfirmationActive(false);
@@ -2410,7 +2429,7 @@ function estimateRowLines(row: Row, width: number): number {
         wrappedAt("/help     all commands", secondCellWidth),
       );
       const shortcuts = wrappedAt(
-        "shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d exit",
+        "shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d/c exit",
         panelWidth,
       );
       // Action/footer top margins plus Header's bottom margin add three rows.
