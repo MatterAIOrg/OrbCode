@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Force-send a queued message.** Messages typed while the agent is streaming are held in a FIFO queue and drained one per turn, so a queued message previously had to wait for the whole in-flight turn (including every tool call) to finish. The queue panel now shows a clickable `[send now]` action beside each message, and `ctrl+s` force-sends the next one in line. Either path jumps that message to the front of the queue and aborts the in-flight turn so it starts immediately; when nothing is in flight the queue drains directly.
 
+### Fixed
+
+- **Session data no longer vanishes when quitting mid-turn.** Session persistence previously ran only in `runTurn`'s `finally` — when OrbCode was killed or the terminal closed while a turn was still running (a long multi-step turn can stream for many minutes), the entire in-flight turn's messages (the user prompt, every assistant response, and every tool call/result accumulated across all its steps) were never written to disk, so resuming showed the state from before that turn. The agent now persists right after the user message is pushed and after every model step, so a hard kill loses at most the single in-flight tool call. Session writes are also atomic now (write to a pid-suffixed temp file, then rename), so a crash mid-write can no longer truncate or corrupt the last good session file; a non-serializable value in history degrades to a safe replacer instead of throwing away the whole session; and save failures are surfaced as transcript errors instead of being silently swallowed.
+
 ## [6.8.6] - 2026-09-15
 
 ### Fixed
