@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import * as fs from "node:fs"
 import type OpenAI from "openai"
 
 import {
@@ -68,6 +69,10 @@ const PARALLEL_READ_ONLY_TOOLS = new Set([
 /** How many times to automatically re-establish a model request that fails
  *  before producing any output (transient/connection errors). */
 const MAX_STREAM_RETRIES = 3
+/** Slack (ms) when comparing the session file's mtime against this process's
+ *  last write, so our own just-written file is never mistaken for a foreign
+ *  newer write. */
+const STALE_WRITE_TOLERANCE_MS = 2000
 
 /** Transient failures worth auto-retrying: any transport/connection error (no
  *  usable HTTP status — socket reset, DNS, timeout, TLS drop) plus 5xx/408/429
@@ -364,6 +369,12 @@ export class Agent {
 	private title = ""
 	private createdAt = new Date().toISOString()
 	private lastGitHead?: string
+	/**
+	 * mtime (ms) of this instance's last session write, or the resumed file's
+	 * mtime at startup. A newer on-disk mtime means another process wrote
+	 * newer turns; persist() then refuses to roll the file back.
+	 */
+	private lastSessionWriteMs = 0
 	private readonly hooks: HookRunner
 	/** MCP server manager (may be undefined when MCP is disabled). */
 	private mcp?: McpManager
@@ -415,6 +426,12 @@ export class Agent {
 			this.title = options.resume.title
 			this.createdAt = options.resume.createdAt
 			this.firstMessageSent = this.messages.length > 0
+			// Baseline for the stale-write guard: the resumed file's mtime.
+			try {
+				this.lastSessionWriteMs = fs.statSync(getSessionFilePath(this.taskId)).mtimeMs
+			} catch {
+				// file missing — nothing to protect yet
+			}
 		}
 		this.sessionApproveEdits = options.autoApproveEdits
 		this.mcp = options.mcp
@@ -579,7 +596,28 @@ export class Agent {
 	/** Write the current conversation to the sessions directory. */
 	private persist(): void {
 		if (this.messages.length === 0) return
+		const filePath = getSessionFilePath(this.taskId)
 		try {
+			// Stale-write guard: if another process (e.g. a zombie left by an
+			// unfinished quit, or a second OrbCode instance) wrote newer turns to
+			// this session file, writing our older in-memory history would roll
+			// the session back. Skip and warn instead of clobbering.
+			if (this.lastSessionWriteMs > 0) {
+				try {
+					const onDiskMs = fs.statSync(filePath).mtimeMs
+					if (onDiskMs > this.lastSessionWriteMs + STALE_WRITE_TOLERANCE_MS) {
+						this.options.callbacks.onEvent({
+							type: "system",
+							message:
+								"Session file was updated by another OrbCode process; skipping save to protect the newer turns.",
+							isError: false,
+						})
+						return
+					}
+				} catch {
+					// no file on disk yet — nothing to protect
+				}
+			}
 			saveSession({
 				id: this.taskId,
 				cwd: this.options.cwd,
@@ -594,8 +632,16 @@ export class Agent {
 				messages: this.messages,
 				transcript: this.transcript,
 			})
-		} catch {
-			// persistence is best-effort; never break the session over it
+			this.lastSessionWriteMs = Date.now()
+		} catch (error) {
+			// Persistence is best-effort and must never break the session, but a
+			// silent catch here is how whole turns vanished without a trace.
+			// Surface the failure so the user knows the save didn't happen.
+			this.options.callbacks.onEvent({
+				type: "system",
+				message: `Failed to save session: ${(error as Error).message}`,
+				isError: true,
+			})
 		}
 	}
 
@@ -738,6 +784,9 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 						]
 					: userContent,
 		})
+		// Persist immediately so a hard kill before the first model response
+		// still leaves the user's prompt on disk.
+		this.persist()
 
 		// --- Auto-fetch Figma URLs from the user's message ---
 		// Instead of relying on the model to call figma_fetch, we scan the
@@ -1207,6 +1256,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		for (let index = batchEnd; index < toolCalls.length; index++) {
 			await runToolCall(toolCalls[index])
 		}
+		// Persist after every model step: a hard kill mid-turn (crash, closed
+		// terminal, kill signal) loses at most the in-flight tool call instead
+		// of the entire turn's accumulated history.
+		this.persist()
 		return completed
 	}
 

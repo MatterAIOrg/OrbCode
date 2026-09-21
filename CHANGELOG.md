@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.7] - 2026-09-21
+
+### Added
+
+- **Force-send a queued message.** Messages typed while the agent is streaming are held in a FIFO queue and drained one per turn, so a queued message previously had to wait for the whole in-flight turn (including every tool call) to finish. The queue panel now shows a clickable `[send now]` action beside each message, and `ctrl+s` force-sends the next one in line. Either path jumps that message to the front of the queue and aborts the in-flight turn so it starts immediately; when nothing is in flight the queue drains directly.
+- **Organization-scoped dynamic model catalog.** `fetchDynamicModels` now sends `X-KiloCode-OrganizationId` and `X-Org-Id` headers — from the new optional `organizationId` argument, falling back to `settings.organizationId` when omitted — so the gateway returns the models available to the user's organization instead of the global registry.
+
+### Fixed
+
+- **Session data no longer vanishes when quitting mid-turn.** Session persistence previously ran only in `runTurn`'s `finally` — when OrbCode was killed or the terminal closed while a turn was still running (a long multi-step turn can stream for many minutes), the entire in-flight turn's messages (the user prompt, every assistant response, and every tool call/result accumulated across all its steps) were never written to disk, so resuming showed the state from before that turn. The agent now persists right after the user message is pushed and after every model step, so a hard kill loses at most the single in-flight tool call. Session writes are also atomic now (write to a pid-suffixed temp file, then rename), so a crash mid-write can no longer truncate or corrupt the last good session file; a non-serializable value in history degrades to a safe replacer instead of throwing away the whole session; and save failures are surfaced as transcript errors instead of being silently swallowed.
+- **A stale OrbCode process can no longer roll a session back.** Quitting with Ctrl+C previously did nothing (no handler existed), leaving zombie processes alive with the old conversation in memory; their next save would overwrite the session file with stale history, erasing turns written by a resumed session. Ctrl+C now interrupts the running turn (like Esc) and, when idle, exits through the same double-press confirmation as Ctrl+D. Additionally, `persist()` tracks the session file's last-known mtime and refuses to write when another process has written newer turns, warning instead of clobbering.
+
 ## [6.8.6] - 2026-09-15
 
 ### Fixed

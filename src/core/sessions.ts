@@ -55,10 +55,35 @@ export function getSessionFilePath(id: string): string {
 	return path.join(getSessionsDir(), `${id}.json`)
 }
 
+/** Serialize a session; degrade gracefully if a message holds a value JSON
+ *  cannot represent (BigInt, circular reference) instead of losing the
+ *  whole session to a stringify throw. */
+function serializeSession(data: SessionData): string {
+	try {
+		return JSON.stringify(data)
+	} catch {
+		const seen = new WeakSet<object>()
+		return JSON.stringify(data, (_key, value) => {
+			if (typeof value === "bigint") return value.toString()
+			if (value && typeof value === "object") {
+				if (seen.has(value)) return "[Circular]"
+				seen.add(value)
+			}
+			return value
+		})
+	}
+}
+
 export function saveSession(data: SessionData): void {
 	const dir = getSessionsDir()
 	fs.mkdirSync(dir, { recursive: true })
-	fs.writeFileSync(getSessionFilePath(data.id), JSON.stringify(data), { mode: 0o600 })
+	const target = getSessionFilePath(data.id)
+	// Write-then-rename so a crash mid-write can never truncate the last
+	// good session file. The pid suffix keeps concurrent processes from
+	// colliding on the temp file.
+	const tmp = `${target}.${process.pid}.tmp`
+	fs.writeFileSync(tmp, serializeSession(data), { mode: 0o600 })
+	fs.renameSync(tmp, target)
 }
 
 export function loadSessionById(id: string): SessionData | undefined {

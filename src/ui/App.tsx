@@ -106,6 +106,7 @@ import {
   TranscriptViewport,
 } from "./components/TranscriptViewport.js";
 import { ScrollToBottomChip } from "./components/ScrollToBottomChip.js";
+import { QueuedMessages } from "./components/QueuedMessages.js";
 import { Toast } from "./components/Toast.js";
 import { copyToClipboard } from "../utils/clipboard.js";
 import {
@@ -834,6 +835,50 @@ export function App({
     }
     return agentRef.current;
   }, [createAgent]);
+
+  // Force-send: jump a queued message to the front of the queue, then skip
+  // the wait for the in-flight turn. Aborting makes the agent's `finally`
+  // emit `turn-end`, whose handler drains the queue and starts the next
+  // turn — the same path a normal turn end takes, so the conversation
+  // history stays consistent.
+  const forceSendQueued = useCallback(
+    (index = 0) => {
+      const queue = queueRef.current;
+      if (queue.length === 0) {
+        pushRow({ kind: "info", text: "No queued messages to send." });
+        return;
+      }
+      const clamped = Math.min(Math.max(index, 0), queue.length - 1);
+      const target = queue[clamped]!;
+      queueRef.current = [
+        target,
+        ...queue.slice(0, clamped),
+        ...queue.slice(clamped + 1),
+      ];
+      setQueuedMessages(queueRef.current);
+      const agent = agentRef.current;
+      if (!busy || !agent) {
+        // Nothing in flight — drain the queue directly.
+        const next = drainQueue();
+        if (next === null) return;
+        pushRow({
+          kind: "user",
+          text: next.text,
+          attachments: next.attachments.map(attachmentSummary),
+        });
+        setBusy(true);
+        setBusyLabel("Thinking");
+        void getAgent().runTurn(next.text, next.attachments);
+        return;
+      }
+      pushRow({
+        kind: "info",
+        text: `Force-sending queued message (${queueRef.current.length} in queue)…`,
+      });
+      agent.abort();
+    },
+    [busy, drainQueue, getAgent, pushRow],
+  );
 
   const handleResume = useCallback(
     (session: SessionData) => {
@@ -1629,9 +1674,28 @@ export function App({
       scrollTranscriptBy(-Math.max(1, contentHeight - 2));
       return;
     }
-    // Require two presses so an accidental Ctrl+D cannot discard the session.
-    // The ref makes rapid repeated presses reliable before React re-renders.
-    if (key.ctrl && input === "d") {
+    // Ctrl+C interrupts the running turn (like Esc); when idle it exits via
+    // the same double-press confirmation as Ctrl+D. Previously Ctrl+C did
+    // nothing, leaving zombie processes whose next save could overwrite
+    // newer session data written by a resumed process.
+    if (key.ctrl && input === "c") {
+      if (busy) {
+        if (
+          !pendingApproval &&
+          !pendingFollowup &&
+          !pendingHookTrust &&
+          !pendingMcpApproval
+        ) {
+          agentRef.current?.abort();
+        }
+        return;
+      }
+      // Idle: fall through to the shared double-press exit below.
+    }
+    // Require two presses so an accidental Ctrl+D/Ctrl+C cannot discard the
+    // session. The ref makes rapid repeated presses reliable before React
+    // re-renders.
+    if (key.ctrl && (input === "d" || input === "c")) {
       if (exitConfirmationRef.current) {
         exitConfirmationRef.current = false;
         setExitConfirmationActive(false);
@@ -1686,6 +1750,17 @@ export function App({
         ),
       );
       // The terminal adapter replaces the retained screen rows in place.
+    }
+    // Ctrl+S force-sends the next queued message without waiting for the
+    // in-flight turn (the queue panel advertises this next to each message).
+    if (
+      key.ctrl &&
+      input === "s" &&
+      inputActive &&
+      queueRef.current.length > 0
+    ) {
+      forceSendQueued(0);
+      return;
     }
   });
 
@@ -2093,29 +2168,11 @@ export function App({
           </TranscriptViewport>
           <Box flexDirection="column" flexShrink={0}>
             {queuedMessages.length > 0 && (
-              <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
-                <Text color={COLORS.dim} bold>
-                  Queue ({queuedMessages.length})
-                </Text>
-                {queuedMessages.slice(0, 5).map((msg, i) => (
-                  <Text key={i} color={COLORS.dim}>
-                    {i + 1}.{" "}
-                    {truncateForQueue(msg.text || "Attached files").replace(
-                      /\n/g,
-                      "↵",
-                    )}
-                    {msg.attachments.length > 0
-                      ? ` · 📎 ${msg.attachments.length}`
-                      : ""}
-                  </Text>
-                ))}
-                {queuedMessages.length > 5 && (
-                  <Text color={COLORS.dim}>
-                    {" "}
-                    … {queuedMessages.length - 5} more
-                  </Text>
-                )}
-              </Box>
+              <QueuedMessages
+                messages={queuedMessages}
+                width={wrapWidth}
+                onForceSend={forceSendQueued}
+              />
             )}
             <InputBox
               active={inputActive}
@@ -2372,7 +2429,7 @@ function estimateRowLines(row: Row, width: number): number {
         wrappedAt("/help     all commands", secondCellWidth),
       );
       const shortcuts = wrappedAt(
-        "shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d exit",
+        "shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d/c exit",
         panelWidth,
       );
       // Action/footer top margins plus Header's bottom margin add three rows.
@@ -2414,12 +2471,6 @@ function estimateRowLines(row: Row, width: number): number {
     default:
       return 1;
   }
-}
-
-const QUEUE_PREVIEW_LIMIT = 80;
-function truncateForQueue(text: string): string {
-  if (text.length <= QUEUE_PREVIEW_LIMIT) return text;
-  return text.slice(0, QUEUE_PREVIEW_LIMIT - 1) + "…";
 }
 
 function LoginSection({
