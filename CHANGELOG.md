@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.0] - 2026-09-30
+
 ### Added
 
 - **Whitespace-tolerant edits.** `file_edit` / `multi_file_edit` previously required `old_string` to match byte for byte, so a model that reconstructed indentation from memory (tabs vs spaces), or sent LF text for a CRLF file, got "old_string not found" and had to re-read the file and rewrite the edit — an extra model round trip plus another expensive edit-composition step. Matching now falls back, in order, to the same text with the file's line endings, then to a unique line-by-line match that ignores indentation and trailing whitespace (the replacement is re-indented to the file's own style). Replacement text always follows the file's line endings, so a CRLF file is never left with mixed endings. Ambiguous loose matches are still rejected, and successful loose matches say so in the tool result.
