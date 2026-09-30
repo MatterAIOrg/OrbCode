@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import * as os from "node:os"
 import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
@@ -8,10 +9,25 @@ import { PopoverBox } from "./PopoverBox.js"
 const VISIBLE_ROWS = 8
 
 interface SessionPickerProps {
+	/** sessions from the current directory */
 	sessions: SessionData[]
+	/** sessions from every directory; when given, Tab switches between the two lists */
+	allSessions?: SessionData[]
+	/** start on the all-directories list (e.g. nothing to resume here) */
+	initialShowAll?: boolean
+	/** current directory; sessions elsewhere show their directory */
+	cwd?: string
 	onSelect: (session: SessionData) => void
 	onCancel: () => void
 	title?: string
+}
+
+/** Shorten a directory for display: `~` for home, and at most the last 3 segments. */
+function shortDir(dir: string): string {
+	const home = os.homedir()
+	const withHome = dir === home || dir.startsWith(home + "/") ? "~" + dir.slice(home.length) : dir
+	const parts = withHome.split("/")
+	return parts.length > 4 ? "…/" + parts.slice(-3).join("/") : withHome
 }
 
 function relativeTime(iso: string): string {
@@ -25,10 +41,29 @@ function relativeTime(iso: string): string {
 	return `${days}d ago`
 }
 
-export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a previous session" }: SessionPickerProps) {
+export function SessionPicker({
+	sessions: localSessions,
+	allSessions,
+	initialShowAll = false,
+	cwd,
+	onSelect,
+	onCancel,
+	title = "Resume a previous session",
+}: SessionPickerProps) {
 	const [selected, setSelected] = useState(0)
+	const [showAll, setShowAll] = useState(initialShowAll && allSessions !== undefined)
+	const sessions = showAll && allSessions ? allSessions : localSessions
 
 	useInput((input, key) => {
+		if (key.tab && allSessions) {
+			setShowAll((value) => !value)
+			setSelected(0)
+			return
+		}
+		if (sessions.length === 0) {
+			if (key.escape) onCancel()
+			return
+		}
 		if (key.upArrow) {
 			setSelected((s) => (s - 1 + sessions.length) % sessions.length)
 			return
@@ -58,7 +93,11 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
 			<Text bold color={COLORS.primary}>
 				{title}
+				{allSessions && <Text color={COLORS.dim}> · {showAll ? "all directories" : "this directory"}</Text>}
 			</Text>
+			{sessions.length === 0 && (
+				<Text color={COLORS.dim}>  No sessions {showAll ? "yet" : "in this directory"}.</Text>
+			)}
 			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
 			{visible.map((session, i) => {
 				const index = windowStart + i
@@ -71,6 +110,7 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 						<Text color={COLORS.dim}>
 							{" "}
 							· {relativeTime(session.updatedAt)} · {userTurns} message{userTurns === 1 ? "" : "s"}
+							{showAll && session.cwd !== cwd ? ` · ${shortDir(session.cwd)}` : ""}
 						</Text>
 					</Text>
 				)
@@ -78,7 +118,9 @@ export function SessionPicker({ sessions, onSelect, onCancel, title = "Resume a 
 			{windowStart + VISIBLE_ROWS < sessions.length && (
 				<Text color={COLORS.dim}>  ↓ {sessions.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text color={COLORS.dim}>↑/↓ select · enter resume · esc cancel</Text>
+			<Text color={COLORS.dim}>
+				↑/↓ select · enter resume{allSessions ? ` · tab ${showAll ? "this directory" : "all directories"}` : ""} · esc cancel
+			</Text>
 		</PopoverBox>
 	)
 }

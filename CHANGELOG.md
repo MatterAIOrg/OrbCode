@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [6.9.1] - 2026-09-30
 
+### Added
+
+- **Resume sessions from any directory.** `/resume` (and `orbcode --resume`) only listed sessions started in the current directory, so a conversation from another project was hard to find. The picker now shows this directory's sessions first and **Tab** switches to sessions from all directories, each labelled with where it lives; when there's nothing to resume here it opens on all directories. Resuming a session from another directory switches OrbCode's working directory to that session's directory and reloads the directory-bound state (project settings, MCP servers, project hook trust), so tools and `AGENTS.md` match the conversation. A session whose directory no longer exists shows an error instead of resuming.
+
 ### Fixed
 
 - **Picking GLM 5.3 Flash no longer reverts to another model.** The plan-aware default (catalog index 0 for paid plans) was applied whenever the selected model equalled the static `DEFAULT_MODEL_ID` — which is `zai/glm-5.3-flash` — so on paid plans choosing that model was immediately treated as "never chosen" and swapped for the catalog's first model. The selection now carries a persisted `modelExplicit` flag (set by `/model` picks, `settings.json` `model` and `MATTERAI_MODEL`; cleared by automatic plan defaults and fallbacks), and only a model that was never explicitly chosen is re-resolved, in both the TUI and headless mode.

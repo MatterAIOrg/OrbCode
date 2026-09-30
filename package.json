@@ -39,7 +39,7 @@
     "test:metrics": "node --import tsx --test test/metrics.test.ts",
     "test:json-repair": "node --import tsx --test test/json-repair.test.ts",
     "test:search": "node --import tsx --test test/search-files.test.ts",
-    "test:ui": "bun test test/ui-viewport.test.tsx",
+    "test:ui": "bun test test/ui-viewport.test.tsx test/session-picker.test.tsx",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {

@@ -464,9 +464,10 @@ export function App({
   const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [resumableSessions, setResumableSessions] = useState<
-    SessionData[] | null
-  >(null);
+  const [resumableSessions, setResumableSessions] = useState<{
+    here: SessionData[];
+    everywhere: SessionData[];
+  } | null>(null);
   const [taskPickerSessions, setTaskPickerSessions] = useState<
     SessionData[] | null
   >(null);
@@ -883,6 +884,40 @@ export function App({
   const handleResume = useCallback(
     (session: SessionData) => {
       setResumableSessions(null);
+      // A session from another directory continues in that directory, so its
+      // tools, AGENTS.md, project settings, hooks and MCP servers match the
+      // conversation.
+      const switchedDir = session.cwd && session.cwd !== process.cwd();
+      if (switchedDir) {
+        try {
+          process.chdir(session.cwd);
+        } catch {
+          pushRow({
+            kind: "error",
+            text: `Can't resume "${session.title || session.id}": its directory ${session.cwd} no longer exists.`,
+          });
+          return;
+        }
+        const oldManager = mcpManagerRef.current;
+        mcpManagerRef.current = null;
+        void oldManager?.stop().catch(() => {});
+        const refreshed = loadSettings();
+        setSettings(refreshed);
+        if (getAuthToken(refreshed)) {
+          const manager = new McpManager(
+            process.cwd(),
+            refreshed.disabledMcpServers ?? [],
+            refreshed.enabledMcpServers ?? [],
+          );
+          mcpManagerRef.current = manager;
+          void manager.start().then(() => {
+            const pendingMcp = manager.getPendingApproval();
+            if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp);
+          });
+        }
+        const pendingHooks = getPendingProjectHooks(process.cwd());
+        if (pendingHooks) setPendingHookTrust(pendingHooks);
+      }
       const resumedAgent = createAgent(session);
       agentRef.current = resumedAgent;
       process.env.ORBCODE_LAST_SESSION_ID = resumedAgent.taskId;
@@ -914,7 +949,7 @@ export function App({
       }
       pushRow({
         kind: "info",
-        text: `Resumed session: ${session.title || session.id}`,
+        text: `Resumed session: ${session.title || session.id}${switchedDir ? ` · working directory is now ${session.cwd}` : ""}`,
       });
     },
     [createAgent, pushRow, resetTranscript],
@@ -1165,17 +1200,14 @@ export function App({
           break;
         }
         case "/resume": {
-          const sessions = listSessions(process.cwd()).filter(
-            (s) => s.id !== agentRef.current?.taskId,
-          );
-          if (sessions.length === 0) {
-            pushRow({
-              kind: "info",
-              text: "No previous sessions found for this directory.",
-            });
+          const notCurrent = (s: SessionData) => s.id !== agentRef.current?.taskId;
+          const here = listSessions(process.cwd()).filter(notCurrent);
+          const everywhere = listSessions().filter(notCurrent);
+          if (everywhere.length === 0) {
+            pushRow({ kind: "info", text: "No previous sessions found." });
             break;
           }
-          setResumableSessions(sessions);
+          setResumableSessions({ here, everywhere });
           break;
         }
         case "/task": {
@@ -2262,7 +2294,10 @@ export function App({
             )}
             {resumableSessions && (
               <SessionPicker
-                sessions={resumableSessions}
+                sessions={resumableSessions.here}
+                allSessions={resumableSessions.everywhere}
+                initialShowAll={resumableSessions.here.length === 0}
+                cwd={process.cwd()}
                 onSelect={handleResume}
                 onCancel={() => setResumableSessions(null)}
               />
