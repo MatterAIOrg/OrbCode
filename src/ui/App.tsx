@@ -689,7 +689,11 @@ export function App({
           setBusyLabel("Working");
           break;
         case "text-done":
-          pushRow({ kind: "assistant", text: textBufferRef.current });
+          // Models often stream whitespace-only content before a tool call;
+          // don't render it as an empty "●" message.
+          if (textBufferRef.current.trim()) {
+            pushRow({ kind: "assistant", text: textBufferRef.current });
+          }
           textBufferRef.current = "";
           setStreamingText("");
           setBusyLabel("Working");
@@ -745,7 +749,9 @@ export function App({
         case "turn-end":
           // Flush anything still streaming (e.g. on interrupt).
           if (textBufferRef.current) {
-            pushRow({ kind: "assistant", text: textBufferRef.current });
+            if (textBufferRef.current.trim()) {
+              pushRow({ kind: "assistant", text: textBufferRef.current });
+            }
             textBufferRef.current = "";
             setStreamingText("");
           }
@@ -1915,7 +1921,7 @@ export function App({
   // Do not lay out the entire accumulated response on every token. Keep only
   // the live tail mounted; text-done commits the complete response to the
   // virtualized transcript, so nothing is lost from history.
-  const streamingTextDisplay = streamingText
+  const streamingTextDisplay = streamingText.trim()
     ? tailForHeight(
         streamingText,
         Math.max(1, contentHeight - 1 - spinnerHeight),
@@ -2476,7 +2482,8 @@ function estimateRowLines(row: Row, width: number): number {
         1 + formatUserBlock(row.text, w, row.attachments).split("\n").length
       );
     case "assistant":
-      return 1 + wrapped(`● ${row.text}`);
+      // Blank messages render nothing (see rows.tsx).
+      return row.text.trim() ? 1 + wrapped(`● ${row.text}`) : 0;
     case "reasoning":
       return row.expanded ? 2 + wrapped(row.text, w - 2) : 2;
     case "tool": {

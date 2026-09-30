@@ -201,3 +201,33 @@ test("a failing auto-compaction is reported once and does not derail the turn", 
 	assert.equal(client.summaryCalls, 1)
 	assert.equal(events.filter((e) => /Auto-compaction failed/.test(e)).length, 1)
 })
+
+test("whitespace-only content before a tool call is not kept as an assistant message", async () => {
+	class BlankThenTool extends ScriptedClient {
+		private calls = 0
+		async *createMessage(
+			system: string,
+			messages: Messages,
+			tools: OpenAI.Chat.ChatCompletionTool[],
+		): AsyncGenerator<ApiStreamChunk> {
+			if (this.calls++ === 0) {
+				this.requests.push({ messages: structuredClone(messages), toolCount: tools.length })
+				yield { type: "text", text: "\n\n" }
+				yield {
+					type: "native_tool_calls",
+					toolCalls: [{ index: 0, id: "c1", type: "function", function: { name: READ_BIG.name, arguments: JSON.stringify(READ_BIG.args) } }],
+				}
+				yield { type: "usage", inputTokens: 1000, outputTokens: 5, totalCost: 0 }
+				return
+			}
+			yield* super.createMessage(system, messages, tools)
+		}
+	}
+	const client = new BlankThenTool([{ text: "All done." }])
+	const { agent } = makeAgent(client)
+	await agent.runTurn("go")
+	const assistantTexts = agent.displayTranscript.filter((e) => e.kind === "assistant").map((e) => (e as { text: string }).text)
+	assert.deepEqual(assistantTexts, ["All done."])
+	const sentAssistant = client.requests.at(-1)!.messages.find((m) => m.role === "assistant")!
+	assert.equal(sentAssistant.content, null)
+})

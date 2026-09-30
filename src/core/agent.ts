@@ -537,7 +537,8 @@ export class Agent {
 				this.transcriptText += event.text
 				break
 			case "text-done":
-				if (this.transcriptText) {
+				// Whitespace-only content (common right before a tool call) is not a message.
+				if (this.transcriptText.trim()) {
 					this.transcript.push({ kind: "assistant", text: this.transcriptText })
 				}
 				this.transcriptText = ""
@@ -569,10 +570,10 @@ export class Agent {
 				this.transcript.push({ kind: "error", text: event.message })
 				break
 			case "turn-end":
-				if (this.transcriptText) {
+				if (this.transcriptText.trim()) {
 					this.transcript.push({ kind: "assistant", text: this.transcriptText })
-					this.transcriptText = ""
 				}
+				this.transcriptText = ""
 				if (this.transcriptReasoning) {
 					this.transcript.push({
 						kind: "reasoning",
@@ -1337,7 +1338,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 
 		const assistantMessage: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
 			role: "assistant",
-			content: assistantText || null,
+			content: assistantText.trim() ? assistantText : null,
 		}
 		if (toolCalls.length > 0) {
 			assistantMessage.tool_calls = toolCalls.map((tc) => ({

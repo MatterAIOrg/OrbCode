@@ -97,3 +97,23 @@ test("pickers without allSessions keep the old single-list behavior", async () =
     act(() => screen.renderer.destroy());
   }
 });
+
+test("blank assistant content does not render an empty ● row", async () => {
+  const { RowView } = await import("../src/ui/components/rows.js");
+  const { Box } = await import("../src/ui/primitives.js");
+  const screen = await testRender(
+    <Box flexDirection="column">
+      <RowView row={{ kind: "assistant", id: "blank", text: "\n\n  " } as never} width={60} />
+      <RowView row={{ kind: "assistant", id: "real", text: "Done." } as never} width={60} />
+    </Box>,
+    { width: 60, height: 8 },
+  );
+  try {
+    await screen.renderOnce();
+    const frame = screen.captureCharFrame();
+    assert.equal((frame.match(/●/g) ?? []).length, 1);
+    assert.match(frame, /● Done\./);
+  } finally {
+    act(() => screen.renderer.destroy());
+  }
+});
