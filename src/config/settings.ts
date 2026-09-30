@@ -13,6 +13,13 @@ export interface OrbCodeSettings {
 	/** login token, written by `orbcode login` (config.json only) */
 	token?: string
 	model: string
+	/**
+	 * True once the user picked the model themselves (or pinned it via
+	 * settings.json / MATTERAI_MODEL). The plan-aware default only replaces a
+	 * model that was never chosen — comparing against DEFAULT_MODEL_ID can't tell
+	 * "never chose" from "chose the model that happens to be the static default".
+	 */
+	modelExplicit?: boolean
 	organizationId?: string
 	autoApproveEdits: boolean
 	autoApproveSafeCommands: boolean
@@ -185,6 +192,7 @@ export function loadSettings(): OrbCodeSettings {
 	for (const settingsPath of getSettingsPaths(cwd)) {
 		const fileSettings = readJson(settingsPath)
 		if (!fileSettings) continue
+		if (typeof fileSettings.model === "string") settings.modelExplicit = true
 		for (const key of SETTINGS_KEYS) {
 			if (fileSettings[key] !== undefined) {
 				;(settings as unknown as Record<string, unknown>)[key] = fileSettings[key]
@@ -231,10 +239,14 @@ export function loadSettings(): OrbCodeSettings {
 	// Environment variables take precedence over all files.
 	if (process.env.MATTERAI_BASE_URL) settings.baseUrl = process.env.MATTERAI_BASE_URL
 	if (process.env.MATTERAI_API_KEY) settings.apiKey = process.env.MATTERAI_API_KEY
-	if (process.env.MATTERAI_MODEL) settings.model = process.env.MATTERAI_MODEL
+	if (process.env.MATTERAI_MODEL) {
+		settings.model = process.env.MATTERAI_MODEL
+		settings.modelExplicit = true
+	}
 
 	if (!isValidAxonModel(settings.model)) {
 		settings.model = DEFAULT_MODEL_ID
+		settings.modelExplicit = false
 	}
 	if (settings.theme !== "dark" && settings.theme !== "light") {
 		settings.theme = DEFAULTS.theme
@@ -257,6 +269,7 @@ export function saveSettings(settings: OrbCodeSettings): void {
 	const toPersist = {
 		token: settings.token,
 		model: settings.model,
+		modelExplicit: settings.modelExplicit || undefined,
 		organizationId: settings.organizationId,
 		autoApproveEdits: settings.autoApproveEdits,
 		autoApproveSafeCommands: settings.autoApproveSafeCommands,

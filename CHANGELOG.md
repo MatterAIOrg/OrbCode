@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Picking GLM 5.3 Flash no longer reverts to another model.** The plan-aware default (catalog index 0 for paid plans) was applied whenever the selected model equalled the static `DEFAULT_MODEL_ID` — which is `zai/glm-5.3-flash` — so on paid plans choosing that model was immediately treated as "never chosen" and swapped for the catalog's first model. The selection now carries a persisted `modelExplicit` flag (set by `/model` picks, `settings.json` `model` and `MATTERAI_MODEL`; cleared by automatic plan defaults and fallbacks), and only a model that was never explicitly chosen is re-resolved, in both the TUI and headless mode.
+
 ## [6.9.0] - 2026-09-30
 
 ### Added

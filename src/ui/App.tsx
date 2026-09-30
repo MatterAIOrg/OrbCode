@@ -935,7 +935,8 @@ export function App({
   );
 
   const switchModel = useCallback(
-    (modelId: string, options?: { silent?: boolean }) => {
+    /** `auto`: an automatic switch (plan default / plan fallback), not a user pick. */
+    (modelId: string, options?: { silent?: boolean; auto?: boolean }) => {
       if (isLumenAxonModel(modelId) && !hasLumenAccess) {
         pushRow({
           kind: "error",
@@ -964,7 +965,7 @@ export function App({
         });
         return;
       }
-      const updated = { ...loadSettings(), model: modelId };
+      const updated = { ...loadSettings(), model: modelId, modelExplicit: !options?.auto };
       setSettings(updated);
       saveSettings(updated);
       agentRef.current?.setModel(modelId);
@@ -995,10 +996,10 @@ export function App({
   // an explicit user pick is never overwritten.
   useEffect(() => {
     if (!catalogReady || !planLoaded) return;
-    if (settings.model !== DEFAULT_MODEL_ID) return;
+    if (settings.modelExplicit || settings.model !== DEFAULT_MODEL_ID) return;
     const preferred = getDefaultModelId(activePlan);
-    if (preferred !== settings.model) switchModel(preferred, { silent: true });
-  }, [activePlan, catalogReady, planLoaded, settings.model, switchModel]);
+    if (preferred !== settings.model) switchModel(preferred, { silent: true, auto: true });
+  }, [activePlan, catalogReady, planLoaded, settings.model, settings.modelExplicit, switchModel]);
 
   useEffect(() => {
     if (!activePlan) {
@@ -1008,24 +1009,24 @@ export function App({
     // default Eido model; its 400k variant is covered by the Lumen check
     // first since the 232k Lumen fallback would still be locked.
     if (isLumenAxonModel(settings.model) && !hasLumenAccess) {
-      switchModel(DEFAULT_MODEL_ID);
+      switchModel(DEFAULT_MODEL_ID, { auto: true });
       return;
     }
     // A stored Eido Base selection on a plan without access falls back to the
     // default Eido model; its 400k variant is covered by the Base check first.
     if (isEidoBaseAxonModel(settings.model) && !hasEidoBaseAccess) {
-      switchModel(DEFAULT_MODEL_ID);
+      switchModel(DEFAULT_MODEL_ID, { auto: true });
       return;
     }
     // A stored Eido Pro selection on a plan without access falls back to the
     // default Eido model; its 400k variant is covered by the Eido Pro check
     // first since the 232k Eido Pro fallback would still be locked.
     if (isEidoProAxonModel(settings.model) && !hasEidoProAccess) {
-      switchModel(DEFAULT_MODEL_ID);
+      switchModel(DEFAULT_MODEL_ID, { auto: true });
       return;
     }
     if (!has400kAccess && is400kAxonModel(settings.model)) {
-      switchModel(get232kAxonFallback(settings.model));
+      switchModel(get232kAxonFallback(settings.model), { auto: true });
     }
   }, [activePlan, has400kAccess, hasEidoBaseAccess, hasEidoProAccess, hasLumenAccess, settings.model, switchModel]);
 
