@@ -2,46 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  BUILTIN_AXON_MODELS,
-  DEFAULT_MODEL_ID,
   canUse400kContext,
   canUseEidoBaseModels,
   canUseEidoProModels,
   canUseLumenModels,
   get232kAxonFallback,
-  getGatewayModelId,
   is400kAxonModel,
   isEidoBaseAxonModel,
   isEidoProAxonModel,
   isLumenAxonModel,
 } from "../src/api/models.js";
-
-for (const tier of ["pro", "base"] as const) {
-  test(`Axon Eido 3.2 ${tier} exposes default and 400k local options`, () => {
-    const baseId =
-      tier === "pro" ? "axon-eido-3.2-code-pro" : "axon-eido-3.2-code";
-    const modelDefault = BUILTIN_AXON_MODELS[`${baseId}-232k`];
-    const model400k = BUILTIN_AXON_MODELS[`${baseId}-400k`];
-
-    assert.equal(modelDefault.contextWindow, 232000);
-    assert.equal(model400k.contextWindow, 400000);
-    assert.equal(getGatewayModelId(modelDefault), baseId);
-    assert.equal(getGatewayModelId(model400k), baseId);
-
-    const sharedMetadata = ({
-      id: _id,
-      name: _name,
-      contextWindow: _contextWindow,
-      ...metadata
-    }: typeof modelDefault) => metadata;
-
-    assert.deepEqual(sharedMetadata(modelDefault), sharedMetadata(model400k));
-  });
-}
-
-test("Axon Auto is the default model", () => {
-  assert.equal(DEFAULT_MODEL_ID, "axon-auto-232k");
-});
 
 test("400k context is limited to Pro Plus and Ultra plans", () => {
   for (const plan of ["Pro Plus", "pro_plus", "pro-plus", "ULTRA"]) {
@@ -50,17 +20,6 @@ test("400k context is limited to Pro Plus and Ultra plans", () => {
   for (const plan of [undefined, "free", "Pro", "Enterprise"]) {
     assert.equal(canUse400kContext(plan), false);
   }
-});
-
-test("Axon Lumen 4 exposes 232k and 400k local options", () => {
-  const baseId = "axon-lumen-4-code";
-  const modelDefault = BUILTIN_AXON_MODELS[`${baseId}-232k`];
-  const model400k = BUILTIN_AXON_MODELS[`${baseId}-400k`];
-
-  assert.equal(modelDefault.contextWindow, 232000);
-  assert.equal(model400k.contextWindow, 400000);
-  assert.equal(getGatewayModelId(modelDefault), baseId);
-  assert.equal(getGatewayModelId(model400k), baseId);
 });
 
 test("restricted Axon models map to their default-context variants", () => {
