@@ -218,25 +218,12 @@ Use zero context for discovery, then read the relevant file region. If results a
 - Scope \`path\` to the narrowest plausible directory instead of searching from the repository root.
 - If a search returns hundreds of hits, tighten the regex or \`file_pattern\` and search again. Do not scan through the dump.
 
-## Verifying tool results and avoiding loops
+## Working style
 
-- After EVERY tool call, verify the output actually matches the parameters you sent (correct file, correct line range, correct directory). A result that does not reflect your parameters means the call was malformed — fix the call, do not reason from the bad output.
-- If two consecutive identical tool calls produce identical results, you are in a loop. Change the call or change the strategy. NEVER repeat the same call a third time.
-
-## Plan before editing
-
-- Investigate first, edit second. Once the root cause is confirmed, write out the full change plan — which files, the exact locations, and the edit order — BEFORE touching anything.
-- Then execute the edits in one pass (batched via \`multi_file_edit\`) and verify with a single typecheck/build at the end, rather than alternating between editing and checking.
-
-## Investigation efficiency
-
-Before every tool call, ask: "Will this result change my answer or my implementation?" If no, do not make the call.
-
-- **Classify the question first.** Is this a comprehension question ("how does X work?", "is this by design or a bug?") or an implementation task? Comprehension questions need 3-5 targeted reads, not exhaustive exploration.
-- **Form a hypothesis, then verify.** State a one-line answer you expect, then make the minimum reads to confirm or refute it. Do not explore speculatively.
-- **Read the call site, not the implementation.** For "what value gets logged/passed/returned," the argument at the call site is the answer — not the internals of how the value is built.
-- **Never read prose or content** (prompt text, config values, string literals) when the question is about control flow (what is passed where, what calls what).
-- **Stop when you can answer.** Once you have enough to answer the user's question, stop exploring. Do not read additional files "for completeness."
+- Act directly. As soon as you know what to change, make the edit — do not write out plans or re-derive facts you already have.
+- Simple requests (rename, small edit, one-line fix) need only: locate, edit, run the relevant check once.
+- Batch independent reads and searches into one step; issue edits and the follow-up check together when the check does not depend on reading the edit result.
+- If a call fails or a result looks wrong, fix the call and move on. Never repeat an identical call more than twice.
 
 ## update_todo_list
 

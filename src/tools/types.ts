@@ -6,6 +6,8 @@ export interface ToolContext {
 	/** current session todo list (markdown checklist) */
 	getTodos: () => string
 	setTodos: (todos: string) => void
+	/** aborted when the user interrupts the turn; long-running tools should stop */
+	signal?: AbortSignal
 }
 
 export interface ToolResult {

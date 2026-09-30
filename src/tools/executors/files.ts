@@ -144,27 +144,166 @@ function parseReplaceAll(value: unknown): boolean {
 	return value === true || value === "true" || value === "1"
 }
 
-function applyEdit(content: string, edit: EditSpec): { content: string; error?: string } {
-	const { old_string, new_string } = edit
+/** Result of applying one edit. `note` explains a non-exact match to the model. */
+interface EditOutcome {
+	content: string
+	error?: string
+	note?: string
+}
+
+/** The file's newline style: CRLF only when every line break is CRLF. */
+function detectEol(content: string): "\n" | "\r\n" {
+	const crlf = (content.match(/\r\n/g) ?? []).length
+	const lf = (content.match(/\n/g) ?? []).length
+	return crlf > 0 && crlf === lf ? "\r\n" : "\n"
+}
+
+function toEol(text: string, eol: "\n" | "\r\n"): string {
+	const normalized = text.replace(/\r\n/g, "\n")
+	return eol === "\n" ? normalized : normalized.replace(/\n/g, eol)
+}
+
+function leadingWhitespace(line: string): string {
+	return /^[ \t]*/.exec(line)![0]
+}
+
+/** Drop blank lines at both ends of the model's snippet. */
+function trimBlankEdges(lines: string[]): string[] {
+	let start = 0
+	let end = lines.length
+	while (start < end && lines[start].trim() === "") start++
+	while (end > start && lines[end - 1].trim() === "") end--
+	return lines.slice(start, end)
+}
+
+/**
+ * Locate `oldLines` in the file line by line, ignoring indentation and trailing
+ * whitespace. Returns the matched window only when it is unique.
+ */
+function findLooseMatch(fileLines: string[], oldLines: string[]): { start: number; count: number } | "ambiguous" | undefined {
+	if (oldLines.length === 0) return undefined
+	const wanted = oldLines.map((line) => line.trim())
+	const matches: number[] = []
+	for (let i = 0; i + wanted.length <= fileLines.length; i++) {
+		let ok = true
+		for (let j = 0; j < wanted.length; j++) {
+			if (fileLines[i + j].trim() !== wanted[j]) {
+				ok = false
+				break
+			}
+		}
+		if (ok) matches.push(i)
+	}
+	if (matches.length === 0) return undefined
+	if (matches.length > 1) return "ambiguous"
+	return { start: matches[0], count: wanted.length }
+}
+
+/** Re-indent the model's replacement text so it fits the file's indentation. */
+function reindent(newLines: string[], oldLines: string[], fileWindow: string[]): string[] {
+	const pairs = new Map<string, string>()
+	const nonBlankOld = oldLines.filter((line) => line.trim() !== "")
+	const nonBlankFile = fileWindow.filter((line) => line.trim() !== "")
+	for (let i = 0; i < Math.min(nonBlankOld.length, nonBlankFile.length); i++) {
+		const modelIndent = leadingWhitespace(nonBlankOld[i])
+		if (!pairs.has(modelIndent)) pairs.set(modelIndent, leadingWhitespace(nonBlankFile[i]))
+	}
+	const modelBase = nonBlankOld.length > 0 ? leadingWhitespace(nonBlankOld[0]) : ""
+	const fileBase = nonBlankFile.length > 0 ? leadingWhitespace(nonBlankFile[0]) : ""
+	// Indent unit of the file, used to translate extra nesting the model added.
+	const fileUnit = nonBlankFile.some((line) => line.startsWith("\t")) ? "\t" : "  "
+	return newLines.map((line) => {
+		if (line.trim() === "") return line
+		const indent = leadingWhitespace(line)
+		const mapped = pairs.get(indent)
+		if (mapped !== undefined) return mapped + line.slice(indent.length)
+		if (indent.startsWith(modelBase)) {
+			const extra = indent.slice(modelBase.length)
+			const levels = extra.includes("\t") ? extra.length : Math.round(extra.length / 2)
+			return fileBase + fileUnit.repeat(levels) + line.slice(indent.length)
+		}
+		return fileBase + line.slice(indent.length)
+	})
+}
+
+/** Up to 7 numbered lines around the file line that best resembles `oldString`. */
+function closestRegion(content: string, oldString: string): string | undefined {
+	const tokens = (text: string) => new Set(text.toLowerCase().match(/[a-z0-9_$]+/g) ?? [])
+	const probe = oldString.split("\n").find((line) => line.trim().length >= 4)
+	if (!probe) return undefined
+	const wanted = tokens(probe)
+	if (wanted.size === 0) return undefined
+	const lines = content.split("\n")
+	let bestIndex = -1
+	let bestScore = 0
+	for (let i = 0; i < lines.length; i++) {
+		const have = tokens(lines[i])
+		let shared = 0
+		for (const token of wanted) if (have.has(token)) shared++
+		const score = shared / (wanted.size + have.size - shared || 1)
+		if (score > bestScore) {
+			bestScore = score
+			bestIndex = i
+		}
+	}
+	if (bestIndex < 0 || bestScore < 0.5) return undefined
+	const from = Math.max(0, bestIndex - 3)
+	const to = Math.min(lines.length, bestIndex + 4)
+	const shown = lines
+		.slice(from, to)
+		.map((line, i) => `${String(from + i + 1).padStart(6, " ")}|${line.replace(/\r$/, "")}`)
+		.join("\n")
+	return `Closest match in the file (lines ${from + 1}-${to}, exact whitespace shown):\n${shown}`
+}
+
+function applyEdit(content: string, edit: EditSpec): EditOutcome {
 	const replace_all = parseReplaceAll(edit.replace_all)
-	if (old_string === new_string) {
+	if (edit.old_string === edit.new_string) {
 		return { content, error: "old_string and new_string are identical" }
 	}
-	if (old_string === "") {
+	const eol = detectEol(content)
+	// Keep the file's line endings consistent: replacement text follows the file.
+	const new_string = toEol(edit.new_string, eol)
+	if (edit.old_string === "") {
 		// Empty old_string replaces the entire file.
 		return { content: new_string }
 	}
-	const occurrences = content.split(old_string).length - 1
-	if (occurrences === 0) {
-		return { content, error: "old_string not found in file" }
+
+	// 1. Exact match, then the same text with the file's line endings.
+	for (const candidate of new Set([edit.old_string, toEol(edit.old_string, eol)])) {
+		const occurrences = content.split(candidate).length - 1
+		if (occurrences === 0) continue
+		if (occurrences > 1 && !replace_all) {
+			return {
+				content,
+				error: `old_string matched ${occurrences} times; provide more context for a unique match or set replace_all to true`,
+			}
+		}
+		return { content: content.split(candidate).join(new_string) }
 	}
-	if (occurrences > 1 && !replace_all) {
+
+	// 2. Whitespace-tolerant line match (indentation / trailing space / tabs vs spaces).
+	const fileLines = content.split(eol)
+	const oldLines = trimBlankEdges(edit.old_string.replace(/\r\n/g, "\n").split("\n"))
+	const loose = findLooseMatch(fileLines, oldLines)
+	if (loose === "ambiguous") {
 		return {
 			content,
-			error: `old_string matched ${occurrences} times; provide more context for a unique match or set replace_all to true`,
+			error: "old_string matched multiple places once whitespace was ignored; include more surrounding lines to make it unique",
 		}
 	}
-	return { content: content.split(old_string).join(new_string) }
+	if (loose) {
+		const window = fileLines.slice(loose.start, loose.start + loose.count)
+		const replacement = reindent(trimBlankEdges(new_string.split(eol)), oldLines, window)
+		const next = [...fileLines.slice(0, loose.start), ...replacement, ...fileLines.slice(loose.start + loose.count)]
+		return {
+			content: next.join(eol),
+			note: `matched ignoring whitespace differences at lines ${loose.start + 1}-${loose.start + loose.count}; verify the indentation with read_file if it matters`,
+		}
+	}
+
+	const hint = closestRegion(content, edit.old_string)
+	return { content, error: `old_string not found in file${hint ? `.\n${hint}` : ""}` }
 }
 
 function editOneFile(cwd: string, edits: EditSpec[]): string[] {
@@ -179,13 +318,15 @@ function editOneFile(cwd: string, edits: EditSpec[]): string[] {
 	const results: string[] = []
 	let changed = false
 	for (const edit of edits) {
-		const { content: next, error } = applyEdit(content, edit)
+		const { content: next, error, note } = applyEdit(content, edit)
 		if (error) {
 			results.push(`FAILED ${filePath}: ${error}`)
 		} else {
 			content = next
 			changed = true
-			results.push(`OK ${filePath}: replaced "${truncate(edit.old_string || "(entire file)", 60)}"`)
+			results.push(
+				`OK ${filePath}: replaced "${truncate(edit.old_string || "(entire file)", 60)}"${note ? ` (${note})` : ""}`,
+			)
 		}
 	}
 	if (changed) {
