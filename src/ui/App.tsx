@@ -464,9 +464,10 @@ export function App({
   const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [resumableSessions, setResumableSessions] = useState<
-    SessionData[] | null
-  >(null);
+  const [resumableSessions, setResumableSessions] = useState<{
+    here: SessionData[];
+    everywhere: SessionData[];
+  } | null>(null);
   const [taskPickerSessions, setTaskPickerSessions] = useState<
     SessionData[] | null
   >(null);
@@ -688,7 +689,11 @@ export function App({
           setBusyLabel("Working");
           break;
         case "text-done":
-          pushRow({ kind: "assistant", text: textBufferRef.current });
+          // Models often stream whitespace-only content before a tool call;
+          // don't render it as an empty "●" message.
+          if (textBufferRef.current.trim()) {
+            pushRow({ kind: "assistant", text: textBufferRef.current });
+          }
           textBufferRef.current = "";
           setStreamingText("");
           setBusyLabel("Working");
@@ -744,7 +749,9 @@ export function App({
         case "turn-end":
           // Flush anything still streaming (e.g. on interrupt).
           if (textBufferRef.current) {
-            pushRow({ kind: "assistant", text: textBufferRef.current });
+            if (textBufferRef.current.trim()) {
+              pushRow({ kind: "assistant", text: textBufferRef.current });
+            }
             textBufferRef.current = "";
             setStreamingText("");
           }
@@ -883,6 +890,40 @@ export function App({
   const handleResume = useCallback(
     (session: SessionData) => {
       setResumableSessions(null);
+      // A session from another directory continues in that directory, so its
+      // tools, AGENTS.md, project settings, hooks and MCP servers match the
+      // conversation.
+      const switchedDir = session.cwd && session.cwd !== process.cwd();
+      if (switchedDir) {
+        try {
+          process.chdir(session.cwd);
+        } catch {
+          pushRow({
+            kind: "error",
+            text: `Can't resume "${session.title || session.id}": its directory ${session.cwd} no longer exists.`,
+          });
+          return;
+        }
+        const oldManager = mcpManagerRef.current;
+        mcpManagerRef.current = null;
+        void oldManager?.stop().catch(() => {});
+        const refreshed = loadSettings();
+        setSettings(refreshed);
+        if (getAuthToken(refreshed)) {
+          const manager = new McpManager(
+            process.cwd(),
+            refreshed.disabledMcpServers ?? [],
+            refreshed.enabledMcpServers ?? [],
+          );
+          mcpManagerRef.current = manager;
+          void manager.start().then(() => {
+            const pendingMcp = manager.getPendingApproval();
+            if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp);
+          });
+        }
+        const pendingHooks = getPendingProjectHooks(process.cwd());
+        if (pendingHooks) setPendingHookTrust(pendingHooks);
+      }
       const resumedAgent = createAgent(session);
       agentRef.current = resumedAgent;
       process.env.ORBCODE_LAST_SESSION_ID = resumedAgent.taskId;
@@ -914,7 +955,7 @@ export function App({
       }
       pushRow({
         kind: "info",
-        text: `Resumed session: ${session.title || session.id}`,
+        text: `Resumed session: ${session.title || session.id}${switchedDir ? ` · working directory is now ${session.cwd}` : ""}`,
       });
     },
     [createAgent, pushRow, resetTranscript],
@@ -935,7 +976,8 @@ export function App({
   );
 
   const switchModel = useCallback(
-    (modelId: string, options?: { silent?: boolean }) => {
+    /** `auto`: an automatic switch (plan default / plan fallback), not a user pick. */
+    (modelId: string, options?: { silent?: boolean; auto?: boolean }) => {
       if (isLumenAxonModel(modelId) && !hasLumenAccess) {
         pushRow({
           kind: "error",
@@ -964,7 +1006,7 @@ export function App({
         });
         return;
       }
-      const updated = { ...loadSettings(), model: modelId };
+      const updated = { ...loadSettings(), model: modelId, modelExplicit: !options?.auto };
       setSettings(updated);
       saveSettings(updated);
       agentRef.current?.setModel(modelId);
@@ -995,10 +1037,10 @@ export function App({
   // an explicit user pick is never overwritten.
   useEffect(() => {
     if (!catalogReady || !planLoaded) return;
-    if (settings.model !== DEFAULT_MODEL_ID) return;
+    if (settings.modelExplicit || settings.model !== DEFAULT_MODEL_ID) return;
     const preferred = getDefaultModelId(activePlan);
-    if (preferred !== settings.model) switchModel(preferred, { silent: true });
-  }, [activePlan, catalogReady, planLoaded, settings.model, switchModel]);
+    if (preferred !== settings.model) switchModel(preferred, { silent: true, auto: true });
+  }, [activePlan, catalogReady, planLoaded, settings.model, settings.modelExplicit, switchModel]);
 
   useEffect(() => {
     if (!activePlan) {
@@ -1008,24 +1050,24 @@ export function App({
     // default Eido model; its 400k variant is covered by the Lumen check
     // first since the 232k Lumen fallback would still be locked.
     if (isLumenAxonModel(settings.model) && !hasLumenAccess) {
-      switchModel(DEFAULT_MODEL_ID);
+      switchModel(DEFAULT_MODEL_ID, { auto: true });
       return;
     }
     // A stored Eido Base selection on a plan without access falls back to the
     // default Eido model; its 400k variant is covered by the Base check first.
     if (isEidoBaseAxonModel(settings.model) && !hasEidoBaseAccess) {
-      switchModel(DEFAULT_MODEL_ID);
+      switchModel(DEFAULT_MODEL_ID, { auto: true });
       return;
     }
     // A stored Eido Pro selection on a plan without access falls back to the
     // default Eido model; its 400k variant is covered by the Eido Pro check
     // first since the 232k Eido Pro fallback would still be locked.
     if (isEidoProAxonModel(settings.model) && !hasEidoProAccess) {
-      switchModel(DEFAULT_MODEL_ID);
+      switchModel(DEFAULT_MODEL_ID, { auto: true });
       return;
     }
     if (!has400kAccess && is400kAxonModel(settings.model)) {
-      switchModel(get232kAxonFallback(settings.model));
+      switchModel(get232kAxonFallback(settings.model), { auto: true });
     }
   }, [activePlan, has400kAccess, hasEidoBaseAccess, hasEidoProAccess, hasLumenAccess, settings.model, switchModel]);
 
@@ -1164,17 +1206,14 @@ export function App({
           break;
         }
         case "/resume": {
-          const sessions = listSessions(process.cwd()).filter(
-            (s) => s.id !== agentRef.current?.taskId,
-          );
-          if (sessions.length === 0) {
-            pushRow({
-              kind: "info",
-              text: "No previous sessions found for this directory.",
-            });
+          const notCurrent = (s: SessionData) => s.id !== agentRef.current?.taskId;
+          const here = listSessions(process.cwd()).filter(notCurrent);
+          const everywhere = listSessions().filter(notCurrent);
+          if (everywhere.length === 0) {
+            pushRow({ kind: "info", text: "No previous sessions found." });
             break;
           }
-          setResumableSessions(sessions);
+          setResumableSessions({ here, everywhere });
           break;
         }
         case "/task": {
@@ -1882,7 +1921,7 @@ export function App({
   // Do not lay out the entire accumulated response on every token. Keep only
   // the live tail mounted; text-done commits the complete response to the
   // virtualized transcript, so nothing is lost from history.
-  const streamingTextDisplay = streamingText
+  const streamingTextDisplay = streamingText.trim()
     ? tailForHeight(
         streamingText,
         Math.max(1, contentHeight - 1 - spinnerHeight),
@@ -2261,7 +2300,10 @@ export function App({
             )}
             {resumableSessions && (
               <SessionPicker
-                sessions={resumableSessions}
+                sessions={resumableSessions.here}
+                allSessions={resumableSessions.everywhere}
+                initialShowAll={resumableSessions.here.length === 0}
+                cwd={process.cwd()}
                 onSelect={handleResume}
                 onCancel={() => setResumableSessions(null)}
               />
@@ -2440,7 +2482,8 @@ function estimateRowLines(row: Row, width: number): number {
         1 + formatUserBlock(row.text, w, row.attachments).split("\n").length
       );
     case "assistant":
-      return 1 + wrapped(`● ${row.text}`);
+      // Blank messages render nothing (see rows.tsx).
+      return row.text.trim() ? 1 + wrapped(`● ${row.text}`) : 0;
     case "reasoning":
       return row.expanded ? 2 + wrapped(row.text, w - 2) : 2;
     case "tool": {

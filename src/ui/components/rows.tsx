@@ -225,6 +225,8 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 				</Box>
 			)
 		case "assistant":
+			// Sessions saved before blank content was filtered can still hold these.
+			if (!row.text.trim()) return null
 			return (
 				<Box marginTop={1} flexDirection="column" flexShrink={0}>
 					<Text>

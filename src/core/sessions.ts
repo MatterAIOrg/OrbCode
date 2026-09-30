@@ -94,8 +94,8 @@ export function loadSessionById(id: string): SessionData | undefined {
 	}
 }
 
-/** Sessions for a workspace, most recently updated first. */
-export function listSessions(cwd: string): SessionData[] {
+/** Sessions for a workspace (or every workspace when `cwd` is omitted), most recently updated first. */
+export function listSessions(cwd?: string): SessionData[] {
 	let files: string[]
 	try {
 		files = fs.readdirSync(getSessionsDir()).filter((f) => f.endsWith(".json"))
@@ -106,7 +106,7 @@ export function listSessions(cwd: string): SessionData[] {
 	for (const file of files) {
 		try {
 			const data = JSON.parse(fs.readFileSync(path.join(getSessionsDir(), file), "utf8")) as SessionData
-			if (data.cwd === cwd && Array.isArray(data.messages) && data.messages.length > 0) {
+			if ((cwd === undefined || data.cwd === cwd) && Array.isArray(data.messages) && data.messages.length > 0) {
 				sessions.push(data)
 			}
 		} catch {

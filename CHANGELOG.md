@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.1] - 2026-09-30
+
+### Added
+
+- **Resume sessions from any directory.** `/resume` (and `orbcode --resume`) only listed sessions started in the current directory, so a conversation from another project was hard to find. The picker now shows this directory's sessions first and **Tab** switches to sessions from all directories, each labelled with where it lives; when there's nothing to resume here it opens on all directories. Resuming a session from another directory switches OrbCode's working directory to that session's directory and reloads the directory-bound state (project settings, MCP servers, project hook trust), so tools and `AGENTS.md` match the conversation. A session whose directory no longer exists shows an error instead of resuming.
+
+### Fixed
+
+- **No more deprecation warnings when installing or updating.** `openai@4` pulled in `node-fetch@2` → `whatwg-url@5` → `tr46`, which loads Node's deprecated built-in `punycode` (the `DEP0040` warning), and `formdata-node@4` → the deprecated `node-domexception` (the `npm warn deprecated` line on install/update). The `openai` SDK is upgraded to v7, which has no dependencies and uses Node's native `fetch`; the install drops from 203 to 180 packages. Updating *from* an older release can still show the `punycode` warning once, since that comes from the old version performing the update.
+
+- **No more empty "●" rows between thinking and tool calls.** Models often stream whitespace-only content (e.g. a couple of newlines) right before a tool call, which rendered as a bare "●" message. Whitespace-only content is no longer shown while streaming, committed as a transcript row, saved to the session, or sent back to the model as assistant text, and blank rows in previously saved sessions render as nothing.
+
+- **Picking GLM 5.3 Flash no longer reverts to another model.** The plan-aware default (the catalog's first model, on every plan while no catalog entry is flagged `freePlan`) was applied whenever the selected model equalled the static `DEFAULT_MODEL_ID` — which is `zai/glm-5.3-flash` — so choosing that model was immediately treated as "never chosen" and swapped for the catalog's first model. The selection now carries a persisted `modelExplicit` flag (set by `/model` picks, `settings.json` `model` and `MATTERAI_MODEL`; cleared by automatic plan defaults and fallbacks), and only a model that was never explicitly chosen is re-resolved, in both the TUI and headless mode.
+
 ## [6.9.0] - 2026-09-30
 
 ### Added

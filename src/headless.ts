@@ -41,7 +41,7 @@ export async function runHeadless(
 	// No explicit model requested and the stored one is still the static default:
 	// resolve the plan-aware default from the live catalog (free plans get the
 	// catalog's free model, paid plans the first catalog entry).
-	if (token && !requestedModel && settings.model === DEFAULT_MODEL_ID) {
+	if (token && !requestedModel && !settings.modelExplicit && settings.model === DEFAULT_MODEL_ID) {
 		const profile = await fetchProfile(token).catch(() => null)
 		const plan = profile?.plan ?? profile?.tieredUsage?.plan
 		const preferred = getDefaultModelId(plan)
