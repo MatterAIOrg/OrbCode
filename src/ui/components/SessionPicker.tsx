@@ -118,7 +118,7 @@ export function SessionPicker({
 			{windowStart + VISIBLE_ROWS < sessions.length && (
 				<Text color={COLORS.dim}>  ↓ {sessions.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text color={COLORS.dim}>
+			<Text color={COLORS.info}>
 				↑/↓ select · enter resume{allSessions ? ` · tab ${showAll ? "this directory" : "all directories"}` : ""} · esc cancel
 			</Text>
 		</PopoverBox>
