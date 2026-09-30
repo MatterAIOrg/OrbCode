@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Whitespace-tolerant edits.** `file_edit` / `multi_file_edit` previously required `old_string` to match byte for byte, so a model that reconstructed indentation from memory (tabs vs spaces), or sent LF text for a CRLF file, got "old_string not found" and had to re-read the file and rewrite the edit — an extra model round trip plus another expensive edit-composition step. Matching now falls back, in order, to the same text with the file's line endings, then to a unique line-by-line match that ignores indentation and trailing whitespace (the replacement is re-indented to the file's own style). Replacement text always follows the file's line endings, so a CRLF file is never left with mixed endings. Ambiguous loose matches are still rejected, and successful loose matches say so in the tool result.
+- **Actionable "not found" errors.** A failed match now returns the closest region of the file (up to 7 numbered lines with their exact whitespace), so the model can retry without another read.
+- **Stale tool-result pruning.** Once context passes 40% of the model's window, bulky results of `read_file`, `search_files`, `list_files`, `execute_command`, `web_fetch` and `web_search` older than the four most recent tool results are sent as one-line stubs. The stored history and session files are untouched; only the outgoing request shrinks, and the boundary advances in batches of six so the request prefix (and the gateway's prompt cache) stays stable between prunes.
+- **Automatic compaction.** When context passes 80% of the window, the conversation is summarized mid-turn and the turn continues from the summary, instead of degrading until the user runs `/compact`. A failed compaction is reported once and never retried within the session.
+- **Loop warning.** The third identical tool call with identical output and no file edit in between gets an `[OrbCode]` note appended to its result telling the model that repeating it will not change anything. Previously this rule existed only as prompt text.
+- **`bench/` harness benchmark.** Fixture repos, tasks with hidden-test verifiers, and a runner (`node --import tsx bench/run.ts --model <id> --label <name> [--reps N] [--suite core|extended|all] [--variant lean] [--steps]`) that drives the real agent loop in isolation and records steps, tokens, reasoning time, time-to-first-token, streaming and tool time, repeated calls and pass/fail. `bench/compare.ts` compares two result files. Not shipped in the npm package.
+
+### Changed
+
+- **Leaner system prompt.** The "Plan before editing", "Investigation efficiency" and "Verifying tool results and avoiding loops" sections asked the model to deliberate before every tool call and to write out a full change plan before editing. They are replaced by a four-line "Working style" block (act directly, locate → edit → check once, batch independent calls, never repeat an identical call more than twice).
+
+### Fixed
+
+- **Interrupts and timeouts now actually stop shell commands.** `execute_command` killed only the shell on timeout, so a grandchild process (`find /`, a pipeline stage) kept the output pipe open and the tool call hung until it exited on its own — in one benchmark run for 4.6 hours — and pressing Esc never stopped a running command at all. Commands now run in their own process group; a timeout or user interrupt kills the whole group, and the tool result says why the command stopped.
+
+### Measured impact
+
+Before/after on the 9-task benchmark (`bench/`, 2 runs per task per model, median per run; all runs pass unless noted):
+
+| model | wall | steps | input tokens | pass |
+|---|---|---|---|---|
+| glm-5.3 | 122s → 81s (−33%) | 6 → 5 | −22% | 17/18 → 18/18 |
+| glm-5.3-flash | 82s → 66s (−20%) | 5 → 5 | −12% | 18/18 → 18/18 |
+| deepseek-v4.1-flash | 25s → 25s | 5 → 5 | −25% | 18/18 → 18/18 |
+| gemini-3.8-flash | 72s → 73s | 11 → 11 | −15% | 17/18 → 17/18 |
+
+The CRLF/tab-indented edit task shows the tolerant-edit change most clearly: glm-5.3-flash went from 15 steps / 202s to 5 steps / 38s, glm-5.3 from 12 steps / 275s to 6 steps / 53s.
+
 ## [6.8.7] - 2026-09-21
 
 ### Added

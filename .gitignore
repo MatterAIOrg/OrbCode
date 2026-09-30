@@ -17,3 +17,4 @@ coverage/
 .orb/AGENTS.md
 .orb/links.json
 .orbcode/AGENTS.md
+bench/results/

@@ -74,6 +74,25 @@ const MAX_STREAM_RETRIES = 3
  *  newer write. */
 const STALE_WRITE_TOLERANCE_MS = 2000
 
+// --- Context management -----------------------------------------------------
+/** Start stubbing stale tool results once context passes this fraction of the window. */
+const PRUNE_TRIGGER_FRACTION = 0.4
+/** The most recent tool results are always sent verbatim. */
+const KEEP_RECENT_TOOL_RESULTS = 4
+/** The prune boundary only advances in batches this large, so the request prefix
+ *  (and the gateway's prompt cache) stays stable between prunes. */
+const PRUNE_BATCH = 6
+/** Results shorter than this are not worth stubbing. */
+const PRUNE_MIN_CHARS = 1500
+/** Tools whose output is bulky and can simply be re-fetched. */
+const PRUNABLE_TOOLS = new Set(["read_file", "search_files", "list_files", "execute_command", "web_fetch", "web_search"])
+/** Summarize the history before a step once context passes this fraction of the window. */
+const AUTO_COMPACT_FRACTION = 0.8
+/** Warn the model when the same call returns the same output this many times in a row. */
+const REPEAT_WARN_AT = 3
+/** A successful edit changes the files, so earlier identical calls may now differ. */
+const EDIT_TOOLS = new Set(["file_edit", "multi_file_edit", "file_write"])
+
 /** Transient failures worth auto-retrying: any transport/connection error (no
  *  usable HTTP status — socket reset, DNS, timeout, TLS drop) plus 5xx/408/429
  *  server responses. Real 4xx client errors (auth, bad request) are not retried. */
@@ -154,6 +173,8 @@ export interface AgentOptions {
 	 * receives only the override as its system message.
 	 */
 	systemPromptOverride?: string
+	/** Inject a model client (tests). Defaults to the client for `modelId`. */
+	client?: LLMClient
 }
 
 interface PendingToolCall {
@@ -384,6 +405,12 @@ export class Agent {
 	private pendingStartContext = ""
 	/** guards Stop-hook forced continuation against infinite loops */
 	private stopHookActive = false
+	/** tool results at message indexes below this are sent as short stubs (see pruneStaleToolResults) */
+	private prunedBefore = 0
+	/** set after a failed auto-compaction so it isn't retried on every step */
+	private autoCompactFailed = false
+	/** consecutive identical call+output tracking for loop warnings */
+	private readonly repeatTracker = new Map<string, { hash: string; count: number }>()
 	/** in-flight fire-and-forget hook promises (Notification), awaited on exit */
 	private readonly pendingBackground = new Set<Promise<unknown>>()
 	readonly taskId: string
@@ -444,14 +471,16 @@ export class Agent {
 		this.systemPrompt = options.systemPromptOverride
 			? options.systemPromptOverride
 			: buildSystemPrompt(options.cwd, { memoryFiles, skills })
-		this.client = createLLMClient({
-			token: options.token,
-			modelId: options.modelId,
-			taskId: this.taskId,
-			organizationId: options.organizationId,
-			repo: detectGitRepo(options.cwd),
-			baseUrl: options.baseUrl,
-		})
+		this.client =
+			options.client ??
+			createLLMClient({
+				token: options.token,
+				modelId: options.modelId,
+				taskId: this.taskId,
+				organizationId: options.organizationId,
+				repo: detectGitRepo(options.cwd),
+				baseUrl: options.baseUrl,
+			})
 	}
 
 	setModel(modelId: string): void {
@@ -589,6 +618,9 @@ export class Agent {
 		this.pendingStartContext = ""
 		this.sessionStarted = false
 		this.stopHookActive = false
+		this.prunedBefore = 0
+		this.autoCompactFailed = false
+		this.repeatTracker.clear()
 		this.lastGitHead = getGitHead(this.options.cwd)
 		persistGitHead(this.options.cwd, this.lastGitHead)
 	}
@@ -678,8 +710,29 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 
 	/** Conversation history with internal markers stripped, ready for the model. */
 	private outgoingMessages(): OpenAI.Chat.ChatCompletionMessageParam[] {
-		return this.messages.map((message) =>
-			message.role === "user"
+		const toolNames = new Map<string, string>()
+		if (this.prunedBefore > 0) {
+			for (const message of this.messages) {
+				if (message.role !== "assistant") continue
+				for (const call of message.tool_calls ?? []) {
+					if (call.type === "function") toolNames.set(call.id, call.function.name)
+				}
+			}
+		}
+		return this.messages.map((message, index) => {
+			if (message.role === "tool" && index < this.prunedBefore) {
+				const name = toolNames.get(message.tool_call_id) ?? ""
+				const text = contentToText(message.content)
+				if (PRUNABLE_TOOLS.has(name) && text.length >= PRUNE_MIN_CHARS) {
+					const lines = text.split("\n").length
+					return {
+						...message,
+						content: `[Earlier ${name} result (${lines} lines) removed to save context. Re-run the call if you still need it.]`,
+					}
+				}
+				return message
+			}
+			return message.role === "user"
 				? {
 						...message,
 						content:
@@ -688,15 +741,51 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 								: message.content.map((part) =>
 										part.type === "text" ? { ...part, text: stripUserQueryTags(part.text) } : part,
 									),
-						}
-				: message,
-		)
+					}
+				: message
+		})
+	}
+
+	/**
+	 * Once context is large, stop resending old bulky tool results verbatim. The
+	 * stored history is untouched (sessions keep everything); only the outgoing
+	 * copy is stubbed. The boundary only advances in batches so the request prefix
+	 * stays identical between advances and the gateway's prompt cache keeps hitting.
+	 */
+	private pruneStaleToolResults(): void {
+		const window = getModel(this.options.modelId).contextWindow
+		if (this.contextTokens < window * PRUNE_TRIGGER_FRACTION) return
+		const toolIndexes: number[] = []
+		this.messages.forEach((message, index) => {
+			if (message.role === "tool") toolIndexes.push(index)
+		})
+		if (toolIndexes.length <= KEEP_RECENT_TOOL_RESULTS) return
+		const boundary = toolIndexes[toolIndexes.length - KEEP_RECENT_TOOL_RESULTS]
+		const newlyStale = toolIndexes.filter((index) => index >= this.prunedBefore && index < boundary).length
+		if (newlyStale >= PRUNE_BATCH) this.prunedBefore = boundary
+	}
+
+	/** Note appended to a tool result when the model keeps repeating the same call. */
+	private repeatNote(toolCall: PendingToolCall, args: Record<string, unknown>, resultText: string, isError: boolean): string {
+		if (EDIT_TOOLS.has(toolCall.name) && !isError) {
+			// Files changed: earlier identical read/search/test calls may now differ.
+			this.repeatTracker.clear()
+			return ""
+		}
+		const signature = `${toolCall.name}:${JSON.stringify(args)}`
+		const hash = `${resultText.length}:${resultText.slice(0, 200)}:${resultText.slice(-200)}`
+		const previous = this.repeatTracker.get(signature)
+		const count = previous && previous.hash === hash ? previous.count + 1 : 1
+		this.repeatTracker.set(signature, { hash, count })
+		if (count < REPEAT_WARN_AT) return ""
+		return `[OrbCode] This is the ${count}${count === 3 ? "rd" : "th"} identical ${toolCall.name} call with identical output and no file edits in between. Repeating it will not change the result — use what you already have, change the call, or take a different approach.`
 	}
 
 	private toolContext(): ToolContext {
 		return {
 			cwd: this.options.cwd,
 			token: this.options.token,
+			signal: this.abortController?.signal,
 			getTodos: () => this.todos,
 			setTodos: (todos: string) => {
 				this.todos = todos
@@ -836,6 +925,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		try {
 			this.stopHookActive = false
 			for (let step = 0; step < MAX_STEPS_PER_TURN; step++) {
+				await this.autoCompactIfNeeded()
 				const done = await this.runStep()
 				if (!done) continue
 				// The model is ready to stop; Stop hooks may force it to continue.
@@ -983,51 +1073,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		this.abortController = new AbortController()
 		const signal = this.abortController.signal
 		try {
-			const request: OpenAI.Chat.ChatCompletionMessageParam[] = [
-				...this.outgoingMessages(),
-				{
-					role: "user",
-					content:
-						startContext +
-							"Summarize this conversation so it can replace the full history. Capture the user's goals, decisions made, files created or modified (with paths), important code details, and any remaining next steps. Be thorough but concise. Respond with only the summary.",
-				},
-			]
-			let summary = ""
-			for await (const chunk of this.streamWithRetry(
-				() => this.client.createMessage(this.systemPrompt, request, [], signal),
-				signal,
-				() => {
-					// Compaction only streams text (committed once at the end), so a
-					// mid-stream retry just discards the partial summary.
-					summary = ""
-					onEvent({ type: "stream-reset" })
-					return true
-				},
-			)) {
-				if (signal.aborted) throw new DOMException("aborted", "AbortError")
-				if (chunk.type === "text") {
-					summary += chunk.text
-					onEvent({ type: "text-delta", text: chunk.text })
-				} else if (chunk.type === "usage") {
-					this.totalCost += chunk.totalCost ?? 0
-					this.contextTokens = (chunk.inputTokens ?? 0) + (chunk.outputTokens ?? 0)
-					onEvent({
-						type: "usage",
-						inputTokens: chunk.inputTokens,
-						outputTokens: chunk.outputTokens,
-						cost: chunk.totalCost ?? 0,
-						totalCost: this.totalCost,
-					})
-				}
-			}
+			const summary = await this.summarizeHistory(signal, startContext, true)
 			if (summary) {
 				onEvent({ type: "text-done" })
-				this.messages = [
-					{
-						role: "user",
-						content: `# Conversation Summary\n\nThe conversation history was compacted. Summary of everything so far:\n\n${summary}`,
-					},
-				]
+				this.replaceHistoryWithSummary(summary, false)
 			} else {
 				onEvent({ type: "error", message: "Compaction produced no summary; history left unchanged." })
 			}
@@ -1042,6 +1091,98 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			this.recordTranscriptEvent({ type: "turn-end" })
 			this.persist()
 			onEvent({ type: "turn-end" })
+		}
+	}
+
+	/** Ask the model to summarize the conversation so far. `showText` streams the summary to the UI. */
+	private async summarizeHistory(signal: AbortSignal, startContext: string, showText: boolean): Promise<string> {
+		const { onEvent } = this.options.callbacks
+		const request: OpenAI.Chat.ChatCompletionMessageParam[] = [
+			...this.outgoingMessages(),
+			{
+				role: "user",
+				content:
+					startContext +
+					"Summarize this conversation so it can replace the full history. Capture the user's goals, decisions made, files created or modified (with paths), important code details, and any remaining next steps. Be thorough but concise. Respond with only the summary.",
+			},
+		]
+		let summary = ""
+		for await (const chunk of this.streamWithRetry(
+			() => this.client.createMessage(this.systemPrompt, request, [], signal),
+			signal,
+			() => {
+				// Compaction only streams text (committed once at the end), so a
+				// mid-stream retry just discards the partial summary.
+				summary = ""
+				if (showText) onEvent({ type: "stream-reset" })
+				return true
+			},
+		)) {
+			if (signal.aborted) throw new DOMException("aborted", "AbortError")
+			if (chunk.type === "text") {
+				summary += chunk.text
+				if (showText) onEvent({ type: "text-delta", text: chunk.text })
+			} else if (chunk.type === "usage") {
+				this.totalCost += chunk.totalCost ?? 0
+				onEvent({
+					type: "usage",
+					inputTokens: chunk.inputTokens,
+					outputTokens: chunk.outputTokens,
+					cost: chunk.totalCost ?? 0,
+					totalCost: this.totalCost,
+				})
+			}
+		}
+		return summary
+	}
+
+	/** Swap the whole history for a single summary message. */
+	private replaceHistoryWithSummary(summary: string, continueWork: boolean): void {
+		this.messages = [
+			{
+				role: "user",
+				content:
+					`# Conversation Summary\n\nThe conversation history was compacted. Summary of everything so far:\n\n${summary}` +
+					(continueWork
+						? "\n\nContinue the work described above from where it left off. Do not restart or repeat steps that are already done."
+						: ""),
+			},
+		]
+		// The summary is small; the next usage report replaces this estimate.
+		this.contextTokens = Math.ceil(summary.length / 4)
+		this.prunedBefore = 0
+		this.repeatTracker.clear()
+	}
+
+	/**
+	 * Compact mid-turn when the context nears the window, so long tasks keep
+	 * getting faster, cheaper steps instead of degrading. Failure is non-fatal:
+	 * the turn continues with the full history and won't retry compaction.
+	 */
+	private async autoCompactIfNeeded(): Promise<void> {
+		if (this.autoCompactFailed || this.messages.length < 4) return
+		const window = getModel(this.options.modelId).contextWindow
+		if (this.contextTokens < window * AUTO_COMPACT_FRACTION) return
+		const { onEvent } = this.options.callbacks
+		const signal = this.abortController!.signal
+		const percent = Math.round((this.contextTokens / window) * 100)
+		onEvent({ type: "system", message: `Context is ${percent}% full — compacting the conversation…`, isError: false })
+		if (this.hooks.hasHooks("PreCompact")) {
+			await this.hooks.run("PreCompact", { trigger: "auto", custom_instructions: "" })
+		}
+		try {
+			const summary = await this.summarizeHistory(signal, "", false)
+			if (!summary) throw new Error("no summary produced")
+			this.replaceHistoryWithSummary(summary, true)
+			onEvent({ type: "system", message: "Conversation compacted; continuing.", isError: false })
+		} catch (error) {
+			if ((error as Error).name === "AbortError" || signal.aborted) throw error
+			this.autoCompactFailed = true
+			onEvent({
+				type: "system",
+				message: `Auto-compaction failed (${sanitizeErrorMessage(error)}); continuing with the full history.`,
+				isError: true,
+			})
 		}
 	}
 
@@ -1130,6 +1271,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			return true
 		}
 
+		this.pruneStaleToolResults()
 		const stream = this.streamWithRetry(
 			() => this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(this.mcp), signal),
 			signal,
@@ -1427,6 +1569,8 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				onEvent({ type: "system", message: "A PostToolUse hook stopped the turn.", isError: false })
 			}
 		}
+		const repeat = this.repeatNote(toolCall, args, result.text, Boolean(result.isError))
+		if (repeat) extras.push(repeat)
 		if (extras.length) resultText += `\n\n${extras.join("\n\n")}`
 
 		// Report accepted code metrics for successful file edits. This covers
