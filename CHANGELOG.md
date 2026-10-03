@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.3] - 2026-10-03
+
+### Changed
+
+- **Version bump to 6.9.3.** No functional changes since v6.9.2; `package.json` version and the release branch/tag are advanced to `6.9.3` so the release workflow publishes from a `release/vX.Y.Z` branch.
+
 ## [6.9.2] - 2026-10-03
 
 ### Fixed
