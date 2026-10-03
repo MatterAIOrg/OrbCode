@@ -4,6 +4,8 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
+import { DEFAULT_HEADERS } from "./headers.js"
+
 /**
  * Read the currently selected model id from disk without triggering the full
  * settings-load side effects (env application, custom-model registration).
@@ -447,7 +449,11 @@ export async function fetchDynamicModels(
       ? getUrlFromToken("https://api.matterai.so/v1/models", token)
       : "https://api.matterai.so/v1/models";
 
+    // DEFAULT_HEADERS carries the `orbcode-cli/<version>` User-Agent the
+    // backend's isFirstPartyAgent check requires; without it /v1/models
+    // appends the API-only System One models to the picker list.
     const headers: Record<string, string> = {
+      ...DEFAULT_HEADERS,
       Accept: "application/json",
     };
     if (token) {
