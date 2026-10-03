@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Shell-first exploration.** The `list_files` and `search_files` tools are no longer offered to the model; it now searches and lists with `rg`, `find`, `ls` and `git` through `execute_command`, the way Claude Code does, and the system prompt teaches the common patterns. To keep this from becoming a prompt on every search, read-only commands (`rg`, `grep`, `find` without `-exec`/`-delete`, `ls`, `cat`, `head`, `wc`, `git status/diff/log/show/grep`, and pipes or `&&` chains of these, with no redirects or command substitution) skip the approval prompt and run in parallel. Anything unrecognised still asks. Old sessions that called the removed tools still resume.
+
+- **`execute_command` is now `Bash`, and it really runs bash.** The tool is renamed to match Claude Code. Commands now run in bash instead of whatever `$SHELL` is (fish and csh choke on the `rg … | head` / `&&` syntax the model writes): bash on macOS/Linux (zsh if it is your shell and bash is missing, then `/bin/sh`), and Git Bash on Windows, falling back to `cmd.exe` only when Git for Windows isn't installed. The system prompt states the shell, and warns the model when it is stuck on `cmd.exe`. Hook commands use the same shell. Hook matchers written as `execute_command` still match, and sessions saved with the old tool name still resume.
+
 ## [6.9.1] - 2026-09-30
 
 ### Added

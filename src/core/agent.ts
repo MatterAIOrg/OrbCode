@@ -24,6 +24,7 @@ import { walkFiles } from "../tools/executors/listFiles.js"
 import { previewFileChange } from "../tools/executors/files.js"
 import { extractFigmaUrls, figmaFetch } from "../tools/executors/figma.js"
 import { stripSearchPageMetadataForDisplay } from "../tools/executors/searchFiles/format.js"
+import { isReadOnlyCommand } from "../tools/readOnlyCommand.js"
 import type { AgentCallbacks, AgentEvent, ApprovalDecision } from "./events.js"
 import {
 	getSessionFilePath,
@@ -85,7 +86,7 @@ const PRUNE_BATCH = 6
 /** Results shorter than this are not worth stubbing. */
 const PRUNE_MIN_CHARS = 1500
 /** Tools whose output is bulky and can simply be re-fetched. */
-const PRUNABLE_TOOLS = new Set(["read_file", "search_files", "list_files", "execute_command", "web_fetch", "web_search"])
+const PRUNABLE_TOOLS = new Set(["read_file", "search_files", "list_files", "Bash", "execute_command", "web_fetch", "web_search"])
 /** Summarize the history before a step once context passes this fraction of the window. */
 const AUTO_COMPACT_FRACTION = 0.8
 /** Warn the model when the same call returns the same output this many times in a row. */
@@ -181,6 +182,18 @@ interface PendingToolCall {
 	id: string
 	name: string
 	arguments: string
+}
+
+/** Read-only tools, plus shell commands that only observe (rg, find, ls, git diff, ...). */
+function isParallelReadOnlyCall(toolCall: PendingToolCall): boolean {
+	if (PARALLEL_READ_ONLY_TOOLS.has(toolCall.name)) return true
+	if (toolCall.name !== "Bash" && toolCall.name !== "execute_command") return false
+	try {
+		const args = JSON.parse(toolCall.arguments) as { command?: unknown; isDangerous?: unknown }
+		return typeof args.command === "string" && !args.isDangerous && isReadOnlyCommand(args.command)
+	} catch {
+		return false
+	}
 }
 
 function getGitSummary(cwd: string): string {
@@ -1372,7 +1385,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		// committed in model order so tool_call/tool_result pairing stays intact;
 		// mutating and interactive calls remain on the serialized path.
 		let batchEnd = 0
-		while (batchEnd < toolCalls.length && PARALLEL_READ_ONLY_TOOLS.has(toolCalls[batchEnd].name)) {
+		while (batchEnd < toolCalls.length && isParallelReadOnlyCall(toolCalls[batchEnd])) {
 			batchEnd++
 		}
 
@@ -1502,11 +1515,12 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 
 		const approvalKind = getApprovalKind(toolCall.name, args)
 		const diff = approvalKind === "edit" ? previewFileChange(toolCall.name, args, this.options.cwd) : undefined
-		const isDangerous = toolCall.name === "execute_command" && Boolean(args.isDangerous)
+		const isDangerous = (toolCall.name === "Bash" || toolCall.name === "execute_command") && Boolean(args.isDangerous)
 		let needsApproval = false
 		if (approvalKind === "edit" && !this.sessionApproveEdits) needsApproval = true
 		if (approvalKind === "command") {
-			needsApproval = isDangerous || !(this.sessionApproveCommands || this.options.autoApproveSafeCommands)
+			const readOnly = !isDangerous && isReadOnlyCommand(String(args.command ?? ""))
+			needsApproval = isDangerous || !(readOnly || this.sessionApproveCommands || this.options.autoApproveSafeCommands)
 		}
 		// A PreToolUse hook can force the approval prompt ("ask") or skip it ("allow").
 		if (forceApproval) needsApproval = true
