@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **API-only models no longer leak into the model picker.** The `/v1/models` catalog fetch in `fetchDynamicModels` sent no `User-Agent`, so the backend's first-party check failed and appended the System One models (e.g. `fastino/gliner2.5-decide`) to the response; they were registered into the picker like regular chat models. The fetch now sends the standard `DEFAULT_HEADERS` (`orbcode-cli/<version>` User-Agent), matching every other backend call, and the backend hides System One models from first-party agents again.
+
 ### Changed
 
 - **Shell-first exploration.** The `list_files` and `search_files` tools are no longer offered to the model; it now searches and lists with `rg`, `find`, `ls` and `git` through `execute_command`, the way Claude Code does, and the system prompt teaches the common patterns. To keep this from becoming a prompt on every search, read-only commands (`rg`, `grep`, `find` without `-exec`/`-delete`, `ls`, `cat`, `head`, `wc`, `git status/diff/log/show/grep`, and pipes or `&&` chains of these, with no redirects or command substitution) skip the approval prompt and run in parallel. Anything unrecognised still asks. Old sessions that called the removed tools still resume.
