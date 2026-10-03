@@ -283,9 +283,11 @@ function getMatchQuery(event: HookEvent, fields: Record<string, unknown>): strin
 function matcherMatches(matcher: string | undefined, query: string | undefined): boolean {
 	if (!matcher || matcher === "*") return true
 	if (query === undefined) return false
+	// Hooks written before the tool was renamed still match "execute_command".
+	if (query === "Bash" && matcherMatches(matcher, "execute_command")) return true
 	try {
-		// Auto-anchor so "execute_command" matches exactly that tool name, not
-		// "execute_command_extra". Alternation ("a|b") still works because the
+		// Auto-anchor so "Bash" matches exactly that tool name, not
+		// "BashExtra". Alternation ("a|b") still works because the
 		// anchors wrap a non-capturing group: ^(?:a|b)$.
 		return new RegExp(`^(?:${matcher})$`).test(query)
 	} catch {

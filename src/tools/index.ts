@@ -24,7 +24,8 @@ export function getApprovalKind(toolName: string, args: Record<string, unknown>)
 		case "multi_file_edit":
 		case "file_write":
 			return "edit"
-		case "execute_command":
+		case "Bash":
+		case "execute_command": // name used by sessions saved before the rename
 			return "command"
 		default:
 			return "none"
@@ -54,6 +55,7 @@ export function describeToolCall(toolName: string, args: Record<string, unknown>
 			const files = [...new Set(edits.map((e: { file_path?: string }) => e.file_path ?? ""))]
 			return `${edits.length} edits in ${files.length} file${files.length === 1 ? "" : "s"}`
 		}
+		case "Bash":
 		case "execute_command":
 			return String(args.command ?? "")
 		case "list_files":
@@ -93,6 +95,7 @@ const executors: Record<string, (args: Record<string, unknown>, context: ToolCon
 	multi_file_edit: multiFileEdit,
 	list_files: listFiles,
 	search_files: searchFiles,
+	Bash: executeCommand,
 	execute_command: executeCommand,
 	web_search: webSearch,
 	web_fetch: webFetch,

@@ -349,7 +349,7 @@ tools prompt first:
 
 - **File edits** (`file_edit`, `multi_file_edit`, `file_write`) — prompt shows
   the target; `y` allow once, `n` deny, `a` allow for the rest of the session.
-- **Commands** (`execute_command`) — prompt shows the exact command line. The
+- **Commands** (`Bash`) — prompt shows the exact command line. The
   model classifies commands with an `isDangerous` flag; dangerous commands
   (deletes, force-pushes, system changes…) can **never** be auto-approved — no
   `a` option, and `--yolo`/session-approval don't apply.
@@ -466,7 +466,7 @@ shell commands from a repo — see [Security](https://github.com/MatterAIOrg/Orb
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "execute_command",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
@@ -492,7 +492,7 @@ shell commands from a repo — see [Security](https://github.com/MatterAIOrg/Orb
 
 Start OrbCode normally — that's all. Each event maps to a list of matchers; a
 matcher has an optional `matcher` regex (omit, or use `"*"`, to match
-everything; the regex is auto-anchored so `"execute_command"` matches exactly
+everything; the regex is auto-anchored so `"Bash"` matches exactly
 that tool name) and a list of `command` hooks (`timeout` is per-command
 seconds, default 10).
 
@@ -979,9 +979,7 @@ Active in the CLI (aligned with the extension's native tools, with CLI-specific 
 | `file_edit`                | single replacement; unique-match enforcement; `replace_all`; empty `old_string` = whole file |
 | `multi_file_edit`          | batched edits grouped per file, per-edit OK/FAILED results                                   |
 | `file_write`               | creates parent dirs, full-content writes                                                     |
-| `list_files`               | optional recursive, ignores node_modules/.git/build dirs, 800-entry cap                      |
-| `search_files`             | FFF-first Rust-regex search, compact pagination, and bundled/system ripgrep fallback         |
-| `execute_command`          | user's shell, 120s timeout, 30k output cap, optional cwd                                     |
+| `Bash`          | user's shell, 120s timeout, 30k output cap; also used for search/listing (`rg`, `find`, `ls`) — read-only commands skip approval |
 | `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
 | `update_todo_list`         | drives the TUI todo panel                                                                    |
 | `use_skill`                | loads standalone or namespaced plugin skill instructions                                     |

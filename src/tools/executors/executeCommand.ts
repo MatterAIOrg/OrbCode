@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 
-import { getShell, getShellRunArgs } from "../../utils/shell.js"
+import { getShell, getShellRunArgs, isCmdShell } from "../../utils/shell.js"
 import { type ToolContext, type ToolResult, resolveWorkspacePath } from "../types.js"
 
 const COMMAND_TIMEOUT_MS = 120_000
@@ -26,7 +26,7 @@ export async function executeCommand(args: Record<string, unknown>, context: Too
 			// keep the output pipes open).
 			detached: !isWindows,
 			// cmd.exe parses the command string itself; pre-quoting would corrupt it.
-			windowsVerbatimArguments: isWindows,
+			windowsVerbatimArguments: isWindows && isCmdShell(),
 		})
 
 		let output = ""

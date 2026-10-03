@@ -8,7 +8,7 @@ condition is met.
 
 OrbCode's hooks follow the **same contract as Claude Code's hooks**, so scripts
 written for Claude Code work here with two tweaks: use `$MATTERAI_PROJECT_DIR`
-(not `$CLAUDE_PROJECT_DIR`) and use OrbCode's tool names (`execute_command`,
+(not `$CLAUDE_PROJECT_DIR`) and use OrbCode's tool names (`Bash`,
 `file_edit`, …) in your matchers. See [Differences from Claude
 Code](#differences-from-claude-code).
 
@@ -67,7 +67,7 @@ chmod +x ~/.orbcode/hooks/guard.sh
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "execute_command",
+        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "~/.orbcode/hooks/guard.sh" }]
       }
     ],
@@ -136,8 +136,8 @@ configuration you own.
 - **`matcher`** — a JavaScript regex tested against one field of the event (the
   tool name for `PreToolUse`/`PostToolUse`, `source` for `SessionStart`, etc.;
   see the per-event tables). The regex is **auto-anchored** (`^…$`), so
-  `"execute_command"` matches exactly that tool name, not
-  `"execute_command_extra"`; use `"a|b"` for alternation. Omit it, or use
+  `"Bash"` matches exactly that tool name, not
+  `"BashExtra"`; use `"a|b"` for alternation. Omit it, or use
   `"*"`, to match everything. An invalid regex falls back to an exact-string
   comparison.
 - **`hooks`** — the commands to run when the matcher matches. You can list
@@ -468,7 +468,7 @@ exit 0
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "execute_command",
+        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "~/.orbcode/hooks/guard.sh" }]
       }
     ]
@@ -491,14 +491,14 @@ exit 0
 
 ### Auto-approve a safe, read-only tool
 
-Skip the approval prompt for `read_file` and `list_files`:
+Skip the approval prompt for `read_file` (searching and listing go through `Bash`, and read-only commands such as `rg`, `find` and `ls` already skip approval):
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "read_file|list_files|search_files",
+        "matcher": "read_file",
         "hooks": [
           { "type": "command",
             "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'" }
@@ -538,7 +538,7 @@ Force `ls` to always be `ls -la`:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "execute_command",
+        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "~/.orbcode/hooks/rewrite.sh" }]
       }
     ]
@@ -698,7 +698,7 @@ exit 0
 **Run a hook by hand** — pipe it a fake payload and inspect the exit code:
 
 ```bash
-echo '{"hook_event_name":"PreToolUse","tool_name":"execute_command","tool_input":{"command":"rm -rf /"}}' \
+echo '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \
   | ~/.orbcode/hooks/guard.sh
 echo "exit=$?"
 ```
@@ -723,8 +723,8 @@ file=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.l
   with the workspace as the working directory.
 - **`matcher` on a no-match-field event** (e.g. a `matcher` on `Stop`) — it will
   never match. Omit the matcher for those events.
-- **Wrong tool names** — OrbCode uses `execute_command`, `file_edit`,
-  `file_write`, `multi_file_edit`, `read_file`, `list_files`, `search_files`,
+- **Wrong tool names** — OrbCode uses `Bash`, `file_edit`,
+  `file_write`, `multi_file_edit`, `read_file`,
   `web_fetch`, `web_search`, `update_todo_list` (not Claude Code's `Bash`,
   `Edit`, `Write`, …).
 
@@ -743,7 +743,7 @@ schema, matcher regexes, parallel execution, per-command timeout). Differences:
 | Settings file | `~/.claude/settings.json` | `~/.orbcode/settings.json` |
 | Project file | `.claude/settings.json` | `.orbcode/settings.json` |
 | Project dir env var | `$CLAUDE_PROJECT_DIR` | `$MATTERAI_PROJECT_DIR` |
-| Tool names in matchers | `Bash`, `Edit`, `Write`, `Read`, … | `execute_command`, `file_edit`, `file_write`, `read_file`, … |
+| Tool names in matchers | `Bash`, `Edit`, `Write`, `Read`, … | `Bash` (same; the old name `execute_command` still matches), `file_edit`, `file_write`, `read_file`, … |
 | Hook types | `command`, plus newer MCP/HTTP/prompt hooks | `command` only |
 | Events | full internal SDK set | the documented set: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `PreCompact`, `SessionEnd` (+ `SubagentStop`, reserved) |
 
