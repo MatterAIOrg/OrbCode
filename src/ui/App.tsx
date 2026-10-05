@@ -64,6 +64,7 @@ import {
 import { Agent } from "../core/agent.js";
 import { McpManager } from "../mcp/manager.js";
 import type { UpdateInfo } from "../utils/updateCheck.js";
+import { normalizeTodoList } from "../utils/todos.js";
 import type {
   AgentEvent,
   ApprovalDecision,
@@ -941,7 +942,7 @@ export function App({
       agentRef.current = resumedAgent;
       process.env.ORBCODE_LAST_SESSION_ID = resumedAgent.taskId;
       resetTranscript();
-      setTasks(session.todos ?? "");
+      setTasks(normalizeTodoList(session.todos ?? ""));
       setTotalCost(session.totalCost ?? 0);
       // Repopulate the status bar immediately. Without this the context
       // number only appears once the next streaming `usage` chunk arrives,

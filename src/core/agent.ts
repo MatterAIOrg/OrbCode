@@ -49,6 +49,7 @@ import { loadSkills } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
 import { unifiedDiff } from "../utils/diff.js"
 import { parseToolCallArguments } from "../utils/jsonRepair.js"
+import { normalizeTodoList } from "../utils/todos.js"
 import {
 	countDiffLines,
 	detectGitRepo,
@@ -476,7 +477,7 @@ export class Agent {
 				...checkpoint,
 				files: checkpoint.files.map((file) => ({ ...file })),
 			}))
-			this.todos = options.resume.todos
+			this.todos = normalizeTodoList(options.resume.todos)
 			this.totalCost = options.resume.totalCost
 			this.contextTokens = options.resume.contextTokens
 			this.title = options.resume.title
@@ -574,7 +575,7 @@ export class Agent {
 		const result: RewindResult = {
 			text: target.text,
 			attachments: target.attachments,
-			todos: target.todos,
+			todos: normalizeTodoList(target.todos),
 			restoredFiles: restored,
 			failedFiles: failed,
 		}
@@ -611,7 +612,7 @@ export class Agent {
 		this.transcript = this.transcript.slice(0, target.transcriptIndex)
 		this.transcriptReasoning = ""
 		this.transcriptText = ""
-		this.todos = target.todos
+		this.todos = normalizeTodoList(target.todos)
 		this.firstMessageSent = this.messages.length > 0
 		if (this.messages.length === 0) this.contextTokens = 0
 		this.stopHookActive = false
