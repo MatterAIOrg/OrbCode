@@ -28,6 +28,10 @@ interface InputBoxProps {
 	supportsImages: boolean
 	/** Reports the complete rendered height, including autocomplete popups. */
 	onHeightChange?: (height: number) => void
+	/** Esc pressed twice in quick succession on an empty prompt. */
+	onDoubleEscape?: () => void
+	/** Replaces the prompt text whenever `id` changes (e.g. the message being edited after a rewind). */
+	prefill?: { id: number; text: string } | null
 }
 
 const MAX_FILE_MATCHES = 8
@@ -39,6 +43,7 @@ const POPUP_PADDING_X = 2
 const PASTE_CHIP_THRESHOLD = 200
 const PASTE_CHIP_LINE_THRESHOLD = 3
 const MAX_PROMPT_HEIGHT = 8
+const DOUBLE_ESCAPE_MS = 600
 
 // Two newlines separate a merged chip's text from the surrounding prompt text.
 const PASTE_CHIP_SEPARATOR = "\n\n"
@@ -138,7 +143,16 @@ function findAtToken(value: string, cursor: number): { query: string; start: num
 	return { query: match[1], start: cursor - match[1].length - 1 }
 }
 
-export function InputBox({ active, width, slashCommands, onSubmit, supportsImages, onHeightChange }: InputBoxProps) {
+export function InputBox({
+	active,
+	width,
+	slashCommands,
+	onSubmit,
+	supportsImages,
+	onHeightChange,
+	onDoubleEscape,
+	prefill,
+}: InputBoxProps) {
 	const [value, setValue] = useState("")
 	const [cursor, setCursor] = useState(0)
 	const valueRef = useRef("")
@@ -160,6 +174,8 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 	const [fileIndex, setFileIndex] = useState(0)
 	const [slashIndex, setSlashIndex] = useState(0)
 	const [dismissedValue, setDismissedValue] = useState<string | null>(null)
+
+	const lastEscapeRef = useRef(0)
 
 	const setEditor = (nextValue: string, nextCursor: number) => {
 		valueRef.current = nextValue
@@ -245,6 +261,12 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 		setSlashIndex(0)
 		setDismissedValue(null)
 	}
+
+	useEffect(() => {
+		if (!prefill) return
+		clearComposer()
+		setEditor(prefill.text, prefill.text.length)
+	}, [prefill?.id])
 
 	const addDroppedAttachments = (filePaths: string[]) => {
 		const generation = composerGenerationRef.current
@@ -381,6 +403,17 @@ export function InputBox({ active, width, slashCommands, onSubmit, supportsImage
 			const currentCursor = cursorRef.current
 			if (key.escape && (currentValue.length > 0 || attachmentsRef.current.length > 0)) {
 				clearComposer()
+				lastEscapeRef.current = 0
+				return
+			}
+			if (key.escape) {
+				const now = Date.now()
+				if (onDoubleEscape && now - lastEscapeRef.current < DOUBLE_ESCAPE_MS) {
+					lastEscapeRef.current = 0
+					onDoubleEscape()
+				} else {
+					lastEscapeRef.current = now
+				}
 				return
 			}
 			// While actively browsing history, arrows keep navigating history even

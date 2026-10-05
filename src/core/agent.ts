@@ -32,6 +32,16 @@ import {
 	type SessionData,
 	type SessionTranscriptEntry,
 } from "./sessions.js"
+import {
+	changedFilePaths,
+	deleteBackups,
+	restoreFiles,
+	snapshotFile,
+	type Checkpoint,
+	type RewindMode,
+	type RewindPoint,
+	type RewindResult,
+} from "./checkpoints.js"
 import { HookRunner, type HooksConfig } from "./hooks.js"
 import { McpManager } from "../mcp/manager.js"
 import { loadMemoryFiles } from "../memory/loader.js"
@@ -388,6 +398,8 @@ export class Agent {
 	private transcript: SessionTranscriptEntry[] = []
 	private transcriptReasoning = ""
 	private transcriptText = ""
+	/** one rewind point per user turn, oldest first (see /rewind) */
+	private checkpoints: Checkpoint[] = []
 	private todos = ""
 	private firstMessageSent = false
 	private sessionApproveEdits: boolean
@@ -460,6 +472,10 @@ export class Agent {
 		})
 		if (options.resume) {
 			this.messages = options.resume.messages
+			this.checkpoints = (options.resume.checkpoints ?? []).map((checkpoint) => ({
+				...checkpoint,
+				files: checkpoint.files.map((file) => ({ ...file })),
+			}))
 			this.todos = options.resume.todos
 			this.totalCost = options.resume.totalCost
 			this.contextTokens = options.resume.contextTokens
@@ -529,6 +545,83 @@ export class Agent {
 				? { ...entry, resultPreview: stripSearchPageMetadataForDisplay(entry.resultPreview) }
 				: { ...entry },
 		)
+	}
+
+	/** User turns the conversation can be rewound to, oldest first. */
+	get rewindPoints(): RewindPoint[] {
+		return this.checkpoints.map((checkpoint, index) => ({
+			id: checkpoint.id,
+			text: checkpoint.text,
+			attachments: checkpoint.attachments,
+			changedFiles: changedFilePaths(this.checkpoints.slice(index)),
+		}))
+	}
+
+	/**
+	 * Rewind to just before the user turn `id`: drop that turn and everything
+	 * after it from the conversation, restore the files the agent changed since,
+	 * or both. Returns the original prompt so the caller can offer it for editing.
+	 */
+	rewind(id: string, mode: RewindMode): RewindResult {
+		if (!this.isIdle) throw new Error("Can't rewind while a response is running.")
+		const index = this.checkpoints.findIndex((checkpoint) => checkpoint.id === id)
+		if (index === -1) throw new Error("That message can no longer be rewound to.")
+		const target = this.checkpoints[index]
+		const affected = this.checkpoints.slice(index)
+
+		const { restored, failed } =
+			mode === "conversation" ? { restored: [], failed: [] } : restoreFiles(this.taskId, affected)
+		const result: RewindResult = {
+			text: target.text,
+			attachments: target.attachments,
+			todos: target.todos,
+			restoredFiles: restored,
+			failedFiles: failed,
+		}
+
+		if (mode === "code") {
+			// The files are back at the start of `target`; snapshots taken after
+			// that point describe a timeline that no longer exists.
+			deleteBackups(this.taskId, affected)
+			for (const checkpoint of affected) checkpoint.files = []
+			if (restored.length > 0) {
+				this.messages.push({
+					role: "user",
+					content: `System reminder: The user restored these files to an earlier state, so any edits you made to them since are gone:\n${restored.join("\n")}`,
+				})
+			}
+			this.persist()
+			return result
+		}
+
+		const previous = this.checkpoints[index - 1]
+		if (mode === "both") {
+			deleteBackups(this.taskId, affected)
+		} else if (previous) {
+			// Files stay as they are, so a later code rewind to an earlier turn
+			// must still be able to undo the edits made in the dropped turns.
+			for (const checkpoint of affected) {
+				for (const file of checkpoint.files) {
+					if (!previous.files.some((known) => known.path === file.path)) previous.files.push(file)
+				}
+			}
+		}
+		this.checkpoints = this.checkpoints.slice(0, index)
+		this.messages = this.messages.slice(0, target.messageIndex)
+		this.transcript = this.transcript.slice(0, target.transcriptIndex)
+		this.transcriptReasoning = ""
+		this.transcriptText = ""
+		this.todos = target.todos
+		this.firstMessageSent = this.messages.length > 0
+		if (this.messages.length === 0) this.contextTokens = 0
+		this.stopHookActive = false
+		this.autoCompactFailed = false
+		this.prunedBefore = Math.min(this.prunedBefore, this.messages.length)
+		this.repeatTracker.clear()
+		// Persist even when nothing is left, so the rewound turns don't come
+		// back on /resume.
+		this.persist(true)
+		return result
 	}
 
 	private recordTranscriptEvent(event: AgentEvent): void {
@@ -620,6 +713,8 @@ export class Agent {
 	}
 
 	clear(): void {
+		deleteBackups(this.taskId, this.checkpoints)
+		this.checkpoints = []
 		this.messages = []
 		this.transcript = []
 		this.transcriptReasoning = ""
@@ -640,8 +735,8 @@ export class Agent {
 	}
 
 	/** Write the current conversation to the sessions directory. */
-	private persist(): void {
-		if (this.messages.length === 0) return
+	private persist(force = false): void {
+		if (this.messages.length === 0 && !force) return
 		const filePath = getSessionFilePath(this.taskId)
 		try {
 			// Stale-write guard: if another process (e.g. a zombie left by an
@@ -677,6 +772,7 @@ export class Agent {
 				lastGitHead: this.lastGitHead,
 				messages: this.messages,
 				transcript: this.transcript,
+				checkpoints: this.checkpoints,
 			})
 			this.lastSessionWriteMs = Date.now()
 		} catch (error) {
@@ -800,6 +896,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			cwd: this.options.cwd,
 			token: this.options.token,
 			signal: this.abortController?.signal,
+			beforeWrite: (filePath) => {
+				const checkpoint = this.checkpoints[this.checkpoints.length - 1]
+				if (checkpoint) snapshotFile(this.taskId, checkpoint, filePath)
+			},
 			getTodos: () => this.todos,
 			setTodos: (todos: string) => {
 				this.todos = todos
@@ -811,6 +911,15 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	async runTurn(userText: string, attachments: Attachment[] = []): Promise<void> {
 		const { onEvent } = this.options.callbacks
 		this.abortController = new AbortController()
+		this.checkpoints.push({
+			id: randomUUID().slice(0, 8),
+			text: userText,
+			...(attachments.length > 0 ? { attachments: attachments.map(attachmentSummary) } : {}),
+			messageIndex: this.messages.length,
+			transcriptIndex: this.transcript.length,
+			todos: this.todos,
+			files: [],
+		})
 		this.observeCommittedCode()
 		this.trackBackground(reportUsageEvent(this.options.token, {
 			eventType: "user_message",
@@ -1164,6 +1273,9 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		]
 		// The summary is small; the next usage report replaces this estimate.
 		this.contextTokens = Math.ceil(summary.length / 4)
+		// Checkpoints index into the history that was just replaced.
+		deleteBackups(this.taskId, this.checkpoints)
+		this.checkpoints = []
 		this.prunedBefore = 0
 		this.repeatTracker.clear()
 	}
