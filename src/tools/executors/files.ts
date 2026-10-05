@@ -124,6 +124,7 @@ export async function fileWrite(args: Record<string, unknown>, context: ToolCont
 	const filePath = resolveWorkspacePath(context.cwd, String(args.file_path ?? ""))
 	const content = String(args.content ?? "")
 	try {
+		context.beforeWrite?.(filePath)
 		fs.mkdirSync(path.dirname(filePath), { recursive: true })
 		fs.writeFileSync(filePath, content)
 	} catch (error) {
@@ -306,8 +307,8 @@ function applyEdit(content: string, edit: EditSpec): EditOutcome {
 	return { content, error: `old_string not found in file${hint ? `.\n${hint}` : ""}` }
 }
 
-function editOneFile(cwd: string, edits: EditSpec[]): string[] {
-	const filePath = resolveWorkspacePath(cwd, edits[0].file_path)
+function editOneFile(context: ToolContext, edits: EditSpec[]): string[] {
+	const filePath = resolveWorkspacePath(context.cwd, edits[0].file_path)
 	let content: string
 	try {
 		content = fs.readFileSync(filePath, "utf8")
@@ -331,6 +332,7 @@ function editOneFile(cwd: string, edits: EditSpec[]): string[] {
 	}
 	if (changed) {
 		try {
+			context.beforeWrite?.(filePath)
 			fs.writeFileSync(filePath, content)
 		} catch (error) {
 			return edits.map(() => `FAILED ${filePath}: ${(error as Error).message}`)
@@ -351,7 +353,7 @@ export async function fileEdit(args: Record<string, unknown>, context: ToolConte
 		new_string: String(args.new_string ?? ""),
 		replace_all: parseReplaceAll(args.replace_all),
 	}
-	const [result] = editOneFile(context.cwd, [edit])
+	const [result] = editOneFile(context, [edit])
 	return { text: result, isError: result.startsWith("FAILED") }
 }
 
@@ -434,7 +436,7 @@ export async function multiFileEdit(args: Record<string, unknown>, context: Tool
 
 	const results: string[] = []
 	for (const fileEdits of byFile.values()) {
-		results.push(...editOneFile(context.cwd, fileEdits))
+		results.push(...editOneFile(context, fileEdits))
 	}
 	const anyFailed = results.some((r) => r.startsWith("FAILED"))
 	return { text: results.join("\n"), isError: anyFailed && results.every((r) => r.startsWith("FAILED")) }
