@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Task list no longer renders as a raw JSON array.** Some models pass the `update_todo_list` `todos` argument as a JSON array of `{status, content}` objects instead of the documented markdown checklist string, so the task panel showed the raw array. The executor now detects an array (or a JSON-encoded array) and converts it to the markdown checklist format the UI renders.
+- **Task list no longer renders as a raw JSON array.** Some models pass the `update_todo_list` `todos` argument as a JSON array of `{status, content}` objects instead of the documented markdown checklist string, so the task panel showed the raw array. A shared normalizer (`src/utils/todos.ts`) now converts arrays — and JSON-encoded arrays — to the markdown checklist format at every entry point: tool execution, session resume, and rewind restore, so stale sessions saved with the raw array also render correctly.
 
 ## [6.9.4] - 2026-10-05
 

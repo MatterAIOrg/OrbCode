@@ -10,6 +10,7 @@ import { useSkill } from "./executors/skills.js"
 import { webFetch, webSearch } from "./executors/web.js"
 import { figmaFetch } from "./executors/figma.js"
 import type { McpManager } from "../mcp/manager.js"
+import { normalizeTodoList } from "../utils/todos.js"
 
 export { nativeTools }
 export type { ToolContext, ToolResult }
@@ -102,42 +103,9 @@ const executors: Record<string, (args: Record<string, unknown>, context: ToolCon
 	figma_fetch: figmaFetch,
 	use_skill: useSkill,
 	update_todo_list: async (args, context) => {
-		let todos = args.todos
-		// Handle case where model passes an array instead of a markdown string
-		if (Array.isArray(todos)) {
-			todos = todos
-				.map((item: any) => {
-					const status =
-						item.status === "completed"
-							? "[x]"
-							: item.status === "in_progress"
-								? "[-]"
-								: "[ ]"
-					return `- ${status} ${item.content}`
-				})
-				.join("\n")
-		} else if (typeof todos === "string") {
-			// Try to parse as JSON array in case it's a JSON string
-			try {
-				const parsed = JSON.parse(todos)
-				if (Array.isArray(parsed)) {
-					todos = parsed
-						.map((item: any) => {
-							const status =
-								item.status === "completed"
-									? "[x]"
-									: item.status === "in_progress"
-										? "[-]"
-										: "[ ]"
-							return `- ${status} ${item.content}`
-						})
-						.join("\n")
-				}
-			} catch {
-				// Not JSON, use as-is
-			}
-		}
-		context.setTodos(String(todos ?? ""))
+		// Models sometimes pass an array of {status, content} objects (or a
+		// JSON-encoded one) instead of the documented markdown checklist.
+		context.setTodos(normalizeTodoList(args.todos))
 		return { text: "Todo list updated." }
 	},
 	// ask_followup_question and attempt_completion are handled by the agent loop.
