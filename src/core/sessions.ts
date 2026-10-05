@@ -4,6 +4,7 @@ import type OpenAI from "openai"
 
 import type { AttachmentSummary } from "../attachments.js"
 import { getConfigDir } from "../config/settings.js"
+import type { Checkpoint } from "./checkpoints.js"
 
 export type SessionTranscriptEntry =
 	| { kind: "user"; text: string; attachments?: AttachmentSummary[] }
@@ -42,6 +43,8 @@ export interface SessionData {
 	messages: OpenAI.Chat.ChatCompletionMessageParam[]
 	/** Exact visible TUI history. Optional for sessions written before v0.4.2. */
 	transcript?: SessionTranscriptEntry[]
+	/** Rewind points, one per user turn. Absent for sessions written before /rewind. */
+	checkpoints?: Checkpoint[]
 }
 
 const MAX_SESSIONS_LISTED = 25

@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "6.9.3",
+  "version": "6.9.4",
   "description": "OrbCode CLI — agentic coding in your terminal, by MatterAI",
   "type": "module",
   "bin": {
@@ -40,7 +40,8 @@
     "test:json-repair": "node --import tsx --test test/json-repair.test.ts",
     "test:readonly": "node --import tsx --test test/read-only-command.test.ts",
     "test:search": "node --import tsx --test test/search-files.test.ts",
-    "test:ui": "bun test test/ui-viewport.test.tsx test/session-picker.test.tsx",
+    "test:rewind": "node --import tsx --test test/rewind.test.ts",
+    "test:ui": "bun test test/ui-viewport.test.tsx test/session-picker.test.tsx test/rewind-picker.test.tsx",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {

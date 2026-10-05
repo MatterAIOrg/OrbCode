@@ -313,6 +313,7 @@ MatterAI gateway untouched.
 | `/clear`                      | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
 | `/new`                        | start a fresh conversation/session with a clean slate                                                 |
 | `/resume`                     | pick a previous session for this directory and continue it (screen is cleared, conversation replayed) |
+| `/rewind`                     | go back to an earlier message: restore the conversation and/or the files the agent edited since, with the message put back in the prompt to edit and resend (also `Esc` `Esc` on an empty prompt) |
 | `/analytics`                  | open the MatterAI analytics dashboard (app.matterai.so/orbital) in the browser                        |
 | `/compact`                    | summarize the conversation and replace history with the summary                                       |
 | `/tasks`                      | print the current task list                                                                           |
@@ -334,6 +335,7 @@ MatterAI gateway untouched.
 | key                 | action                                                                 |
 | ------------------- | ---------------------------------------------------------------------- |
 | `Esc`               | interrupt the running turn (or cancel login polling / close a menu)    |
+| `Esc` `Esc`         | on an empty prompt, open `/rewind`                                     |
 | `Ctrl+C`            | quit                                                                   |
 | `Ctrl+O`            | toggle thinking display for the whole transcript (past turns included) |
 | `Shift+Tab`         | cycle approval mode: ask → accept edits → auto-approve                 |
@@ -410,6 +412,16 @@ settings.json > user settings.json > config.json.
 
 Sessions are stored in `~/.orbcode/sessions/<id>.json` and power `/resume`
 and `--resume <id>`.
+
+`/rewind` works from a checkpoint recorded at the start of every message you
+send. Before the agent first edits a file (`file_write`, `file_edit`,
+`multi_file_edit`) after a checkpoint, a copy of the file is saved under
+`~/.orbcode/file-history/<session id>/`, so rewinding can restore it, or delete
+it if the agent created it. Pick a message and choose to restore the code and
+conversation, the conversation only, or the code only. Files changed through
+`Bash` (including by commands the agent ran) are not tracked and are never
+restored. Compacting the conversation drops the checkpoints before it, and
+sessions saved before `/rewind` existed have none.
 
 | env var                | effect                                                            |
 | ---------------------- | ----------------------------------------------------------------- |

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`/rewind`: go back to an earlier message.** Every message you send is now a checkpoint. `/rewind` (or `Esc` `Esc` on an empty prompt) lists them; pick one and OrbCode drops that message and everything after it from the conversation, and puts the message back in the prompt so you can edit it and send it again. When the agent edited files after that point, you choose whether to restore the code and conversation, the conversation only, or the code only. Before the agent first edits a file after a checkpoint, the file is backed up under `~/.orbcode/file-history/<session id>/`; rewinding puts it back, or deletes it if the agent created it. Files changed by `Bash` commands are not tracked. Checkpoints are saved with the session, so they survive `/resume`; compacting the conversation drops the checkpoints before it, and sessions saved before this release have none.
+
 ## [6.9.3] - 2026-10-03
 
 ### Changed

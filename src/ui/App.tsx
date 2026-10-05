@@ -91,6 +91,8 @@ import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { ThemePicker } from "./components/ThemePicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
+import { RewindPicker } from "./components/RewindPicker.js";
+import type { RewindMode, RewindPoint } from "../core/checkpoints.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
 import {
   diffViewHeight,
@@ -128,6 +130,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
   { name: "/new", description: "start a new conversation with a clean slate" },
   { name: "/resume", description: "resume a previous session" },
+  {
+    name: "/rewind",
+    description: "rewind the conversation and/or code to an earlier message",
+  },
   {
     name: "/compact",
     description: "summarize the conversation to free up context",
@@ -464,6 +470,13 @@ export function App({
   const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  // Set while the /rewind picker is open: the user turns that can be rewound to.
+  const [rewindPoints, setRewindPoints] = useState<RewindPoint[] | null>(null);
+  // Puts a rewound message back in the prompt so it can be edited and resent.
+  const [promptPrefill, setPromptPrefill] = useState<{
+    id: number;
+    text: string;
+  } | null>(null);
   const [resumableSessions, setResumableSessions] = useState<{
     here: SessionData[];
     everywhere: SessionData[];
@@ -961,6 +974,86 @@ export function App({
     [createAgent, pushRow, resetTranscript],
   );
 
+  // `quiet`: opened by double-Esc, which also interrupts a running turn — stay
+  // silent instead of complaining that the agent is busy.
+  const openRewind = useCallback(
+    (quiet = false) => {
+      if (busy) {
+        if (!quiet) {
+          pushRow({
+            kind: "info",
+            text: "Wait for the current response to finish (or press Esc to stop it) before rewinding.",
+          });
+        }
+        return;
+      }
+      const points = agentRef.current?.rewindPoints ?? [];
+      if (points.length === 0) {
+        pushRow({
+          kind: "info",
+          text: "Nothing to rewind to yet. Only messages sent after /rewind was introduced can be rewound, so older sessions have no rewind points.",
+        });
+        return;
+      }
+      setRewindPoints(points);
+    },
+    [busy, pushRow],
+  );
+
+  const handleRewind = useCallback(
+    (point: RewindPoint, mode: RewindMode) => {
+      setRewindPoints(null);
+      const agent = agentRef.current;
+      if (!agent) return;
+      let result;
+      try {
+        result = agent.rewind(point.id, mode);
+      } catch (error) {
+        pushRow({ kind: "error", text: (error as Error).message });
+        return;
+      }
+      if (mode !== "code") {
+        resetTranscript();
+        setTasks(result.todos);
+        setContextTokens(agent.lastContextTokens);
+        for (const entry of agent.displayTranscript) {
+          if (entry.kind === "reasoning") {
+            pushRow({ ...entry, expanded: expandReasoningRef.current });
+          } else {
+            pushRow(entry);
+          }
+        }
+        setPromptPrefill({ id: Date.now(), text: result.text });
+      }
+      const files = result.restoredFiles.length;
+      const notes = [
+        mode === "code"
+          ? "Restored code"
+          : mode === "both"
+            ? "Rewound the conversation and code"
+            : "Rewound the conversation",
+      ];
+      if (mode !== "conversation") {
+        notes[0] += ` (${files} file${files === 1 ? "" : "s"})`;
+      }
+      notes[0] += " to before that message.";
+      if (mode !== "code") {
+        notes.push("Edit the message below and press Enter to resend it.");
+        if (result.attachments?.length) {
+          notes.push("Its attachments weren't restored; attach them again.");
+        }
+      }
+      pushRow({ kind: "info", text: notes.join(" ") });
+      if (result.failedFiles.length > 0) {
+        pushRow({
+          kind: "error",
+          text: `Couldn't restore: ${result.failedFiles.join(", ")}`,
+        });
+      }
+    },
+    [pushRow, resetTranscript],
+  );
+
   const handleTaskSelect = useCallback(
     (session: SessionData) => {
       setTaskPickerSessions(null);
@@ -1216,6 +1309,9 @@ export function App({
           setResumableSessions({ here, everywhere });
           break;
         }
+        case "/rewind":
+          openRewind();
+          break;
         case "/task": {
           if (!getAuthToken(settings)) {
             setView("login");
@@ -1448,6 +1544,7 @@ export function App({
       switchTheme,
       resetTranscript,
       clearQueue,
+      openRewind,
     ],
   );
 
@@ -1845,6 +1942,7 @@ export function App({
     !mcpPickerOpen &&
     !mcpMigrationEntries &&
     !resumableSessions &&
+    !rewindPoints &&
     !taskPickerSessions &&
     !linkManagerOpen &&
     !skillManagerOpen;
@@ -1856,6 +1954,7 @@ export function App({
     mcpPickerOpen ||
     !!mcpMigrationEntries ||
     !!resumableSessions ||
+    !!rewindPoints ||
     !!taskPickerSessions ||
     linkManagerOpen ||
     skillManagerOpen;
@@ -2220,6 +2319,8 @@ export function App({
               onSubmit={handleSubmit}
               supportsImages={getModel(settings.model).supportsImages}
               onHeightChange={setInputBoxHeight}
+              onDoubleEscape={() => openRewind(true)}
+              prefill={promptPrefill}
             />
             <StatusBar
               modelId={settings.model}
@@ -2306,6 +2407,13 @@ export function App({
                 cwd={process.cwd()}
                 onSelect={handleResume}
                 onCancel={() => setResumableSessions(null)}
+              />
+            )}
+            {rewindPoints && (
+              <RewindPicker
+                points={rewindPoints}
+                onSelect={handleRewind}
+                onCancel={() => setRewindPoints(null)}
               />
             )}
             {taskPickerSessions && (
