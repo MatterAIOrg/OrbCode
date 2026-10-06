@@ -1,3 +1,6 @@
+import * as fs from "node:fs"
+import * as path from "node:path"
+
 import {
 	AXON_MODELS,
 	DEFAULT_MODEL_ID,
@@ -13,6 +16,7 @@ import {
 	isEidoProAxonModel,
 	isLumenAxonModel,
 	isValidAxonModel,
+	registerCustomModels,
 	usesAiSdk,
 } from "./api/models.js"
 import { fetchProfile } from "./auth/auth.js"
@@ -21,16 +25,64 @@ import { Agent } from "./core/agent.js"
 import type { AgentEvent } from "./core/events.js"
 import { McpManager } from "./mcp/manager.js"
 
+export interface HeadlessOptions {
+	yolo: boolean
+	systemPromptOverride?: string
+	/** "json" emits a structured envelope; "text" (default) prints the final message. */
+	outputMode?: "text" | "json"
+	/** When true, exit non-zero if the requested model is not registered. */
+	requireModel?: boolean
+	/** Path to a file the agent should write its final structured result to. */
+	outputFile?: string
+	/** When true, print tool-start/tool-end events to stderr for observability. */
+	verbose?: boolean
+}
+
+/**
+ * Whether a tool call is the --output-file write, which headless mode approves
+ * even without --yolo. Both paths are resolved so `result.json`, `./result.json`
+ * and the absolute path all match, while any other target stays denied.
+ */
+export function isOutputFileWrite(outputFile: string | undefined, toolName: string, detail: string): boolean {
+	if (!outputFile || toolName !== "file_write" || !detail) return false
+	return path.resolve(detail) === path.resolve(outputFile)
+}
+
 /** Non-interactive `orbcode -p "prompt"` mode: prints the final response to stdout. */
-export async function runHeadless(
-	prompt: string,
-	yolo: boolean,
-	systemPromptOverride?: string,
-): Promise<void> {
+export async function runHeadless(prompt: string, options: HeadlessOptions): Promise<void> {
+	const { yolo, systemPromptOverride, outputMode = "text", requireModel, outputFile, verbose } = options
 	const settings = loadSettings()
 	const token = getAuthToken(settings)
 
-	if (token) {
+	// --baseUrl / --apiKey: register a synthetic OpenAI-compatible model so the
+	// request goes through the AI SDK transport instead of the MatterAI gateway.
+	// Dedicated env names — MATTERAI_BASE_URL / MATTERAI_API_KEY already exist
+	// and override the gateway URL / auth token (see settings.ts), so reusing
+	// them would break backend calls (models list, /usage, auth).
+	const customBaseUrl = process.env.MATTERAI_LLM_BASE_URL
+	const customApiKey = process.env.MATTERAI_LLM_API_KEY
+	if (customBaseUrl) {
+		const modelId = process.env.MATTERAI_MODEL ?? "gpt-4o"
+		registerCustomModels([
+			{
+				id: modelId,
+				name: modelId,
+				description: "OpenAI-compatible model via --baseUrl",
+				contextWindow: 200_000,
+				maxOutputTokens: 32_000,
+				supportsImages: false,
+				inputPrice: 0,
+				outputPrice: 0,
+				provider: "openai-compatible",
+				baseUrl: customBaseUrl,
+				apiKey: customApiKey,
+			},
+		])
+		settings.model = modelId
+		settings.modelExplicit = true
+	}
+
+	if (token && !customBaseUrl) {
 		await fetchDynamicModels(token).catch(() => {})
 	}
 
@@ -48,6 +100,14 @@ export async function runHeadless(
 		if (preferred !== settings.model) settings.model = preferred
 	}
 	if (requestedModel && !isValidAxonModel(requestedModel)) {
+		if (requireModel || outputMode === "json") {
+			// In programmatic mode, silently falling back is worse than failing fast.
+			process.stderr.write(
+				`error: unknown model "${requestedModel}". ` +
+					`Add it under "customModels" in settings.json (with a "provider") to use it.\n`,
+			)
+			process.exit(1)
+		}
 		process.stderr.write(
 			`warning: unknown model "${requestedModel}"; using "${settings.model}". ` +
 				`Add it under "customModels" in settings.json (with a "provider") to use it.\n`,
@@ -58,7 +118,7 @@ export async function runHeadless(
 	// provider from the env (e.g. ANTHROPIC_API_KEY) or the model's `apiKey` —
 	// so they don't need a MatterAI login. Only gate on the token when the
 	// selected model actually goes through the MatterAI gateway.
-	if (!token && !usesAiSdk(getModel(settings.model))) {
+	if (!token && !usesAiSdk(getModel(settings.model)) && !customBaseUrl) {
 		console.error("Not signed in. Run `orbcode login`, set MATTERAI_TOKEN, or put an apiKey in settings.json.")
 		process.exit(1)
 	}
@@ -129,6 +189,12 @@ export async function runHeadless(
 	let textBuffer = ""
 	let lastText = ""
 	let completionResult = ""
+	let usageInputTokens = 0
+	let usageOutputTokens = 0
+	let usageCost = 0
+	let usageTotalCost = 0
+	let errorMessage: string | null = null
+
 	const agent = new Agent({
 		cwd: process.cwd(),
 		// May be empty for AI-SDK providers; AiSdkClient ignores it and uses the
@@ -155,19 +221,41 @@ export async function runHeadless(
 					case "completion":
 						completionResult = event.result
 						break
+					case "usage":
+						usageInputTokens += event.inputTokens
+						usageOutputTokens += event.outputTokens
+						usageCost += event.cost
+						// totalCost is already the agent's running session total.
+						usageTotalCost = event.totalCost
+						break
 					case "system":
 						// Hook messages go to stderr so stdout stays the final answer.
 						process.stderr.write(`${event.isError ? "hook error" : "hook"}: ${event.message}\n`)
 						break
 					case "error":
 						process.stderr.write(`error: ${event.message}\n`)
+						errorMessage = event.message
 						exitCode = 1
+						break
+					case "tool-start":
+						if (verbose) {
+							process.stderr.write(`[tool] ${event.name}: ${event.summary}\n`)
+						}
+						break
+					case "tool-end":
+						if (verbose) {
+							const status = event.isError ? "✗" : "✓"
+							process.stderr.write(`[${status}] ${event.name}: ${event.summary}\n`)
+						}
 						break
 				}
 			},
 			// In headless mode there is nobody to ask; deny unless --yolo.
+			// Exception: writing the --output-file artifact is always allowed,
+			// so read-only analysis runs can still emit a structured result.
 			requestApproval: async (request) => {
 				if (yolo) return "yes"
+				if (isOutputFileWrite(outputFile, request.toolName, request.detail)) return "yes"
 				process.stderr.write(`[denied] ${request.toolName}: ${request.summary} (pass --yolo to auto-approve)\n`)
 				return "no"
 			},
@@ -178,13 +266,59 @@ export async function runHeadless(
 		},
 	})
 
-	await agent.runTurn(prompt)
+	// When --output-file is set, instruct the agent to write its final result
+	// there via file_write. This is more reliable than parsing the chat message,
+	// which weaker models truncate or mangle. The path is resolved to an
+	// absolute path so the agent can't be confused by relative references.
+	const effectivePrompt = outputFile
+		? `${prompt}\n\n[OrbCode] When you are done, write your final answer to the file "${path.resolve(outputFile)}" using the file_write tool. Put only the final result in that file — no commentary, no markdown fences.`
+		: prompt
+
+	await agent.runTurn(effectivePrompt)
 	await agent.endSession("other")
 	await mcp.stop().catch(() => {})
-	const finalContent = completionResult || lastText || textBuffer
-	if (finalContent) {
+
+	// Resolve the final result: prefer the output-file artifact, then
+	// attempt_completion, then the last assistant text.
+	let finalContent = ""
+	if (outputFile) {
+		const resolvedPath = path.resolve(outputFile)
+		try {
+			finalContent = fs.readFileSync(resolvedPath, "utf8")
+		} catch {
+			// File not written; fall through to completion/text.
+		}
+	}
+	if (!finalContent) {
+		finalContent = completionResult || lastText || textBuffer
+	}
+
+	if (outputMode === "json") {
+		const envelope = {
+			ok: exitCode === 0,
+			model: settings.model,
+			result: finalContent.trimEnd(),
+			usage: {
+				inputTokens: usageInputTokens,
+				outputTokens: usageOutputTokens,
+				cost: usageCost,
+				totalCost: usageTotalCost,
+			},
+			sessionId: agent.taskId,
+			error: errorMessage,
+		}
+		process.stdout.write(JSON.stringify(envelope) + "\n")
+	} else if (finalContent) {
 		process.stdout.write(finalContent.trimEnd() + "\n")
 	}
+
 	process.stderr.write(`\nSession saved. To resume: orbcode --resume ${agent.taskId}\n`)
+	// process.exit() drops pending async writes (piped stdout is async on macOS),
+	// which would truncate `--json | jq`; exit only once both streams drain.
+	await Promise.all([flush(process.stdout), flush(process.stderr)])
 	process.exit(exitCode)
+}
+
+function flush(stream: NodeJS.WriteStream): Promise<void> {
+	return new Promise((resolve) => stream.write("", () => resolve()))
 }

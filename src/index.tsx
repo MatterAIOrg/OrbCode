@@ -36,7 +36,13 @@ Usage:
   orbcode plugin list     list plugins installed for this project
   orbcode -p "<prompt>"   run a single prompt non-interactively (prints only the final response)
   orbcode -p "…" --yolo   non-interactive with auto-approved edits/commands
+  orbcode -p "…" --json   non-interactive, prints a JSON envelope (model, usage, result)
+  orbcode -p "…" --require-model  exit non-zero if the requested model is not registered
+  orbcode -p "…" --output-file <path>  read the final result from this file instead of chat text
+  orbcode -p "…" --verbose  print tool-start/tool-end events to stderr
   orbcode --model <id>    use a specific model for this run
+  orbcode -p "..." --baseUrl <url>  headless: use an OpenAI-compatible endpoint
+  orbcode -p "..." --apiKey <key>   headless: API key for that endpoint
   orbcode --resume        list previous sessions to resume
   orbcode --resume <id>   resume a previous session by id
   orbcode -s "<prompt>"   override the default system prompt (replaces it entirely;
@@ -199,7 +205,29 @@ async function main(): Promise<void> {
 			console.error("Missing prompt after -p")
 			process.exit(1)
 		}
-		await runHeadless(prompt, args.includes("--yolo"), systemPromptOverride)
+		const jsonMode = args.includes("--json")
+		const requireModel = args.includes("--require-model")
+		const verbose = args.includes("--verbose")
+		const outputFile = takeFlagValue(args, "output-file")
+
+		// --baseUrl / --apiKey: use an OpenAI-compatible endpoint instead of the
+		// MatterAI gateway. Headless-only: the TUI builds its agent from
+		// settings.baseUrl / getAuthToken(settings), and MATTERAI_BASE_URL /
+		// MATTERAI_API_KEY already feed those (gateway URL / auth token), so
+		// these flags use dedicated env names read only by runHeadless.
+		const baseUrl = takeFlagValue(args, "baseUrl") ?? takeFlagValue(args, "base-url")
+		if (baseUrl) process.env.MATTERAI_LLM_BASE_URL = baseUrl
+		const apiKey = takeFlagValue(args, "apiKey") ?? takeFlagValue(args, "api-key")
+		if (apiKey) process.env.MATTERAI_LLM_API_KEY = apiKey
+
+		await runHeadless(prompt, {
+			yolo: args.includes("--yolo"),
+			systemPromptOverride,
+			outputMode: jsonMode ? "json" : "text",
+			requireModel,
+			outputFile,
+			verbose,
+		})
 		return
 	}
 
