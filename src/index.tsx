@@ -15,6 +15,7 @@ import {
 	isGlobalInstall,
 	runNpmUpdate,
 } from "./utils/updateCheck.js"
+import { markRunningVersionHealthy, resolveUpdateNotice } from "./utils/autoUpdate.js"
 
 const PACKAGE_NAME = "@matterailab/orbcode"
 
@@ -90,6 +91,26 @@ async function runUpdate(force: boolean): Promise<number> {
 	return code
 }
 
+/**
+ * Hidden `--self-test`: load the full interactive module graph under the
+ * bundled Bun runtime without opening a terminal UI. The background updater
+ * runs this against a freshly staged version before switching to it.
+ */
+async function runSelfTest(): Promise<number> {
+	if (!process.versions.bun) {
+		console.error("--self-test must run under the bundled Bun runtime")
+		return 1
+	}
+	await Promise.all([
+		import("@opentui/core"),
+		import("@opentui/react"),
+		import("./ui/App.js"),
+		import("./ui/theme.js"),
+	])
+	console.log(`ok ${VERSION}`)
+	return 0
+}
+
 /** Pop `flag <value>` (accepting -flag and --flag) out of args; returns the value. */
 function takeFlagValue(args: string[], name: string): string | undefined {
 	const index = args.findIndex((a) => a === `--${name}` || a === `-${name}`)
@@ -135,6 +156,9 @@ async function main(): Promise<void> {
 	// name", VSCode terminal status, etc.) don't append " (node)" next to our
 	// own title. The bundled bin/orbcode.js also does this for the npm case.
 	process.title = "orbcode"
+	if (process.argv.includes("--self-test")) {
+		process.exit(await runSelfTest())
+	}
 	// Before anything reads settings: a saved catalog-only model (and its
 	// effort) must resolve before /v1/models answers, or it falls back to the
 	// default model for the whole session.
@@ -149,6 +173,15 @@ async function main(): Promise<void> {
 		printHelp()
 		return
 	}
+
+	// A staged version proves itself healthy once its module graph has loaded
+	// (management/headless commands) or its renderer is up (the TUI, below).
+	const launchesTui =
+		!["update", "mcp", "plugin", "plugins", "usage"].includes(args[0] ?? "") &&
+		!args.includes("-p") &&
+		!args.includes("--print")
+	if (!launchesTui) markRunningVersionHealthy()
+
 	if (args[0] === "update") {
 		const force = args.includes("--force") || args.includes("-f")
 		const code = await runUpdate(force)
@@ -241,8 +274,12 @@ async function main(): Promise<void> {
 	const initialPrompt = initialView ? undefined : args.find((a) => !a.startsWith("-"))
 
 	// Fire-and-forget: a stale or no-network state just means the header shows
-	// the "current version" line instead of an upgrade prompt.
-	const updateCheckPromise = getUpdateInfo(PACKAGE_NAME, VERSION)
+	// the "current version" line instead of an upgrade prompt. When background
+	// updates are on, a newer release is staged here and the banner only asks
+	// for a restart.
+	const updateCheckPromise = getUpdateInfo(PACKAGE_NAME, VERSION).then((info) =>
+		resolveUpdateNotice(PACKAGE_NAME, info, loadSettings()),
+	)
 
 	const bunVersion = (process.versions as Record<string, string | undefined>).bun
 	const [bunMajor = 0, bunMinor = 0] = (bunVersion ?? "").split(".").map(Number)
@@ -285,6 +322,7 @@ async function main(): Promise<void> {
 		onDestroy: markDestroyed,
 	})
 	renderer.setTerminalTitle("orbcode")
+	markRunningVersionHealthy()
 	const root = createRoot(renderer)
 	root.render(
 		createElement(

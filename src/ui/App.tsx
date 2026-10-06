@@ -74,7 +74,7 @@ import {
 } from "../config/settings.js";
 import { Agent, CACHE_WARMUP_ENABLED } from "../core/agent.js";
 import { McpManager } from "../mcp/manager.js";
-import type { UpdateInfo } from "../utils/updateCheck.js";
+import type { UpdateNotice } from "../utils/autoUpdate.js";
 import { normalizeTodoList } from "../utils/todos.js";
 import type {
   AgentEvent,
@@ -437,7 +437,7 @@ export function App({
   /** Optional override replacing the default system prompt (from `-s`). */
   systemPromptOverride?: string;
   /** Promise resolving to the latest-npm-version comparison; resolved after first paint. */
-  updateCheck?: Promise<UpdateInfo>;
+  updateCheck?: Promise<UpdateNotice>;
 }) {
   const { exit } = useApp();
   const renderer = useRenderer();
@@ -472,7 +472,7 @@ export function App({
   const [view, setView] = useState<"login" | "chat">(
     initialView ?? (getAuthToken(settings) ? "chat" : "login"),
   );
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateNotice | null>(null);
 
   const [rows, setRows] = useState<Row[]>(() => [
     {
@@ -2292,7 +2292,11 @@ export function App({
   const rowsHeight = rowLayout.height;
 
   let dynamicHeight = 0;
-  if (updateInfo?.updateAvailable && updateInfo.latest) dynamicHeight += 6;
+  if (
+    updateInfo?.stagedVersion ||
+    (updateInfo?.updateAvailable && updateInfo.latest)
+  )
+    dynamicHeight += 6;
   const reasoningWrapWidth = Math.max(20, wrapWidth - 2);
   const streamingReasoningDisplay = streamingReasoning
     ? tailForHeight(streamingReasoning, 3, reasoningWrapWidth)
@@ -2492,7 +2496,26 @@ export function App({
               {rowBottomSpacerHeight > 0 && (
                 <Box height={rowBottomSpacerHeight} flexShrink={0} />
               )}
-              {updateInfo?.updateAvailable && updateInfo.latest && (
+              {updateInfo?.stagedVersion && (
+                <Box
+                  marginTop={1}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={COLORS.success}
+                  paddingX={2}
+                  alignSelf="flex-start"
+                >
+                  <Text color={COLORS.success} bold>
+                    ✓ Update installed: v{updateInfo.stagedVersion}
+                  </Text>
+                  <Text>
+                    Restart <Text color={COLORS.accent}>orbcode</Text> to apply.
+                  </Text>
+                </Box>
+              )}
+              {!updateInfo?.stagedVersion &&
+                updateInfo?.updateAvailable &&
+                updateInfo.latest && (
                 <Box
                   marginTop={1}
                   flexDirection="column"

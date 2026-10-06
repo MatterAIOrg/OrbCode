@@ -61,6 +61,8 @@ export interface OrbCodeSettings {
 	enabledMcpServers?: string[]
 	/** MCP server names the user has explicitly disabled. */
 	disabledMcpServers?: string[]
+	/** false turns off background updates (same as ORBCODE_DISABLE_AUTOUPDATE=1). */
+	autoUpdates?: boolean
 }
 
 const DEFAULTS: OrbCodeSettings = {
@@ -81,6 +83,7 @@ const SETTINGS_KEYS = [
 	"env",
 	"enabledMcpServers",
 	"disabledMcpServers",
+	"autoUpdates",
 ] as const
 
 export function getConfigDir(): string {

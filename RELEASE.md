@@ -20,6 +20,19 @@ Source (`src/`), tests, and workflow files are not published.
 or broken `dist/`. The CLI reads its version from `package.json` at runtime —
 bumping the version is all that's needed; no source change required.
 
+## Background updates — compatibility rules
+
+Installed CLIs stage new releases under `~/.orbcode/versions/` and roll back to
+the previous version if a release fails to start (see `src/utils/autoUpdate.ts`
+and `bin/select-version.js`). Releases auto-install only after 24h on npm, so
+**ship a fix within a day to keep a bad release from spreading**, and keep these
+invariants so old and new versions can run against the same `~/.orbcode`:
+
+- `config.json`, `settings.json` and session files: additive changes only —
+  never rename, remove or change the type of an existing field.
+- `bin/orbcode.js` must keep accepting `--version` (prints the bare version)
+  and `--self-test` (prints `ok <version>`); updates are verified with them.
+
 ## One-time setup
 
 1. **Create an npm Automation token** (npmjs.com → Access Tokens →
