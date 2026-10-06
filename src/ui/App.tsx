@@ -62,6 +62,7 @@ import {
 import {
   getAuthToken,
   getModelEffort,
+  loadModelEfforts,
   setSessionModelEffort,
   withSessionModelEfforts,
   getPendingProjectHooks,
@@ -399,6 +400,20 @@ interface PendingFollowup {
 }
 
 let rowCounter = 0;
+/** Header model line, e.g. "Opus 5.5 with high effort". */
+function headerModelLabel(modelId: string): string {
+  const model = getModel(modelId);
+  const effort = getModelEffort(loadModelEfforts(), model);
+  return effort ? `${model.name} with ${effort} effort` : model.name;
+}
+
+/** Rows with the intro header's model line refreshed for `modelId`. */
+function withHeaderModel(rows: Row[], modelId: string): Row[] {
+  return rows.map((row) =>
+    row.kind === "header" ? { ...row, modelName: headerModelLabel(modelId) } : row,
+  );
+}
+
 function rowId(): string {
   return `row-${rowCounter++}`;
 }
@@ -464,7 +479,7 @@ export function App({
       kind: "header",
       id: "header",
       cwd: process.cwd(),
-      modelName: getModel(loadSettings().model).name,
+      modelName: headerModelLabel(loadSettings().model),
     },
   ]);
   const [busy, setBusy] = useState(false);
@@ -703,7 +718,7 @@ export function App({
         kind: "header",
         id: rowId(),
         cwd: process.cwd(),
-        modelName: getModel(loadSettings().model).name,
+        modelName: headerModelLabel(loadSettings().model),
       },
     ]);
   }, []);
@@ -1292,17 +1307,7 @@ export function App({
       // Re-prime for the new model if the conversation hasn't started yet
       // (warmCache is a no-op once it has).
       if (CACHE_WARMUP_ENABLED && !sameModel) void agentRef.current?.warmCache();
-      setRows((prev) => {
-        const headerIndex = prev.findIndex((row) => row.kind === "header");
-        if (headerIndex === -1) return prev;
-        const updatedHeader = {
-          ...prev[headerIndex]!,
-          modelName: getModel(modelId).name,
-        };
-        const next = [...prev];
-        next[headerIndex] = updatedHeader;
-        return next;
-      });
+      setRows((prev) => withHeaderModel(prev, modelId));
       if (!options?.silent) {
         const model = getModel(modelId);
         const effort = getModelEffort(updated, model);
@@ -2698,6 +2703,7 @@ export function App({
                   setSessionModelEffort(settings.model, effort);
                   // Re-render so the status bar shows the override.
                   setSettings((current) => ({ ...current }));
+                  setRows((prev) => withHeaderModel(prev, settings.model));
                   pushRow({
                     kind: "info",
                     text: `${getModel(settings.model).name} · ${effort[0].toUpperCase()}${effort.slice(1)} effort (this session only)`,
