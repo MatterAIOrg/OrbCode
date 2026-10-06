@@ -1613,6 +1613,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
+		let usageReported = false
 
 		// Roll back this step's partial output so streamWithRetry can restart a
 		// dropped stream mid-flight. Tools only run after the stream completes, so
@@ -1675,7 +1676,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				case "usage":
 					this.totalCost += chunk.totalCost ?? 0
 					this.contextTokens = (chunk.inputTokens ?? 0) + (chunk.outputTokens ?? 0)
-					this.measuredMessages = this.messages.length
+					usageReported = true
 					onEvent({
 						type: "usage",
 						inputTokens: chunk.inputTokens,
@@ -1712,6 +1713,8 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			;(assistantMessage as unknown as Record<string, unknown>)[REASONING_DETAILS_FIELD] = reasoningDetails
 		}
 		this.messages.push(assistantMessage)
+		// The report's output tokens already cover this assistant message.
+		if (usageReported) this.measuredMessages = this.messages.length
 
 		if (toolCalls.length === 0) {
 			return true

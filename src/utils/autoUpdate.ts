@@ -206,11 +206,15 @@ function acquireLock(): (() => void) | null {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       try {
-        const [pidText, atText] = fs.readFileSync(lockPath, "utf8").split(":");
+        const raw = fs.readFileSync(lockPath, "utf8");
+        const [pidText, atText] = raw.split(":");
         const pid = Number(pidText);
         const at = Number(atText);
         const stale = !isPidAlive(pid) || !Number.isFinite(at) || Date.now() - at > LOCK_STALE_MS;
         if (!stale) return null;
+        // Another process may have taken over the stale lock since we read it;
+        // only remove the exact lock we judged stale.
+        if (fs.readFileSync(lockPath, "utf8") !== raw) return null;
         fs.unlinkSync(lockPath);
       } catch {
         return null;
@@ -469,6 +473,8 @@ export async function resolveUpdateNotice(
         : null;
     const latest = info.latest;
     if (!info.updateAvailable || !latest) return stagedNotice ?? info;
+    // Registry data becomes a path and an npm argument below.
+    if (!isVersionString(latest)) return stagedNotice ?? quiet;
     if (staged && compareVersions(staged, latest) >= 0) return stagedNotice ?? info;
     if (readRecentFailure()) return info;
 
