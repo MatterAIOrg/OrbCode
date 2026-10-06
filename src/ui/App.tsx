@@ -71,7 +71,7 @@ import {
   trustProjectHooks,
   type OrbCodeSettings,
 } from "../config/settings.js";
-import { Agent } from "../core/agent.js";
+import { Agent, CACHE_WARMUP_ENABLED } from "../core/agent.js";
 import { McpManager } from "../mcp/manager.js";
 import type { UpdateInfo } from "../utils/updateCheck.js";
 import { normalizeTodoList } from "../utils/todos.js";
@@ -892,11 +892,28 @@ export function App({
   );
 
   const getAgent = useCallback((): Agent => {
-    if (!agentRef.current) {
-      agentRef.current = createAgent();
-      process.env.ORBCODE_LAST_SESSION_ID = agentRef.current.taskId;
-    }
+    if (!agentRef.current) agentRef.current = createAgent();
+    // Set on use rather than creation: an agent from prepareFreshAgent has
+    // no saved session until its first message.
+    process.env.ORBCODE_LAST_SESSION_ID = agentRef.current.taskId;
     return agentRef.current;
+  }, [createAgent]);
+
+  // Create the next conversation's agent now instead of on its first message,
+  // so its taskId already exists and the gateway prompt cache can be warmed
+  // under it. The first message then reuses this agent (and taskId) and its
+  // request hits the cached system prompt + tools.
+  const prepareFreshAgent = useCallback(() => {
+    // Never replace an agent a message has already started on.
+    if (
+      !CACHE_WARMUP_ENABLED ||
+      agentRef.current ||
+      !getAuthToken(loadSettings())
+    )
+      return;
+    const agent = createAgent();
+    agentRef.current = agent;
+    void agent.warmCache();
   }, [createAgent]);
 
   // Retire the active agent so the next message starts a fresh one. Any
@@ -1272,6 +1289,9 @@ export function App({
       saveSettings(updated);
       const sameModel = previous.model === modelId;
       agentRef.current?.setModel(modelId);
+      // Re-prime for the new model if the conversation hasn't started yet
+      // (warmCache is a no-op once it has).
+      if (CACHE_WARMUP_ENABLED && !sameModel) void agentRef.current?.warmCache();
       setRows((prev) => {
         const headerIndex = prev.findIndex((row) => row.kind === "header");
         if (headerIndex === -1) return prev;
@@ -1373,8 +1393,10 @@ export function App({
   const endAndExit = useCallback(
     (reason: string) => {
       const agent = agentRef.current;
-      if (!agent) {
-        // No agent yet, but the MCP manager may have started; tear it down.
+      if (!agent || !agent.hasSession) {
+        // No conversation yet (at most a prepared agent warming the cache),
+        // but the MCP manager may have started; tear it down.
+        agent?.abort();
         void mcpManagerRef.current?.stop().catch(() => {});
         exit();
         return;
@@ -1498,7 +1520,8 @@ export function App({
           resetTranscript();
           break;
         case "/new":
-          // Drop the agent entirely so the next message starts a fresh session.
+          // Drop the agent entirely; the next message goes to a fresh session
+          // whose agent is created (and its cache warmed) right away.
           clearQueue();
           discardAgent();
           titleTaskRef.current = null;
@@ -1507,6 +1530,7 @@ export function App({
           setTasks("");
           setContextTokens(0);
           resetTranscript();
+          prepareFreshAgent();
           break;
         case "/analytics": {
           const url = `${APP_URL}/orbital`;
@@ -1762,6 +1786,7 @@ export function App({
       resetTranscript,
       clearQueue,
       discardAgent,
+      prepareFreshAgent,
       openRewind,
       prefetchResumeShares,
     ],
@@ -2020,6 +2045,12 @@ export function App({
         if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp);
       });
     }
+    // A plain launch waits for the user's first message: warm the prompt
+    // cache meanwhile. (An initial prompt is sent right away, and a resumed
+    // session's prefix is its whole history, so neither is warmed.)
+    if (!initialSession && !initialPrompt && initialAction !== "resume") {
+      prepareFreshAgent();
+    }
     refreshUsage();
   }, [
     initialSession,
@@ -2029,6 +2060,7 @@ export function App({
     handleResume,
     handleCommand,
     handleSubmit,
+    prepareFreshAgent,
     refreshUsage,
   ]);
 
@@ -2153,7 +2185,10 @@ export function App({
       saveSettings(updated);
       discardAgent();
       setView("chat");
-      fetchDynamicModels(token).catch(() => {});
+      // Warm once the catalog is in, so the warmup resolves the right model.
+      fetchDynamicModels(token)
+        .catch(() => {})
+        .finally(prepareFreshAgent);
       setUsage({
         plan: profile.plan,
         usagePercentage: profile.usagePercentage,
@@ -2165,7 +2200,7 @@ export function App({
         text: `Signed in${who ? ` as ${who}` : ""}. Ready when you are.`,
       });
     },
-    [discardAgent, pushRow],
+    [discardAgent, prepareFreshAgent, pushRow],
   );
 
   const taskLines = useMemo(

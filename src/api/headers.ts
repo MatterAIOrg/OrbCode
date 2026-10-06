@@ -6,6 +6,8 @@ import { getShell } from "../utils/shell.js"
 // Header names ported from the Orbital extension (shared/kilocode/headers.ts).
 export const X_AXONCODE_VERSION = "X-AxonCode-Version"
 export const X_AXONCODE_TASKID = "X-AxonCode-TaskId"
+/** Marks a prompt-cache priming request; the backend skips title generation for it. */
+export const X_AXONCODE_WARMUP = "X-AxonCode-Warmup"
 export const X_ORGANIZATIONID = "X-KiloCode-OrganizationId"
 export const X_AXON_REPO = "X-AXON-REPO"
 export const X_MODEL_CONTEXT_WINDOW = "X-Model-Context-Window"

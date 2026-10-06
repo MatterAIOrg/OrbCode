@@ -62,6 +62,13 @@ import {
 	reportUsageEvent,
 } from "../api/metrics.js"
 
+/**
+ * Prompt-cache warmup on launch and /new (see Agent.warmCache). Off until it
+ * has had more testing; while off, agents are created lazily on the first
+ * message exactly as before.
+ */
+export const CACHE_WARMUP_ENABLED = false
+
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
 /** Maximum number of independent read-only tools started at once. */
@@ -484,6 +491,8 @@ export class Agent {
 	private sessionApproveEdits: boolean
 	private sessionApproveCommands = false
 	private abortController?: AbortController
+	/** in-flight prompt-cache warmup (see warmCache) */
+	private warmupController?: AbortController
 	private totalCost = 0
 	/**
 	 * Latest context window usage (input + output tokens from the most recent
@@ -607,6 +616,28 @@ export class Agent {
 			repo: detectGitRepo(this.options.cwd),
 			baseUrl: this.options.baseUrl,
 		})
+	}
+
+	/**
+	 * Prime the gateway's prompt cache for this task before the user's first
+	 * message: same taskId (provider session affinity), system prompt and tools
+	 * as the first real turn, one output token. Only for a fresh conversation;
+	 * best-effort and silent, since a miss just means a normal cold start.
+	 */
+	async warmCache(): Promise<void> {
+		if (this.messages.length > 0 || !this.client.warmup) return
+		this.warmupController?.abort()
+		const controller = new AbortController()
+		this.warmupController = controller
+		try {
+			await this.mcp?.whenStarted()
+			if (controller.signal.aborted || this.messages.length > 0) return
+			await this.client.warmup(this.systemPrompt, getActiveTools(this.mcp), controller.signal)
+		} catch {
+			// ignore — warmup is an optimization only
+		} finally {
+			if (this.warmupController === controller) this.warmupController = undefined
+		}
 	}
 
 	get modelId(): string {
@@ -876,10 +907,17 @@ export class Agent {
 
 	abort(): void {
 		this.abortController?.abort()
+		this.warmupController?.abort()
 	}
 
 	get isIdle(): boolean {
 		return this.abortController === undefined
+	}
+
+	/** False for an agent created ahead of its first message (to warm the
+	 *  prompt cache) that hasn't run a turn yet — there is no session to end. */
+	get hasSession(): boolean {
+		return this.sessionStarted || this.messages.length > 0
 	}
 
 	private buildEnvironmentDetails(): string {

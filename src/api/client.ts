@@ -5,6 +5,7 @@ import {
   DEFAULT_HEADERS,
   getClientMetadataHeaders,
   X_AXONCODE_TASKID,
+  X_AXONCODE_WARMUP,
   X_AXON_REPO,
   X_ORGANIZATIONID,
   X_REASONING_EFFORT,
@@ -71,14 +72,14 @@ export class AxonClient implements LLMClient {
     return headers;
   }
 
-  async *createMessage(
+  /** Shared by createMessage and warmup: the prompt cache only hits when the
+   *  model, system prompt and tools are identical between the two. */
+  private buildRequest(
+    model: ReturnType<typeof getModel>,
     systemPrompt: string,
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
     tools: OpenAI.Chat.ChatCompletionTool[],
-    abortSignal?: AbortSignal,
-  ): AsyncGenerator<ApiStreamChunk> {
-    const model = getModel(this.options.modelId);
-
+  ): OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming {
     const requestOptions: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
       {
         model: getGatewayModelId(model),
@@ -96,6 +97,45 @@ export class AxonClient implements LLMClient {
       requestOptions.tool_choice = "auto";
       requestOptions.parallel_tool_calls = true;
     }
+    return requestOptions;
+  }
+
+  async warmup(
+    systemPrompt: string,
+    tools: OpenAI.Chat.ChatCompletionTool[],
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
+    const model = getModel(this.options.modelId);
+    const requestOptions = this.buildRequest(
+      model,
+      systemPrompt,
+      [{ role: "user", content: "Hi" }],
+      tools,
+    );
+    requestOptions.max_tokens = 1;
+    const stream = await this.client.chat.completions.create(requestOptions, {
+      headers: { ...this.requestHeaders(model), [X_AXONCODE_WARMUP]: "1" },
+      signal: abortSignal,
+    });
+    // Drain so the gateway sees a completed request (and bills/logs it).
+    for await (const _chunk of stream) {
+      // discard
+    }
+  }
+
+  async *createMessage(
+    systemPrompt: string,
+    messages: OpenAI.Chat.ChatCompletionMessageParam[],
+    tools: OpenAI.Chat.ChatCompletionTool[],
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<ApiStreamChunk> {
+    const model = getModel(this.options.modelId);
+    const requestOptions = this.buildRequest(
+      model,
+      systemPrompt,
+      messages,
+      tools,
+    );
 
     const stream = await this.client.chat.completions.create(requestOptions, {
       headers: this.requestHeaders(model),

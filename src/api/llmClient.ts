@@ -17,6 +17,17 @@ export interface LLMClient {
 		tools: OpenAI.Chat.ChatCompletionTool[],
 		abortSignal?: AbortSignal,
 	): AsyncGenerator<ApiStreamChunk>
+
+	/**
+	 * Prime the provider's prompt cache with `systemPrompt` + `tools` (one
+	 * output token) so the task's first real request starts warm. Optional:
+	 * clients without a shared prompt cache simply don't implement it.
+	 */
+	warmup?(
+		systemPrompt: string,
+		tools: OpenAI.Chat.ChatCompletionTool[],
+		abortSignal?: AbortSignal,
+	): Promise<void>
 }
 
 /**
