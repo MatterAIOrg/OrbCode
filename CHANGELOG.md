@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.6] - 2026-10-06
+
+### Added
+
+- **`--baseUrl` and `--apiKey` flags for headless mode.** Both are optional and route the request through an OpenAI-compatible endpoint instead of the MatterAI gateway. `--baseUrl` alone is enough when the endpoint doesn't require auth. When `--baseUrl` is given without `--model`, the model defaults to `gpt-4o`. These flags set `MATTERAI_LLM_BASE_URL` / `MATTERAI_LLM_API_KEY` — deliberately distinct from the existing `MATTERAI_BASE_URL` / `MATTERAI_API_KEY`, which override the gateway URL and auth token and would otherwise break backend calls (models list, `/usage`, auth).
+- **Structured headless output with `--json`.** `orbcode -p "…" --json` prints exactly one JSON object to stdout and nothing else: `{ ok, model, result, usage: { inputTokens, outputTokens, cost, totalCost }, sessionId, error }`. The `model` field reports the model actually used (so callers can verify the requested model ran), `usage` accumulates token counts and cost across the whole run, and `error` is `null` on success. The "Session saved…" line stays on stderr, so stdout is pure JSON.
+- **`--require-model` to fail fast on an unknown model.** Previously an unknown `--model` warned to stderr and silently ran the default model instead. With `--require-model` (or automatically in `--json` mode) the CLI now exits non-zero with a clear error instead of running a different model than requested.
+- **`--output-file <path>` for long-task results.** The agent is instructed to write its final structured result to the given path via `file_write`; headless mode reads that file and puts its contents in the envelope's `result` (falling back to the completion/text if the file is absent). This makes structured output reliable even when the model's final chat message is truncated or mangled.
+- **`--verbose` event stream to stderr.** Prints tool-start/tool-end lines to stderr for observability during long agent runs, without polluting stdout.
+
 ## [6.9.5] - 2026-10-05
 
 ### Fixed
