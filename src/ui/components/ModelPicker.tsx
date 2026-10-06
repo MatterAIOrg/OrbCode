@@ -2,7 +2,16 @@ import React, { useState } from "react"
 import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
-import { BUILTIN_AXON_MODELS, isEidoBaseAxonModel, isEidoProAxonModel, isLumenAxonModel, type AxonModel } from "../../api/models.js"
+import {
+	BUILTIN_AXON_MODELS,
+	getModelEffortLevels,
+	isEidoBaseAxonModel,
+	isEidoProAxonModel,
+	isLumenAxonModel,
+	type AxonModel,
+	type GatewayEffort,
+} from "../../api/models.js"
+import { getModelEffort } from "../../config/settings.js"
 import { PopoverBox } from "./PopoverBox.js"
 
 const VISIBLE_ROWS = 12
@@ -45,8 +54,18 @@ interface ModelPickerProps {
 	canUseEidoBase: boolean
 	canUseEidoPro: boolean
 	canUseLumen: boolean
-	onSelect: (modelId: string) => void
+	/** Saved effort per model (config.json `modelEfforts`). */
+	modelEfforts?: Record<string, GatewayEffort>
+	/** `effort` is set for models with an effort selector. */
+	onSelect: (modelId: string, effort?: GatewayEffort) => void
 	onCancel: () => void
+}
+
+const EFFORT_LABELS: Record<GatewayEffort, string> = {
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	max: "Max",
 }
 
 function formatPrice(model: AxonModel): string {
@@ -64,7 +83,20 @@ function displayName(model: AxonModel): string {
 	return model.name.replace(/\s*\(\d+K context\)$/, "")
 }
 
-export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoPro, canUseLumen, onSelect, onCancel }: ModelPickerProps) {
+export function ModelPicker({
+	currentId,
+	canUse400k,
+	canUseEidoBase,
+	canUseEidoPro,
+	canUseLumen,
+	modelEfforts,
+	onSelect,
+	onCancel,
+}: ModelPickerProps) {
+	// Efforts adjusted in this picker (←/→), layered over the saved ones.
+	const [efforts, setEfforts] = useState<Record<string, GatewayEffort>>(() => ({ ...modelEfforts }))
+	const effortFor = (model: AxonModel) => getModelEffort({ modelEfforts: efforts }, model)
+	const select = (model: AxonModel) => onSelect(model.id, effortFor(model))
 	const models = Object.values(BUILTIN_AXON_MODELS).sort((a, b) => {
 		const aIndex = CONTEXT_WINDOW_ORDER.indexOf(a.contextWindow)
 		const bIndex = CONTEXT_WINDOW_ORDER.indexOf(b.contextWindow)
@@ -100,8 +132,18 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 			setSelected((s) => nextSelectableIndex(s, 1))
 			return
 		}
+		if (key.leftArrow || key.rightArrow) {
+			const model = models[selected]
+			const levels = getModelEffortLevels(model)
+			const current = effortFor(model)
+			if (!current) return
+			const index = levels.indexOf(current) + (key.rightArrow ? 1 : -1)
+			if (index < 0 || index >= levels.length) return
+			setEfforts((prev) => ({ ...prev, [model.id]: levels[index] }))
+			return
+		}
 		if (key.return) {
-			if (!isLocked(models[selected])) onSelect(models[selected].id)
+			if (!isLocked(models[selected])) select(models[selected])
 			return
 		}
 		if (key.escape) {
@@ -110,13 +152,14 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 		}
 		if (/^[1-9]$/.test(input)) {
 			const index = Number(input) - 1
-			if (index < models.length && !isLocked(models[index])) onSelect(models[index].id)
+			if (index < models.length && !isLocked(models[index])) select(models[index])
 		}
 	})
 
 	// Keep the selection inside the visible window when the list is long.
 	const windowStart = Math.max(0, Math.min(selected - VISIBLE_ROWS + 1, models.length - VISIBLE_ROWS))
 	const visible = models.slice(windowStart, windowStart + VISIBLE_ROWS)
+	const effortHint = models[selected] && effortFor(models[selected]) ? " · ←/→ effort" : ""
 
 	return (
 		<PopoverBox flexDirection="column" borderStyle="round" borderColor={COLORS.primary} paddingX={1}>
@@ -129,6 +172,7 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 				const isSelected = index === selected
 				const isCurrent = model.id === currentId
 				const locked = isLocked(model)
+				const effort = locked ? undefined : effortFor(model)
 			const providerTag = providerLabel(model.id)
 			// The 400k group header already carries the plan note, so only badge
 			// rows whose lock isn't explained by the context header.
@@ -160,12 +204,32 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 								{displayName(model)}
 								{isCurrent && <Text color={COLORS.success}> ✓ current</Text>}
 								<Text color={COLORS.dim}> · {formatPrice(model)}</Text>
+								{effort && !isSelected && <Text color={COLORS.dim}> · {EFFORT_LABELS[effort]} effort</Text>}
 								{showPlanBadge && <Text color={COLORS.dim}> · {planBadgeText}</Text>}
 							</Text>
 							{isSelected && (
 								<Box paddingLeft={5}>
 									<Text color={COLORS.dim} wrap="wrap">
 										{model.description}
+									</Text>
+								</Box>
+							)}
+							{isSelected && effort && (
+								<Box paddingLeft={5}>
+									<Text>
+										<Text color={COLORS.dim}>Effort </Text>
+										{getModelEffortLevels(model).map((level, levelIndex) => (
+											<React.Fragment key={level}>
+												{levelIndex > 0 && <Text color={COLORS.dim}> · </Text>}
+												{level === effort ? (
+													<Text bold color={COLORS.accent}>
+														[{EFFORT_LABELS[level]}]
+													</Text>
+												) : (
+													<Text color={COLORS.dim}>{EFFORT_LABELS[level]}</Text>
+												)}
+											</React.Fragment>
+										))}
 									</Text>
 								</Box>
 							)}
@@ -176,7 +240,7 @@ export function ModelPicker({ currentId, canUse400k, canUseEidoBase, canUseEidoP
 			{windowStart + VISIBLE_ROWS < models.length && (
 				<Text color={COLORS.dim}>  ↓ {models.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text color={COLORS.dim}>↑/↓ select · enter confirm · esc cancel</Text>
+			<Text color={COLORS.dim}>↑/↓ select{effortHint} · enter confirm · esc cancel</Text>
 		</PopoverBox>
 	)
 }

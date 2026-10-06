@@ -77,3 +77,30 @@ test("readFile executes single file and batched file region reads", async () => 
 
 	fs.rmSync(tmpDir, { recursive: true, force: true })
 })
+
+test("readFile caps characters, not just lines (minified files, many files per call)", async () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "orbcode-test-"))
+	// One 2 MB line: the 1000-line limit alone would return all of it.
+	fs.writeFileSync(path.join(tmpDir, "bundle.min.js"), "x".repeat(2_000_000))
+	// 1000 lines of 300 chars: well under the line limit, over the char cap.
+	fs.writeFileSync(path.join(tmpDir, "wide.txt"), Array.from({ length: 1000 }, (_, i) => `${i} ${"w".repeat(300)}`).join("\n"))
+	const context = { cwd: tmpDir, setTodos: () => {} }
+
+	const minified = await readFile({ files: [{ file_path: "bundle.min.js" }] }, context)
+	assert.ok(minified.text.length < 110_000, `got ${minified.text.length} chars`)
+	assert.match(minified.text, /Line 1 alone exceeds 100000 characters and was cut off/)
+
+	const wide = await readFile({ files: [{ file_path: "wide.txt" }] }, context)
+	assert.ok(wide.text.length < 110_000)
+	assert.match(wide.text, /Output capped at 100000 characters; showing through line \d+\. Use offset\/limit/)
+	// Whole lines only: the last shown line is complete.
+	const shown = wide.text.split("\n\n(")[0].split("\n")
+	assert.match(shown.at(-1)!, /w{300}$/)
+
+	const batch = await readFile(
+		{ files: [{ file_path: "wide.txt" }, { file_path: "bundle.min.js" }, { file_path: "wide.txt", offset: 1, limit: 10 }] },
+		context,
+	)
+	assert.ok(batch.text.length < 215_000, `got ${batch.text.length} chars`)
+	assert.match(batch.text, /Skipped wide\.txt: this call reached its 200000-character limit/)
+})

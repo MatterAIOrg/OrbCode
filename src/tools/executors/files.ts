@@ -6,6 +6,10 @@ import { unifiedDiff } from "../../utils/diff.js"
 
 const MAX_READ_LINES = 1000
 const MIN_READ_LINES = 200
+/** Line limits don't bound minified or generated files (one line can be megabytes). */
+const MAX_READ_CHARS_PER_FILE = 100_000
+const MAX_READ_CHARS_PER_CALL = 200_000
+const MIN_READ_BUDGET_CHARS = 1_000
 
 /** Format file content as right-aligned `LINE_NUMBER|LINE_CONTENT` (6-char padding). */
 function withLineNumbers(lines: string[], startLine: number): string {
@@ -62,6 +66,7 @@ export async function readFile(args: Record<string, unknown>, context: ToolConte
 	}
 
 	const results: { text: string; isError?: boolean }[] = []
+	let charsReturned = 0
 
 	for (const entry of entries) {
 		const relPath = entry.file_path
@@ -92,19 +97,44 @@ export async function readFile(args: Record<string, unknown>, context: ToolConte
 			continue
 		}
 
-		const formattedContent = withLineNumbers(slice, offset)
-		const lastLineShown = offset - 1 + slice.length
+		const budget = Math.min(MAX_READ_CHARS_PER_FILE, MAX_READ_CHARS_PER_CALL - charsReturned)
+		// A sliver of leftover budget would return a useless fragment.
+		if (budget < MIN_READ_BUDGET_CHARS) {
+			results.push({
+				text: `Skipped ${relPath}: this call reached its ${MAX_READ_CHARS_PER_CALL}-character limit. Read it in a separate call.`,
+				isError: true,
+			})
+			continue
+		}
+		let formattedContent = withLineNumbers(slice, offset)
+		let lastLineShown = offset - 1 + slice.length
+		let capNote = ""
+		if (formattedContent.length > budget) {
+			// Whole lines when possible; a single line longer than the budget is cut mid-line.
+			const lineEnd = formattedContent.lastIndexOf("\n", budget)
+			formattedContent = lineEnd > 0 ? formattedContent.slice(0, lineEnd) : formattedContent.slice(0, budget)
+			lastLineShown = offset - 1 + formattedContent.split("\n").length
+			capNote =
+				lineEnd > 0
+					? `Output capped at ${budget} characters; showing through line ${lastLineShown}. Use offset/limit to read more.`
+					: `Line ${lastLineShown} alone exceeds ${budget} characters and was cut off. Use Bash (e.g. head -c, cut -c) to read part of it.`
+		}
+		charsReturned += formattedContent.length
 
 		if (entries.length === 1) {
 			let output = formattedContent
-			if (lastLineShown < totalLines) {
+			if (capNote) {
+				output += `\n\n(${capNote})`
+			} else if (lastLineShown < totalLines) {
 				output += `\n\n(Showing lines ${offset}-${lastLineShown} of ${totalLines}. Use offset/limit to read more.)`
 			}
 			results.push({ text: output })
 		} else {
 			const rangeLabel = totalLines > 0 ? ` (lines ${offset}-${lastLineShown} of ${totalLines})` : ""
 			let output = `--- ${relPath}${rangeLabel} ---\n${formattedContent}`
-			if (lastLineShown < totalLines) {
+			if (capNote) {
+				output += `\n(${capNote})`
+			} else if (lastLineShown < totalLines) {
 				output += `\n(Showing lines ${offset}-${lastLineShown} of ${totalLines}. Use offset/limit to read more.)`
 			}
 			results.push({ text: output })

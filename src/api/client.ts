@@ -7,9 +7,11 @@ import {
   X_AXONCODE_TASKID,
   X_AXON_REPO,
   X_ORGANIZATIONID,
+  X_REASONING_EFFORT,
 } from "./headers.js";
 import { stripReasoningDetails, type LLMClient } from "./llmClient.js";
 import { getGatewayModelId, getModel } from "./models.js";
+import { getModelEffort, loadModelEfforts } from "../config/settings.js";
 import type { ApiStreamChunk } from "./stream.js";
 
 interface CompletionUsage {
@@ -62,6 +64,10 @@ export class AxonClient implements LLMClient {
     if (this.options.organizationId)
       headers[X_ORGANIZATIONID] = this.options.organizationId;
     if (this.options.repo) headers[X_AXON_REPO] = this.options.repo;
+    // Read per request (not per session): an effort picked in any chat on
+    // this machine applies to every other chat's next turn.
+    const effort = getModelEffort(loadModelEfforts(), model);
+    if (effort) headers[X_REASONING_EFFORT] = effort;
     return headers;
   }
 

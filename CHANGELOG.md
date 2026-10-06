@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.7] - 2026-10-06
+
+### Added
+
+- **Effort selector for GLM 5.3, GLM 5.3 Flash, Gemini 3.8 Flash and DeepSeek V4.1 Flash.** `/effort` opens a Faster ↔ Smarter slider (low · medium · high · max) for the current model: ←/→ to adjust, Enter to save, `s` to apply it to this session only. `/effort <level>` sets it directly, ←/→ in `/model` adjusts the highlighted model's effort, and the status bar shows the level in effect. The default is Medium. Picks are saved per model in `~/.orbcode/config.json` and read on every request, so every chat on the machine (new, resumed or already running) uses them until changed. OrbCode sends the level as `X-MATTERAI-REASONING-EFFORT`; the backend maps it to what the serving gateway accepts (e.g. GLM has no medium tier, so it runs at high; Fireworks tops out at high). Which models get the selector comes from the catalog's `reasoning_efforts`, with a built-in fallback for older backends.
+- **Confirm before resuming a session with a cold prompt cache.** The gateway keeps a conversation's prompt cache for 5 minutes; after that, the first resumed turn re-reads the whole context at the uncached input price. `/resume` and `orbcode --resume <id>` now show how long the session has been idle, how large it is, and what resuming will cost as a share of your weekly usage limit (monthly on Lite, dollars for your own provider keys). The share comes from the backend's new `GET /axoncode/usage/estimate`, which prices the request exactly like a real one; if it can't be reached, the prompt shows the context size without a cost figure. You can then resume, or start a new conversation and pull the old one in later with `/task`. The prompt appears for any cold session with 100k+ tokens of context (the share fills in once the backend answers), and for smaller ones when the cost is at least 1% of the window; estimates are prefetched while the `/resume` picker is open so picking a session doesn't wait on the network. It's skipped when a prompt is passed alongside `--resume <id>`.
+
+### Fixed
+
+- **Compaction no longer leaves a conversation stuck.**
+  - A "context too long" error from the provider now compacts and retries the step instead of failing the turn; before, every following turn hit the same error.
+  - A history that has already outgrown the window (e.g. a session resumed on a smaller-window model) still compacts: the summary request is trimmed to fit (older tool results stubbed, oldest turns dropped), with smaller budgets tried if the provider's real window is tighter than the catalog's.
+  - The 80% check now counts tool output and new input added since the last usage report, not just the last reported size.
+  - A failed auto-compaction is retried on the next turn instead of staying off for the rest of the session.
+  - A user message that triggers compaction as a turn starts is kept verbatim after the summary.
+- **`read_file` caps characters as well as lines** (100k per file, 200k per call), so a minified bundle or a file of very long lines can't flood the context in one read.
+- **Your model and its effort now survive a restart.** Models that only exist in the backend catalog (e.g. DeepSeek V4.1 Flash) weren't known until `/v1/models` answered, so on startup the saved model fell back to GLM 5.3 Flash and its effort to medium. The last fetched catalog is now cached in `~/.orbcode/models-cache.json` and loaded before settings, the saved model is restored once the live catalog arrives, and the plan-default logic reads the saved model from disk instead of the fallback.
+- **A replaced conversation no longer leaks into the next one.** `/new`, `/resume`, sign-in/out and MCP reloads now abort the in-flight turn and drop any events, approval requests or follow-up questions it emits while unwinding, so a turn that was still running can't stream into the new conversation's transcript.
+
 ## [6.9.6] - 2026-10-06
 
 ### Added

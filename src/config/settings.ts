@@ -3,7 +3,17 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
-import { DEFAULT_MODEL_ID, isValidAxonModel, registerCustomModels, type CustomModelConfig } from "../api/models.js"
+import {
+	DEFAULT_GATEWAY_EFFORT,
+	DEFAULT_MODEL_ID,
+	getModelEffortLevels,
+	isGatewayEffort,
+	isValidAxonModel,
+	registerCustomModels,
+	type AxonModel,
+	type CustomModelConfig,
+	type GatewayEffort,
+} from "../api/models.js"
 import { isHookEvent, type HookMatcher, type HooksConfig } from "../core/hooks.js"
 import type { McpServerConfig } from "../mcp/types.js"
 
@@ -25,6 +35,12 @@ export interface OrbCodeSettings {
 	autoApproveSafeCommands: boolean
 	/** OrbCode-owned TUI palette; terminal theme detection never overrides it. */
 	theme: OrbCodeThemeMode
+	/**
+	 * Effort picked per model in the effort selector. Lives in config.json and
+	 * is read on every request, so every chat on this machine — new, resumed or
+	 * already running — uses it until it's changed again.
+	 */
+	modelEfforts?: Record<string, GatewayEffort>
 
 	// The fields below come from settings.json files (and env vars) and are
 	// never persisted back to config.json.
@@ -251,7 +267,60 @@ export function loadSettings(): OrbCodeSettings {
 	if (settings.theme !== "dark" && settings.theme !== "light") {
 		settings.theme = DEFAULTS.theme
 	}
+	if (settings.modelEfforts && typeof settings.modelEfforts === "object") {
+		settings.modelEfforts = Object.fromEntries(
+			Object.entries(settings.modelEfforts).filter(([, effort]) => isGatewayEffort(effort)),
+		)
+	} else {
+		settings.modelEfforts = undefined
+	}
 	return settings
+}
+
+// Efforts picked "for this session only" (`s` in the /effort picker): held in
+// this process, layered over the saved ones, never written to config.json.
+const sessionModelEfforts: Record<string, GatewayEffort> = {}
+
+/** Set (or with no effort, clear) this process's effort override for a model. */
+export function setSessionModelEffort(modelId: string, effort?: GatewayEffort): void {
+	if (effort) sessionModelEfforts[modelId] = effort
+	else delete sessionModelEfforts[modelId]
+}
+
+/** Saved efforts with this session's overrides on top. */
+export function withSessionModelEfforts(
+	saved: Record<string, GatewayEffort> | undefined,
+): Record<string, GatewayEffort> {
+	return { ...saved, ...sessionModelEfforts }
+}
+
+/** Per-model efforts in effect for this process — cheap enough to read per request. */
+export function loadModelEfforts(): Pick<OrbCodeSettings, "modelEfforts"> {
+	const stored = readJson(getConfigPath())?.modelEfforts
+	const saved =
+		stored && typeof stored === "object"
+			? Object.fromEntries(
+					Object.entries(stored as Record<string, unknown>).filter(
+						(entry): entry is [string, GatewayEffort] => isGatewayEffort(entry[1]),
+					),
+				)
+			: undefined
+	return { modelEfforts: withSessionModelEfforts(saved) }
+}
+
+/**
+ * Effort to send for `model`: the user's pick for that model, else medium.
+ * Undefined when the model has no effort selector.
+ */
+export function getModelEffort(
+	settings: Pick<OrbCodeSettings, "modelEfforts">,
+	model: AxonModel,
+): GatewayEffort | undefined {
+	const levels = getModelEffortLevels(model)
+	if (levels.length === 0) return undefined
+	const picked = settings.modelEfforts?.[model.id]
+	if (picked && levels.includes(picked)) return picked
+	return levels.includes(DEFAULT_GATEWAY_EFFORT) ? DEFAULT_GATEWAY_EFFORT : levels[0]
 }
 
 /**
@@ -274,6 +343,8 @@ export function saveSettings(settings: OrbCodeSettings): void {
 		autoApproveEdits: settings.autoApproveEdits,
 		autoApproveSafeCommands: settings.autoApproveSafeCommands,
 		theme: settings.theme,
+		modelEfforts:
+			settings.modelEfforts && Object.keys(settings.modelEfforts).length > 0 ? settings.modelEfforts : undefined,
 	}
 	fs.writeFileSync(getConfigPath(), JSON.stringify(toPersist, null, "\t") + "\n", { mode: 0o600 })
 }

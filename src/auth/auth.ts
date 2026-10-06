@@ -1,6 +1,8 @@
 // Auth ported from the Orbital extension: a MatterAI JWT acts as the API key.
 // Backend URL resolution mirrors getKiloBaseUriFromToken / getKiloUrlFromToken.
 
+import { DEFAULT_HEADERS } from "../api/headers.js";
+
 export const DEFAULT_BACKEND_URL = "https://api.matterai.so";
 export const API_GATEWAY_PATH = "https://api2.matterai.so/v1/web/";
 
@@ -181,6 +183,55 @@ export async function fetchProfile(token: string): Promise<ProfileData> {
     );
   }
   return (await response.json()) as ProfileData;
+}
+
+/** Share of the plan windows a prospective request would use (no credit amounts). */
+export interface UsageEstimate {
+  weeklyPercentage: number;
+  monthlyPercentage: number;
+}
+
+/**
+ * Price `inputTokens` uncached input tokens on `model` against the user's plan
+ * windows (GET /axoncode/usage/estimate). The backend applies the same rate,
+ * per-org overrides and OSS cost multiplier as a real request.
+ */
+export async function fetchUsageEstimate(
+  token: string,
+  model: string,
+  inputTokens: number,
+): Promise<UsageEstimate> {
+  const params = new URLSearchParams({
+    model,
+    inputTokens: String(Math.max(0, Math.round(inputTokens))),
+  });
+  const url = getUrlFromToken(
+    `https://api.matterai.so/axoncode/usage/estimate?${params}`,
+    token,
+  );
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      // Priced by user agent: first-party clients pay list price.
+      "User-Agent": DEFAULT_HEADERS["User-Agent"],
+    },
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!response.ok) {
+    throw new Error(`Usage estimate failed (${response.status}).`);
+  }
+  const data = (await response.json()) as Partial<UsageEstimate>;
+  if (
+    typeof data.weeklyPercentage !== "number" ||
+    typeof data.monthlyPercentage !== "number"
+  ) {
+    throw new Error("Usage estimate returned no percentages.");
+  }
+  return {
+    weeklyPercentage: data.weeklyPercentage,
+    monthlyPercentage: data.monthlyPercentage,
+  };
 }
 
 export async function resetWeeklyUsage(

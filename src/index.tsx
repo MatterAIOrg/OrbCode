@@ -5,6 +5,7 @@ import { runPluginCommand } from "./commands/plugin.js"
 import { runUsageCommand } from "./commands/usage.js"
 import { loadSessionById, type SessionData } from "./core/sessions.js"
 import { loadSettings } from "./config/settings.js"
+import { loadCachedModelCatalog } from "./api/models.js"
 import {
 	clearUpdateCache,
 	compareVersions,
@@ -134,6 +135,10 @@ async function main(): Promise<void> {
 	// name", VSCode terminal status, etc.) don't append " (node)" next to our
 	// own title. The bundled bin/orbcode.js also does this for the npm case.
 	process.title = "orbcode"
+	// Before anything reads settings: a saved catalog-only model (and its
+	// effort) must resolve before /v1/models answers, or it falls back to the
+	// default model for the whole session.
+	loadCachedModelCatalog()
 	const args = process.argv.slice(2)
 
 	if (args.includes("--version") || args.includes("-v")) {
