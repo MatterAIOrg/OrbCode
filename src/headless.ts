@@ -38,6 +38,16 @@ export interface HeadlessOptions {
 	verbose?: boolean
 }
 
+/**
+ * Whether a tool call is the --output-file write, which headless mode approves
+ * even without --yolo. Both paths are resolved so `result.json`, `./result.json`
+ * and the absolute path all match, while any other target stays denied.
+ */
+export function isOutputFileWrite(outputFile: string | undefined, toolName: string, detail: string): boolean {
+	if (!outputFile || toolName !== "file_write" || !detail) return false
+	return path.resolve(detail) === path.resolve(outputFile)
+}
+
 /** Non-interactive `orbcode -p "prompt"` mode: prints the final response to stdout. */
 export async function runHeadless(prompt: string, options: HeadlessOptions): Promise<void> {
 	const { yolo, systemPromptOverride, outputMode = "text", requireModel, outputFile, verbose } = options
@@ -245,9 +255,7 @@ export async function runHeadless(prompt: string, options: HeadlessOptions): Pro
 			// so read-only analysis runs can still emit a structured result.
 			requestApproval: async (request) => {
 				if (yolo) return "yes"
-				if (outputFile && request.toolName === "file_write" && request.detail === path.resolve(outputFile)) {
-					return "yes"
-				}
+				if (isOutputFileWrite(outputFile, request.toolName, request.detail)) return "yes"
 				process.stderr.write(`[denied] ${request.toolName}: ${request.summary} (pass --yolo to auto-approve)\n`)
 				return "no"
 			},
@@ -305,5 +313,12 @@ export async function runHeadless(prompt: string, options: HeadlessOptions): Pro
 	}
 
 	process.stderr.write(`\nSession saved. To resume: orbcode --resume ${agent.taskId}\n`)
+	// process.exit() drops pending async writes (piped stdout is async on macOS),
+	// which would truncate `--json | jq`; exit only once both streams drain.
+	await Promise.all([flush(process.stdout), flush(process.stderr)])
 	process.exit(exitCode)
+}
+
+function flush(stream: NodeJS.WriteStream): Promise<void> {
+	return new Promise((resolve) => stream.write("", () => resolve()))
 }

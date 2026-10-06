@@ -219,10 +219,6 @@ async function main(): Promise<void> {
 		if (baseUrl) process.env.MATTERAI_LLM_BASE_URL = baseUrl
 		const apiKey = takeFlagValue(args, "apiKey") ?? takeFlagValue(args, "api-key")
 		if (apiKey) process.env.MATTERAI_LLM_API_KEY = apiKey
-		if (baseUrl && !model) {
-			// Default to "gpt-4o" when --baseUrl is given without --model.
-			process.env.MATTERAI_MODEL = "gpt-4o"
-		}
 
 		await runHeadless(prompt, {
 			yolo: args.includes("--yolo"),
