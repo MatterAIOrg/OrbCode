@@ -6,6 +6,16 @@ import * as path from "node:path"
 
 import { DEFAULT_HEADERS } from "./headers.js"
 
+/** settings' getConfigDir, inlined: settings imports this module. */
+function configDir(): string {
+  return process.env.MATTERAI_CONFIG_DIR || path.join(os.homedir(), ".orbcode")
+}
+
+/** Last successful /v1/models response, so catalog-only models resolve offline and at startup. */
+function catalogCachePath(): string {
+  return path.join(configDir(), "models-cache.json")
+}
+
 /**
  * Read the currently selected model id from disk without triggering the full
  * settings-load side effects (env application, custom-model registration).
@@ -13,8 +23,7 @@ import { DEFAULT_HEADERS } from "./headers.js"
  */
 function loadSettingsModel(): string {
   try {
-    const dir = process.env.MATTERAI_CONFIG_DIR || path.join(os.homedir(), ".orbcode")
-    const raw = fs.readFileSync(path.join(dir, "config.json"), "utf8")
+    const raw = fs.readFileSync(path.join(configDir(), "config.json"), "utf8")
     const parsed = JSON.parse(raw)
     return typeof parsed.model === "string" ? parsed.model : ""
   } catch {
@@ -27,6 +36,26 @@ function loadSettingsModel(): string {
  * `output_config.effort`). Ignored by providers that don't.
  */
 export type ModelEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
+ * Effort levels the MatterAI gateway accepts for models with an effort
+ * selector. The backend maps each level to what the serving provider supports.
+ */
+export const GATEWAY_EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
+export type GatewayEffort = (typeof GATEWAY_EFFORT_LEVELS)[number];
+export const DEFAULT_GATEWAY_EFFORT: GatewayEffort = "medium";
+
+/** Used until the catalog (which advertises `reasoning_efforts`) has loaded. */
+const FALLBACK_EFFORT_MODELS = new Set([
+  "zai/glm-5.3",
+  "zai/glm-5.3-flash",
+  "gemini-3.8-flash",
+  "deepseek/deepseek-v4.1-flash",
+]);
+
+export function isGatewayEffort(value: unknown): value is GatewayEffort {
+  return (GATEWAY_EFFORT_LEVELS as readonly unknown[]).includes(value);
+}
 
 export interface AxonModel {
   id: string;
@@ -50,6 +79,8 @@ export interface AxonModel {
   costMultiplier?: number;
   /** True when the backend catalog marks this model as the free-plan model. */
   freePlan?: boolean;
+  /** Effort levels the gateway accepts for this model (catalog `reasoning_efforts`). */
+  reasoningEfforts?: GatewayEffort[];
   /**
    * Which transport serves this model. Absent (or "matterai"/"axon") routes
    * through the MatterAI gateway (OpenAI `/chat/completions`). Any other value
@@ -406,6 +437,14 @@ export function getModel(modelId: string): AxonModel {
   return AXON_MODELS[modelId] ?? AXON_MODELS[DEFAULT_MODEL_ID];
 }
 
+/** Effort levels for the gateway effort selector; empty when the model has none. */
+export function getModelEffortLevels(model: AxonModel): GatewayEffort[] {
+  // Own-provider models (AI SDK) carry their own `effort` setting instead.
+  if (model.provider && model.provider !== "matterai" && model.provider !== "axon") return [];
+  if (model.reasoningEfforts) return model.reasoningEfforts;
+  return FALLBACK_EFFORT_MODELS.has(model.id) ? [...GATEWAY_EFFORT_LEVELS] : [];
+}
+
 /** Whether an AxonCode plan string is the free tier (a missing plan counts as free). */
 export function isFreePlan(plan?: string): boolean {
   const normalized = plan?.trim().toLowerCase() ?? "";
@@ -439,6 +478,76 @@ export function getGatewayModelId(model: AxonModel): string {
  * into BUILTIN_AXON_MODELS and AXON_MODELS so the model picker and agent loops can
  * dynamically use newly added models without hardcoding.
  */
+function parseCatalogItems(items: unknown[]): AxonModel[] {
+  const models: AxonModel[] = [];
+  for (const raw of items) {
+    const item = raw as any;
+    if (!item?.id || typeof item.id !== "string" || item.id.startsWith("axon-")) {
+      continue;
+    }
+    models.push({
+      id: item.id,
+      name: item.name || item.id,
+      description: item.description || `${item.name || item.id} open model`,
+      contextWindow: item.context_length || 232000,
+      maxOutputTokens: item.max_output_length || 64000,
+      supportsImages: Array.isArray(item.input_modalities)
+        ? item.input_modalities.includes("image")
+        : true,
+      inputPrice:
+        typeof item.pricing?.prompt === "string"
+          ? parseFloat(item.pricing.prompt) || 0
+          : typeof item.pricing?.prompt === "number"
+            ? item.pricing.prompt
+            : 0,
+      outputPrice:
+        typeof item.pricing?.completion === "string"
+          ? parseFloat(item.pricing.completion) || 0
+          : typeof item.pricing?.completion === "number"
+            ? item.pricing.completion
+            : 0,
+      free: false,
+      freePlan: item.freePlan === true,
+      iconUrl: typeof item.iconUrl === "string" ? item.iconUrl : undefined,
+      costMultiplier:
+        typeof item.costMultiplier === "number" ? item.costMultiplier : undefined,
+      // Absent on older backends: fall back to the built-in selector list.
+      reasoningEfforts: Array.isArray(item.reasoning_efforts)
+        ? item.reasoning_efforts.filter(isGatewayEffort)
+        : undefined,
+    });
+  }
+  return models;
+}
+
+function registerCatalogModels(models: AxonModel[]): void {
+  for (const model of models) {
+    managedModelIds.add(model.id);
+    BUILTIN_AXON_MODELS[model.id] = model;
+    AXON_MODELS[model.id] = model;
+  }
+}
+
+/**
+ * Register the catalog from the last successful fetch (models-cache.json).
+ * Call at startup before loadSettings(): a saved selection of a model that
+ * only exists in the backend catalog (e.g. DeepSeek V4.1 Flash) is otherwise
+ * "unknown" until /v1/models answers, and loadSettings() would fall back to
+ * the default model — dropping both the model and its saved effort. Nothing
+ * is pruned here; the next fetch reconciles.
+ */
+export function loadCachedModelCatalog(): void {
+  try {
+    const cached = JSON.parse(fs.readFileSync(catalogCachePath(), "utf8"));
+    const models = parseCatalogItems(Array.isArray(cached?.data) ? cached.data : []);
+    if (models.length === 0) return;
+    catalogOrder = models.map((model) => model.id);
+    registerCatalogModels(models);
+  } catch {
+    // no cache yet (first run) or unreadable: the fetch fills it in
+  }
+}
+
 export async function fetchDynamicModels(
   token?: string,
   organizationId?: string,
@@ -480,41 +589,8 @@ export async function fetchDynamicModels(
     }
 
     const json = (await res.json()) as any;
-    const items = Array.isArray(json?.data) ? json.data : [];
-
-    const fetched: AxonModel[] = [];
-    for (const item of items) {
-      if (!item?.id || typeof item.id !== "string" || item.id.startsWith("axon-")) {
-        continue;
-      }
-      fetched.push({
-        id: item.id,
-        name: item.name || item.id,
-        description: item.description || `${item.name || item.id} open model`,
-        contextWindow: item.context_length || 232000,
-        maxOutputTokens: item.max_output_length || 64000,
-        supportsImages: Array.isArray(item.input_modalities)
-          ? item.input_modalities.includes("image")
-          : true,
-        inputPrice:
-          typeof item.pricing?.prompt === "string"
-            ? parseFloat(item.pricing.prompt) || 0
-            : typeof item.pricing?.prompt === "number"
-              ? item.pricing.prompt
-              : 0,
-        outputPrice:
-          typeof item.pricing?.completion === "string"
-            ? parseFloat(item.pricing.completion) || 0
-            : typeof item.pricing?.completion === "number"
-              ? item.pricing.completion
-              : 0,
-        free: false,
-        freePlan: item.freePlan === true,
-        iconUrl: typeof item.iconUrl === "string" ? item.iconUrl : undefined,
-        costMultiplier:
-          typeof item.costMultiplier === "number" ? item.costMultiplier : undefined,
-      });
-    }
+    const items: unknown[] = Array.isArray(json?.data) ? json.data : [];
+    const fetched = parseCatalogItems(items);
 
     // Reconcile only when the backend returned a usable catalog — an empty or
     // failed response must never wipe the offline fallback. Retired models
@@ -531,10 +607,12 @@ export async function fetchDynamicModels(
         delete AXON_MODELS[id];
       }
       managedModelIds.clear();
-      for (const model of fetched) {
-        managedModelIds.add(model.id);
-        BUILTIN_AXON_MODELS[model.id] = model;
-        AXON_MODELS[model.id] = model;
+      registerCatalogModels(fetched);
+      try {
+        fs.mkdirSync(configDir(), { recursive: true });
+        fs.writeFileSync(catalogCachePath(), JSON.stringify({ data: items }));
+      } catch {
+        // best-effort: without the cache, startup just waits for the fetch
       }
     }
     return BUILTIN_AXON_MODELS;

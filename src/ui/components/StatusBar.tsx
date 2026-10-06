@@ -42,6 +42,8 @@ function formatRelativeTime(isoStr?: string): string {
 
 interface StatusBarProps {
   modelId: string;
+  /** Effort sent with requests, for models with an effort selector. */
+  effort?: string;
   contextTokens: number;
   totalCost: number;
   state: string;
@@ -104,6 +106,7 @@ function usageSummary(tu: AxonCodeTieredUsage | undefined): string | null {
 
 export function StatusBar({
   modelId,
+  effort,
   contextTokens,
   totalCost: _totalCost,
   state,
@@ -153,7 +156,8 @@ export function StatusBar({
         >
           <Text color={COLORS.dim} wrap="truncate">
             {title ? `${truncate(title, 32)} · ` : ""}
-            {model.name} · ctx {contextTokens.toLocaleString()} ({contextPct}%)
+            {model.name}
+            {effort ? ` · ${effort}` : ""} · ctx {contextTokens.toLocaleString()} ({contextPct}%)
           </Text>
         </Box>
       </Box>

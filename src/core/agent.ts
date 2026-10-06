@@ -62,6 +62,13 @@ import {
 	reportUsageEvent,
 } from "../api/metrics.js"
 
+/**
+ * Prompt-cache warmup on launch and /new (see Agent.warmCache). Off until it
+ * has had more testing; while off, agents are created lazily on the first
+ * message exactly as before.
+ */
+export const CACHE_WARMUP_ENABLED = false
+
 const MAX_STEPS_PER_TURN = 50
 const RESULT_PREVIEW_LINES = 6
 /** Maximum number of independent read-only tools started at once. */
@@ -100,6 +107,13 @@ const PRUNE_MIN_CHARS = 1500
 const PRUNABLE_TOOLS = new Set(["read_file", "search_files", "list_files", "Bash", "execute_command", "web_fetch", "web_search"])
 /** Summarize the history before a step once context passes this fraction of the window. */
 const AUTO_COMPACT_FRACTION = 0.8
+/** Rough chars-per-token for content the gateway hasn't measured yet. */
+const CHARS_PER_TOKEN = 4
+/** Tokens counted per image part: its base64 length says nothing about its token cost. */
+const IMAGE_TOKEN_ESTIMATE = 1500
+/** Share of the window the summary request may use, tried in order. The
+ *  smaller budgets cover upstreams whose real window is under the catalog's. */
+const SUMMARY_BUDGET_FRACTIONS = [0.6, 0.3, 0.15]
 /** Warn the model when the same call returns the same output this many times in a row. */
 const REPEAT_WARN_AT = 3
 /** A successful edit changes the files, so earlier identical calls may now differ. */
@@ -109,12 +123,83 @@ const EDIT_TOOLS = new Set(["file_edit", "multi_file_edit", "file_write"])
  *  usable HTTP status — socket reset, DNS, timeout, TLS drop) plus 5xx/408/429
  *  server responses. Real 4xx client errors (auth, bad request) are not retried. */
 function isRetryableStreamError(error: unknown): boolean {
+	// Resending the same oversized request can't succeed; the turn compacts instead.
+	if (isContextOverflowError(error)) return false
 	const err = error as { status?: number; code?: number | string }
 	const status = Number(err?.status ?? err?.code)
 	if (Number.isFinite(status) && status !== 0) {
 		return status >= 500 || status === 408 || status === 429
 	}
 	return true
+}
+
+/** The provider rejected the request because the conversation doesn't fit its context window. */
+function isContextOverflowError(error: unknown): boolean {
+	const err = error as {
+		status?: number
+		statusCode?: number
+		code?: unknown
+		message?: unknown
+		error?: unknown
+	}
+	const status = Number(err?.status ?? err?.statusCode)
+	if (Number.isFinite(status) && status !== 0 && ![400, 413, 422].includes(status)) return false
+	let body = ""
+	try {
+		body = JSON.stringify(err?.error ?? "")
+	} catch {
+		// unserializable error body — the message alone decides
+	}
+	const text = `${String(err?.message ?? "")} ${String(err?.code ?? "")} ${body}`
+	return /context[ _-]?(length|window|limit)|maximum context|too many (input )?tokens|prompt is too long|input is too long|request too large|exceeds? (the )?(maximum|max|context|token)|reduce the length/i.test(
+		text,
+	)
+}
+
+/** Token estimate for a message the gateway hasn't measured yet. */
+function messageTokenEstimate(message: OpenAI.Chat.ChatCompletionMessageParam): number {
+	let chars = 0
+	let images = 0
+	const content = (message as { content?: unknown }).content
+	if (typeof content === "string") {
+		chars += content.length
+	} else if (Array.isArray(content)) {
+		for (const part of content as Array<{ type?: string; text?: string }>) {
+			if (part?.type === "text") chars += part.text?.length ?? 0
+			else if (part?.type === "image_url") images++
+		}
+	}
+	if (message.role === "assistant") {
+		for (const call of message.tool_calls ?? []) {
+			if (call.type === "function") chars += call.function.name.length + call.function.arguments.length
+		}
+	}
+	return Math.ceil(chars / CHARS_PER_TOKEN) + images * IMAGE_TOKEN_ESTIMATE
+}
+
+/** Cut a message's text down to `maxChars` (structure and tool-call links intact). */
+function truncateMessage(
+	message: OpenAI.Chat.ChatCompletionMessageParam,
+	maxChars: number,
+): OpenAI.Chat.ChatCompletionMessageParam {
+	const marker = "\n[… truncated to fit the context window …]"
+	const content = (message as { content?: unknown }).content
+	if (typeof content === "string") {
+		return content.length > maxChars
+			? ({ ...message, content: content.slice(0, maxChars) + marker } as OpenAI.Chat.ChatCompletionMessageParam)
+			: message
+	}
+	if (Array.isArray(content)) {
+		return {
+			...message,
+			content: (content as Array<{ type?: string; text?: string }>).map((part) =>
+				part?.type === "text" && (part.text?.length ?? 0) > maxChars
+					? { ...part, text: part.text!.slice(0, maxChars) + marker }
+					: part,
+			),
+		} as OpenAI.Chat.ChatCompletionMessageParam
+	}
+	return message
 }
 
 function retryBackoffMs(attempt: number): number {
@@ -406,6 +491,8 @@ export class Agent {
 	private sessionApproveEdits: boolean
 	private sessionApproveCommands = false
 	private abortController?: AbortController
+	/** in-flight prompt-cache warmup (see warmCache) */
+	private warmupController?: AbortController
 	private totalCost = 0
 	/**
 	 * Latest context window usage (input + output tokens from the most recent
@@ -433,8 +520,12 @@ export class Agent {
 	private stopHookActive = false
 	/** tool results at message indexes below this are sent as short stubs (see pruneStaleToolResults) */
 	private prunedBefore = 0
-	/** set after a failed auto-compaction so it isn't retried on every step */
+	/** set after a failed auto-compaction so it isn't retried on every step of
+	 *  the same turn; cleared at the start of each turn and on any success */
 	private autoCompactFailed = false
+	/** how many messages the last usage report (`contextTokens`) covered; later
+	 *  ones (tool results, new user input) are estimated until the next report */
+	private measuredMessages = 0
 	/** consecutive identical call+output tracking for loop warnings */
 	private readonly repeatTracker = new Map<string, { hash: string; count: number }>()
 	/** in-flight fire-and-forget hook promises (Notification), awaited on exit */
@@ -480,6 +571,8 @@ export class Agent {
 			this.todos = normalizeTodoList(options.resume.todos)
 			this.totalCost = options.resume.totalCost
 			this.contextTokens = options.resume.contextTokens
+			// Sessions without a recorded size are estimated from their messages.
+			this.measuredMessages = this.contextTokens > 0 ? this.messages.length : 0
 			this.title = options.resume.title
 			this.createdAt = options.resume.createdAt
 			this.firstMessageSent = this.messages.length > 0
@@ -523,6 +616,28 @@ export class Agent {
 			repo: detectGitRepo(this.options.cwd),
 			baseUrl: this.options.baseUrl,
 		})
+	}
+
+	/**
+	 * Prime the gateway's prompt cache for this task before the user's first
+	 * message: same taskId (provider session affinity), system prompt and tools
+	 * as the first real turn, one output token. Only for a fresh conversation;
+	 * best-effort and silent, since a miss just means a normal cold start.
+	 */
+	async warmCache(): Promise<void> {
+		if (this.messages.length > 0 || !this.client.warmup) return
+		this.warmupController?.abort()
+		const controller = new AbortController()
+		this.warmupController = controller
+		try {
+			await this.mcp?.whenStarted()
+			if (controller.signal.aborted || this.messages.length > 0) return
+			await this.client.warmup(this.systemPrompt, getActiveTools(this.mcp), controller.signal)
+		} catch {
+			// ignore — warmup is an optimization only
+		} finally {
+			if (this.warmupController === controller) this.warmupController = undefined
+		}
 	}
 
 	get modelId(): string {
@@ -615,6 +730,7 @@ export class Agent {
 		this.todos = normalizeTodoList(target.todos)
 		this.firstMessageSent = this.messages.length > 0
 		if (this.messages.length === 0) this.contextTokens = 0
+		this.measuredMessages = Math.min(this.measuredMessages, this.messages.length)
 		this.stopHookActive = false
 		this.autoCompactFailed = false
 		this.prunedBefore = Math.min(this.prunedBefore, this.messages.length)
@@ -730,6 +846,7 @@ export class Agent {
 		this.stopHookActive = false
 		this.prunedBefore = 0
 		this.autoCompactFailed = false
+		this.measuredMessages = 0
 		this.repeatTracker.clear()
 		this.lastGitHead = getGitHead(this.options.cwd)
 		persistGitHead(this.options.cwd, this.lastGitHead)
@@ -790,10 +907,17 @@ export class Agent {
 
 	abort(): void {
 		this.abortController?.abort()
+		this.warmupController?.abort()
 	}
 
 	get isIdle(): boolean {
 		return this.abortController === undefined
+	}
+
+	/** False for an agent created ahead of its first message (to warm the
+	 *  prompt cache) that hasn't run a turn yet — there is no session to end. */
+	get hasSession(): boolean {
+		return this.sessionStarted || this.messages.length > 0
 	}
 
 	private buildEnvironmentDetails(): string {
@@ -1048,9 +1172,26 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 
 		try {
 			this.stopHookActive = false
+			// A failed auto-compaction only pauses retries for the rest of its turn.
+			this.autoCompactFailed = false
+			let recoveredOverflow = false
 			for (let step = 0; step < MAX_STEPS_PER_TURN; step++) {
 				await this.autoCompactIfNeeded()
-				const done = await this.runStep()
+				let done: boolean
+				try {
+					done = await this.runStep()
+				} catch (error) {
+					// The provider says the history no longer fits (e.g. a resumed
+					// session on a smaller-window model, or tool output the last
+					// usage report didn't cover): compact and retry the step once.
+					if (recoveredOverflow || this.abortController.signal.aborted || !isContextOverflowError(error)) throw error
+					recoveredOverflow = true
+					const compacted = await this.autoCompact(
+						"The conversation no longer fits the model's context window — compacting and retrying…",
+					)
+					if (!compacted) throw error
+					done = await this.runStep()
+				}
 				if (!done) continue
 				// The model is ready to stop; Stop hooks may force it to continue.
 				if (await this.shouldContinueAfterStop()) continue
@@ -1197,7 +1338,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		this.abortController = new AbortController()
 		const signal = this.abortController.signal
 		try {
-			const summary = await this.summarizeHistory(signal, startContext, true)
+			const summary = await this.summarizeWithinWindow(signal, startContext, true)
 			if (summary) {
 				onEvent({ type: "text-done" })
 				this.replaceHistoryWithSummary(summary, false)
@@ -1218,11 +1359,76 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 	}
 
+	/**
+	 * Summarize, shrinking the request if the provider says it doesn't fit.
+	 * Throws when every budget fails (or on any non-overflow error).
+	 */
+	private async summarizeWithinWindow(signal: AbortSignal, startContext: string, showText: boolean): Promise<string> {
+		const window = getModel(this.options.modelId).contextWindow
+		let lastError: unknown
+		for (const fraction of SUMMARY_BUDGET_FRACTIONS) {
+			try {
+				return await this.summarizeHistory(signal, startContext, showText, Math.floor(window * fraction))
+			} catch (error) {
+				if (signal.aborted || !isContextOverflowError(error)) throw error
+				lastError = error
+			}
+		}
+		throw lastError
+	}
+
+	/**
+	 * History for the summary request. It is the whole conversation, so once
+	 * the history outgrows the window it would fail exactly when compaction is
+	 * needed; past `budgetTokens` it is trimmed: older tool results are
+	 * stubbed, oversized messages cut, and the oldest whole turns dropped
+	 * (keeping the first message — the original request or the last summary).
+	 * Under budget it is the normal outgoing history, which keeps the
+	 * gateway's prompt cache warm.
+	 */
+	private summarySource(budgetTokens: number): OpenAI.Chat.ChatCompletionMessageParam[] {
+		let messages = this.outgoingMessages()
+		const size = (list: OpenAI.Chat.ChatCompletionMessageParam[]) =>
+			list.reduce((total, message) => total + messageTokenEstimate(message), 0)
+		if (size(messages) <= budgetTokens) return messages
+
+		const toolIndexes = messages.flatMap((message, index) => (message.role === "tool" ? [index] : []))
+		const keepToolsFrom = toolIndexes[toolIndexes.length - KEEP_RECENT_TOOL_RESULTS] ?? Number.POSITIVE_INFINITY
+		messages = messages.map((message, index) => {
+			if (message.role !== "tool" || index >= keepToolsFrom) return message
+			const lines = contentToText(message.content).split("\n").length
+			return { ...message, content: `[Tool result (${lines} lines) omitted to fit the summary request.]` }
+		})
+		const maxMessageChars = Math.floor((budgetTokens * CHARS_PER_TOKEN) / 4)
+		messages = messages.map((message) => truncateMessage(message, maxMessageChars))
+		if (size(messages) <= budgetTokens || messages.length < 3) return messages
+
+		// Drop whole turns from the front so no tool result loses its call.
+		const [first, ...rest] = messages
+		let start = 0
+		while (size([first, ...rest.slice(start)]) > budgetTokens) {
+			const next = rest.findIndex((message, index) => index > start && message.role === "user")
+			if (next === -1) break
+			start = next
+		}
+		if (start === 0) return messages
+		return [
+			first,
+			{ role: "user", content: `[${start} earlier messages omitted to fit the context window.]` },
+			...rest.slice(start),
+		]
+	}
+
 	/** Ask the model to summarize the conversation so far. `showText` streams the summary to the UI. */
-	private async summarizeHistory(signal: AbortSignal, startContext: string, showText: boolean): Promise<string> {
+	private async summarizeHistory(
+		signal: AbortSignal,
+		startContext: string,
+		showText: boolean,
+		budgetTokens: number,
+	): Promise<string> {
 		const { onEvent } = this.options.callbacks
 		const request: OpenAI.Chat.ChatCompletionMessageParam[] = [
-			...this.outgoingMessages(),
+			...this.summarySource(budgetTokens),
 			{
 				role: "user",
 				content:
@@ -1260,8 +1466,14 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		return summary
 	}
 
-	/** Swap the whole history for a single summary message. */
+	/**
+	 * Swap the whole history for a single summary message. A user message the
+	 * model hasn't answered yet (compaction right as a turn starts) is kept
+	 * verbatim after it, so the new request isn't lost in the summary.
+	 */
 	private replaceHistoryWithSummary(summary: string, continueWork: boolean): void {
+		const last = this.messages[this.messages.length - 1]
+		const pending = continueWork && last?.role === "user" ? last : undefined
 		this.messages = [
 			{
 				role: "user",
@@ -1271,9 +1483,12 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 						? "\n\nContinue the work described above from where it left off. Do not restart or repeat steps that are already done."
 						: ""),
 			},
+			...(pending ? [pending] : []),
 		]
 		// The summary is small; the next usage report replaces this estimate.
-		this.contextTokens = Math.ceil(summary.length / 4)
+		this.contextTokens = this.messages.reduce((total, message) => total + messageTokenEstimate(message), 0)
+		this.measuredMessages = this.messages.length
+		this.autoCompactFailed = false
 		// Checkpoints index into the history that was just replaced.
 		deleteBackups(this.taskId, this.checkpoints)
 		this.checkpoints = []
@@ -1289,19 +1504,35 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	private async autoCompactIfNeeded(): Promise<void> {
 		if (this.autoCompactFailed || this.messages.length < 4) return
 		const window = getModel(this.options.modelId).contextWindow
-		if (this.contextTokens < window * AUTO_COMPACT_FRACTION) return
+		const estimated = this.estimatedContextTokens()
+		if (estimated < window * AUTO_COMPACT_FRACTION) return
+		const percent = Math.round((estimated / window) * 100)
+		await this.autoCompact(`Context is ${percent}% full — compacting the conversation…`)
+	}
+
+	/** Context the next request will carry: the last measured size plus an
+	 *  estimate for everything added since (tool results, new input). */
+	private estimatedContextTokens(): number {
+		let unmeasured = 0
+		for (const message of this.messages.slice(this.measuredMessages)) unmeasured += messageTokenEstimate(message)
+		return this.contextTokens + unmeasured
+	}
+
+	/** Compact mid-turn and continue. Returns false (and pauses auto-compaction
+	 *  for the rest of the turn) when it fails. */
+	private async autoCompact(message: string): Promise<boolean> {
 		const { onEvent } = this.options.callbacks
 		const signal = this.abortController!.signal
-		const percent = Math.round((this.contextTokens / window) * 100)
-		onEvent({ type: "system", message: `Context is ${percent}% full — compacting the conversation…`, isError: false })
+		onEvent({ type: "system", message, isError: false })
 		if (this.hooks.hasHooks("PreCompact")) {
 			await this.hooks.run("PreCompact", { trigger: "auto", custom_instructions: "" })
 		}
 		try {
-			const summary = await this.summarizeHistory(signal, "", false)
+			const summary = await this.summarizeWithinWindow(signal, "", false)
 			if (!summary) throw new Error("no summary produced")
 			this.replaceHistoryWithSummary(summary, true)
 			onEvent({ type: "system", message: "Conversation compacted; continuing.", isError: false })
+			return true
 		} catch (error) {
 			if ((error as Error).name === "AbortError" || signal.aborted) throw error
 			this.autoCompactFailed = true
@@ -1310,6 +1541,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				message: `Auto-compaction failed (${sanitizeErrorMessage(error)}); continuing with the full history.`,
 				isError: true,
 			})
+			return false
 		}
 	}
 
@@ -1381,6 +1613,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		}
 		const toolCallsByIndex = new Map<number, PendingToolCall>()
 		let nextSyntheticIndex = 10000
+		let usageReported = false
 
 		// Roll back this step's partial output so streamWithRetry can restart a
 		// dropped stream mid-flight. Tools only run after the stream completes, so
@@ -1443,6 +1676,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				case "usage":
 					this.totalCost += chunk.totalCost ?? 0
 					this.contextTokens = (chunk.inputTokens ?? 0) + (chunk.outputTokens ?? 0)
+					usageReported = true
 					onEvent({
 						type: "usage",
 						inputTokens: chunk.inputTokens,
@@ -1479,6 +1713,8 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			;(assistantMessage as unknown as Record<string, unknown>)[REASONING_DETAILS_FIELD] = reasoningDetails
 		}
 		this.messages.push(assistantMessage)
+		// The report's output tokens already cover this assistant message.
+		if (usageReported) this.measuredMessages = this.messages.length
 
 		if (toolCalls.length === 0) {
 			return true

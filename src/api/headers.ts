@@ -6,11 +6,15 @@ import { getShell } from "../utils/shell.js"
 // Header names ported from the Orbital extension (shared/kilocode/headers.ts).
 export const X_AXONCODE_VERSION = "X-AxonCode-Version"
 export const X_AXONCODE_TASKID = "X-AxonCode-TaskId"
+/** Marks a prompt-cache priming request; the backend skips title generation for it. */
+export const X_AXONCODE_WARMUP = "X-AxonCode-Warmup"
 export const X_ORGANIZATIONID = "X-KiloCode-OrganizationId"
 export const X_AXON_REPO = "X-AXON-REPO"
 export const X_MODEL_CONTEXT_WINDOW = "X-Model-Context-Window"
 export const X_DEVICE_OS = "X-Device-OS"
 export const X_CLIENT_USER_AGENT = "X-Client-User-Agent"
+/** low | medium | high | max — mapped by the backend to the serving provider's levels. */
+export const X_REASONING_EFFORT = "X-MATTERAI-REASONING-EFFORT"
 
 export const DEFAULT_HEADERS = {
 	"HTTP-Referer": "https://matterai.so",

@@ -84,7 +84,13 @@ Then, from any project directory:
 orbcode
 ```
 
-To update later: `npm update -g @matterailab/orbcode` (or re-run the install command).
+Updates install in the background: a new release (once it has been public for
+24h) is downloaded into `~/.orbcode/versions/`, verified, and used from your
+next launch — the banner just says to restart. If a new version fails to start,
+OrbCode falls back to the previous one. To opt out, set
+`ORBCODE_DISABLE_AUTOUPDATE=1` or `"autoUpdates": false` in
+`~/.orbcode/settings.json`; you can always update manually with
+`orbcode update` or `npm update -g @matterailab/orbcode`.
 
 ### From source (development)
 

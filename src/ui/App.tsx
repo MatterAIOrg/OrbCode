@@ -37,7 +37,12 @@ import {
   fetchDynamicModels,
   get232kAxonFallback,
   getDefaultModelId,
+  getGatewayModelId,
   getModel,
+  getModelEffortLevels,
+  isGatewayEffort,
+  type GatewayEffort,
+  type AxonModel,
   is400kAxonModel,
   isEidoBaseAxonModel,
   isEidoProAxonModel,
@@ -49,11 +54,17 @@ import {
   APP_URL,
   fetchProfile,
   fetchTaskTitle,
+  fetchUsageEstimate,
+  type UsageEstimate,
   resetWeeklyUsage,
   type ProfileData,
 } from "../auth/auth.js";
 import {
   getAuthToken,
+  getModelEffort,
+  loadModelEfforts,
+  setSessionModelEffort,
+  withSessionModelEfforts,
   getPendingProjectHooks,
   loadSettings,
   saveMcpApproval,
@@ -61,9 +72,9 @@ import {
   trustProjectHooks,
   type OrbCodeSettings,
 } from "../config/settings.js";
-import { Agent } from "../core/agent.js";
+import { Agent, CACHE_WARMUP_ENABLED } from "../core/agent.js";
 import { McpManager } from "../mcp/manager.js";
-import type { UpdateInfo } from "../utils/updateCheck.js";
+import type { UpdateNotice } from "../utils/autoUpdate.js";
 import { normalizeTodoList } from "../utils/todos.js";
 import type {
   AgentEvent,
@@ -91,10 +102,18 @@ import {
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { ThemePicker } from "./components/ThemePicker.js";
+import { EffortPicker } from "./components/EffortPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
+import { ResumeConfirm, type ResumeDecision } from "./components/ResumeConfirm.js";
 import { RewindPicker } from "./components/RewindPicker.js";
 import type { RewindMode, RewindPoint } from "../core/checkpoints.js";
 import { listSessions, type SessionData } from "../core/sessions.js";
+import {
+  billsPlan,
+  estimateResumeCost,
+  shouldConfirmResume,
+  type ResumeCostEstimate,
+} from "../core/resumeCost.js";
 import {
   diffViewHeight,
   formatToolName,
@@ -124,6 +143,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
   { name: "/attach", description: "choose files to attach" },
   { name: "/model", description: "select the Axon model to use" },
+  {
+    name: "/effort",
+    description: "set the model's effort: low, medium, high or max",
+  },
   { name: "/theme", description: "choose the OrbCode dark or light theme" },
   {
     name: "/clear",
@@ -377,6 +400,20 @@ interface PendingFollowup {
 }
 
 let rowCounter = 0;
+/** Header model line, e.g. "Opus 5.5 with high effort". */
+function headerModelLabel(modelId: string): string {
+  const model = getModel(modelId);
+  const effort = getModelEffort(loadModelEfforts(), model);
+  return effort ? `${model.name} with ${effort} effort` : model.name;
+}
+
+/** Rows with the intro header's model line refreshed for `modelId`. */
+function withHeaderModel(rows: Row[], modelId: string): Row[] {
+  return rows.map((row) =>
+    row.kind === "header" ? { ...row, modelName: headerModelLabel(modelId) } : row,
+  );
+}
+
 function rowId(): string {
   return `row-${rowCounter++}`;
 }
@@ -400,7 +437,7 @@ export function App({
   /** Optional override replacing the default system prompt (from `-s`). */
   systemPromptOverride?: string;
   /** Promise resolving to the latest-npm-version comparison; resolved after first paint. */
-  updateCheck?: Promise<UpdateInfo>;
+  updateCheck?: Promise<UpdateNotice>;
 }) {
   const { exit } = useApp();
   const renderer = useRenderer();
@@ -435,14 +472,14 @@ export function App({
   const [view, setView] = useState<"login" | "chat">(
     initialView ?? (getAuthToken(settings) ? "chat" : "login"),
   );
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateNotice | null>(null);
 
   const [rows, setRows] = useState<Row[]>(() => [
     {
       kind: "header",
       id: "header",
       cwd: process.cwd(),
-      modelName: getModel(loadSettings().model).name,
+      modelName: headerModelLabel(loadSettings().model),
     },
   ]);
   const [busy, setBusy] = useState(false);
@@ -471,6 +508,7 @@ export function App({
   const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [effortPickerOpen, setEffortPickerOpen] = useState(false);
   // Set while the /rewind picker is open: the user turns that can be rewound to.
   const [rewindPoints, setRewindPoints] = useState<RewindPoint[] | null>(null);
   // Puts a rewound message back in the prompt so it can be edited and resent.
@@ -481,6 +519,13 @@ export function App({
   const [resumableSessions, setResumableSessions] = useState<{
     here: SessionData[];
     everywhere: SessionData[];
+  } | null>(null);
+  // A cold-cache resume awaiting confirmation (see ResumeConfirm).
+  const [pendingResume, setPendingResume] = useState<{
+    session: SessionData;
+    estimate: ResumeCostEstimate;
+    /** Plan share still loading; the prompt fills it in when it arrives. */
+    estimating?: boolean;
   } | null>(null);
   const [taskPickerSessions, setTaskPickerSessions] = useState<
     SessionData[] | null
@@ -673,7 +718,7 @@ export function App({
         kind: "header",
         id: rowId(),
         cwd: process.cwd(),
-        modelName: getModel(loadSettings().model).name,
+        modelName: headerModelLabel(loadSettings().model),
       },
     ]);
   }, []);
@@ -819,7 +864,12 @@ export function App({
           current.enabledMcpServers ?? [],
         );
       }
-      return new Agent({
+      // Set once constructed. Events from an agent that has since been
+      // replaced (/new, /resume, …) are dropped so a turn still unwinding
+      // can't stream into the next conversation's transcript.
+      let agent: Agent | null = null;
+      const isStale = () => agent !== null && agentRef.current !== agent;
+      agent = new Agent({
         cwd: process.cwd(),
         token: getAuthToken(current)!,
         modelId: current.model,
@@ -834,28 +884,67 @@ export function App({
         // mid-session still applies it to the new agent.
         systemPromptOverride: systemPromptOverrideRef.current,
         callbacks: {
-          onEvent: handleEvent,
+          onEvent: (event) => {
+            if (!isStale()) handleEvent(event);
+          },
           requestApproval: (request) =>
-            new Promise<ApprovalDecision>((resolve) =>
-              setPendingApproval({ request, resolve }),
-            ),
+            isStale()
+              ? Promise.resolve<ApprovalDecision>("no")
+              : new Promise<ApprovalDecision>((resolve) =>
+                  setPendingApproval({ request, resolve }),
+                ),
           requestFollowup: (question, suggestions) =>
-            new Promise<string>((resolve) =>
-              setPendingFollowup({ question, suggestions, resolve }),
-            ),
+            isStale()
+              ? Promise.resolve("")
+              : new Promise<string>((resolve) =>
+                  setPendingFollowup({ question, suggestions, resolve }),
+                ),
         },
       });
+      return agent;
     },
     [handleEvent],
   );
 
   const getAgent = useCallback((): Agent => {
-    if (!agentRef.current) {
-      agentRef.current = createAgent();
-      process.env.ORBCODE_LAST_SESSION_ID = agentRef.current.taskId;
-    }
+    if (!agentRef.current) agentRef.current = createAgent();
+    // Set on use rather than creation: an agent from prepareFreshAgent has
+    // no saved session until its first message.
+    process.env.ORBCODE_LAST_SESSION_ID = agentRef.current.taskId;
     return agentRef.current;
   }, [createAgent]);
+
+  // Create the next conversation's agent now instead of on its first message,
+  // so its taskId already exists and the gateway prompt cache can be warmed
+  // under it. The first message then reuses this agent (and taskId) and its
+  // request hits the cached system prompt + tools.
+  const prepareFreshAgent = useCallback(() => {
+    // Never replace an agent a message has already started on.
+    if (
+      !CACHE_WARMUP_ENABLED ||
+      agentRef.current ||
+      !getAuthToken(loadSettings())
+    )
+      return;
+    const agent = createAgent();
+    agentRef.current = agent;
+    void agent.warmCache();
+  }, [createAgent]);
+
+  // Retire the active agent so the next message starts a fresh one. Any
+  // in-flight turn is aborted; because the agent is detached first, the
+  // events it emits while unwinding ("Interrupted.", turn-end) are dropped
+  // by `createAgent`'s stale check, so the streaming UI is reset here.
+  const discardAgent = useCallback(() => {
+    const agent = agentRef.current;
+    agentRef.current = null;
+    agent?.abort();
+    textBufferRef.current = "";
+    reasoningBufferRef.current = "";
+    setStreamingText("");
+    setStreamingReasoning("");
+    setBusy(false);
+  }, []);
 
   // Force-send: jump a queued message to the front of the queue, then skip
   // the wait for the in-flight turn. Aborting makes the agent's `finally`
@@ -901,9 +990,10 @@ export function App({
     [busy, drainQueue, getAgent, pushRow],
   );
 
-  const handleResume = useCallback(
+  const resumeSession = useCallback(
     (session: SessionData) => {
       setResumableSessions(null);
+      setPendingResume(null);
       // A session from another directory continues in that directory, so its
       // tools, AGENTS.md, project settings, hooks and MCP servers match the
       // conversation.
@@ -938,6 +1028,8 @@ export function App({
         const pendingHooks = getPendingProjectHooks(process.cwd());
         if (pendingHooks) setPendingHookTrust(pendingHooks);
       }
+      clearQueue();
+      discardAgent();
       const resumedAgent = createAgent(session);
       agentRef.current = resumedAgent;
       process.env.ORBCODE_LAST_SESSION_ID = resumedAgent.taskId;
@@ -972,7 +1064,97 @@ export function App({
         text: `Resumed session: ${session.title || session.id}${switchedDir ? ` · working directory is now ${session.cwd}` : ""}`,
       });
     },
-    [createAgent, pushRow, resetTranscript],
+    [createAgent, clearQueue, discardAgent, pushRow, resetTranscript],
+  );
+
+  // Resume, but first confirm when the session's prompt cache has expired and
+  // re-reading its context would take a noticeable bite out of the plan.
+  // Plan-share estimates by model + context size. The backend knows the plan
+  // limits (the profile API only exposes percentages), so each answer costs a
+  // round trip; /resume prefetches them while the picker is open.
+  const shareCacheRef = useRef(
+    new Map<string, Promise<UsageEstimate | undefined>>(),
+  );
+  const fetchResumeShare = useCallback(
+    (model: AxonModel, tokens: number): Promise<UsageEstimate | undefined> => {
+      const token = getAuthToken(loadSettings());
+      if (!token || !billsPlan(model)) return Promise.resolve(undefined);
+      const key = `${model.id}:${tokens}`;
+      let pending = shareCacheRef.current.get(key);
+      if (!pending) {
+        pending = fetchUsageEstimate(token, getGatewayModelId(model), tokens).catch(
+          () => {
+            // Let a later resume retry instead of caching the failure.
+            shareCacheRef.current.delete(key);
+            return undefined;
+          },
+        );
+        shareCacheRef.current.set(key, pending);
+      }
+      return pending;
+    },
+    [],
+  );
+
+  // Start estimates for the cold sessions a /resume picker lists.
+  const prefetchResumeShares = useCallback(
+    (sessions: SessionData[]) => {
+      const model = getModel(loadSettings().model);
+      for (const session of sessions.slice(0, 10)) {
+        const cold = estimateResumeCost(session, model);
+        if (cold) void fetchResumeShare(model, cold.contextTokens);
+      }
+    },
+    [fetchResumeShare],
+  );
+
+  const handleResume = useCallback(
+    async (session: SessionData) => {
+      const model = getModel(loadSettings().model);
+      const cold = estimateResumeCost(session, model);
+      if (!cold) {
+        resumeSession(session);
+        return;
+      }
+      setResumableSessions(null);
+      const plan = usage?.plan ?? usage?.tieredUsage?.plan;
+      const sharePromise = fetchResumeShare(model, cold.contextTokens);
+      if (shouldConfirmResume(cold)) {
+        // Large enough to ask regardless of cost: show the prompt now and
+        // fill in the plan share when it arrives.
+        setPendingResume({
+          session,
+          estimate: cold,
+          estimating: !!getAuthToken(loadSettings()) && billsPlan(model),
+        });
+        const share = await sharePromise;
+        setPendingResume((pending) =>
+          pending?.session.id === session.id
+            ? {
+                session,
+                estimate:
+                  estimateResumeCost(session, model, share, plan) ??
+                  pending.estimate,
+              }
+            : pending,
+        );
+        return;
+      }
+      // Smaller contexts only ask when the share is significant. The answer
+      // is usually already in from the picker's prefetch.
+      const estimate = estimateResumeCost(
+        session,
+        model,
+        await sharePromise,
+        plan,
+      );
+      if (shouldConfirmResume(estimate)) {
+        setPendingResume({ session, estimate });
+        return;
+      }
+      resumeSession(session);
+    },
+    [fetchResumeShare, resumeSession, usage],
   );
 
   // `quiet`: opened by double-Esc, which also interrupts a running turn — stay
@@ -1070,8 +1252,15 @@ export function App({
   );
 
   const switchModel = useCallback(
-    /** `auto`: an automatic switch (plan default / plan fallback), not a user pick. */
-    (modelId: string, options?: { silent?: boolean; auto?: boolean }) => {
+    /**
+     * `auto`: an automatic switch (plan default / plan fallback), not a user pick.
+     * `effort`: saved for this model in config.json, so every chat on the
+     * machine uses it until it's changed again.
+     */
+    (
+      modelId: string,
+      options?: { silent?: boolean; auto?: boolean; effort?: GatewayEffort },
+    ) => {
       if (isLumenAxonModel(modelId) && !hasLumenAccess) {
         pushRow({
           kind: "error",
@@ -1100,25 +1289,35 @@ export function App({
         });
         return;
       }
-      const updated = { ...loadSettings(), model: modelId, modelExplicit: !options?.auto };
+      const previous = loadSettings();
+      const updated = {
+        ...previous,
+        model: modelId,
+        modelExplicit: !options?.auto,
+        modelEfforts: options?.effort
+          ? { ...previous.modelEfforts, [modelId]: options.effort }
+          : previous.modelEfforts,
+      };
+      // A saved pick replaces any "this session only" override for the model.
+      if (options?.effort) setSessionModelEffort(modelId, undefined);
       setSettings(updated);
       saveSettings(updated);
+      const sameModel = previous.model === modelId;
       agentRef.current?.setModel(modelId);
-      setRows((prev) => {
-        const headerIndex = prev.findIndex((row) => row.kind === "header");
-        if (headerIndex === -1) return prev;
-        const updatedHeader = {
-          ...prev[headerIndex]!,
-          modelName: getModel(modelId).name,
-        };
-        const next = [...prev];
-        next[headerIndex] = updatedHeader;
-        return next;
-      });
+      // Re-prime for the new model if the conversation hasn't started yet
+      // (warmCache is a no-op once it has).
+      if (CACHE_WARMUP_ENABLED && !sameModel) void agentRef.current?.warmCache();
+      setRows((prev) => withHeaderModel(prev, modelId));
       if (!options?.silent) {
+        const model = getModel(modelId);
+        const effort = getModelEffort(updated, model);
+        const effortText = effort ? `${effort[0].toUpperCase()}${effort.slice(1)} effort` : "";
         pushRow({
           kind: "info",
-          text: `Model switched to ${getModel(modelId).name}`,
+          text:
+            sameModel && effort
+              ? `${model.name} · ${effortText}`
+              : `Model switched to ${model.name}${effort ? ` · ${effortText}` : ""}`,
         });
       }
     },
@@ -1131,10 +1330,26 @@ export function App({
   // an explicit user pick is never overwritten.
   useEffect(() => {
     if (!catalogReady || !planLoaded) return;
-    if (settings.modelExplicit || settings.model !== DEFAULT_MODEL_ID) return;
+    // Decide from disk, not state: before the catalog loaded, a saved
+    // catalog-only model reads as unknown and the state falls back to the
+    // default, which must not be mistaken for "never chose a model".
+    const saved = loadSettings();
+    if (saved.modelExplicit || saved.model !== DEFAULT_MODEL_ID) return;
     const preferred = getDefaultModelId(activePlan);
-    if (preferred !== settings.model) switchModel(preferred, { silent: true, auto: true });
-  }, [activePlan, catalogReady, planLoaded, settings.model, settings.modelExplicit, switchModel]);
+    if (preferred !== saved.model) switchModel(preferred, { silent: true, auto: true });
+  }, [activePlan, catalogReady, planLoaded, switchModel]);
+
+  // Once the live catalog is in, restore the saved model if startup had to
+  // fall back (no models-cache.json yet, e.g. the first run of this version).
+  useEffect(() => {
+    if (!catalogReady) return;
+    const saved = loadSettings();
+    if (saved.model !== settings.model) {
+      switchModel(saved.model, { silent: true, auto: !saved.modelExplicit });
+    }
+    // Only on catalog load; later model changes go through switchModel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogReady]);
 
   useEffect(() => {
     if (!activePlan) {
@@ -1183,8 +1398,10 @@ export function App({
   const endAndExit = useCallback(
     (reason: string) => {
       const agent = agentRef.current;
-      if (!agent) {
-        // No agent yet, but the MCP manager may have started; tear it down.
+      if (!agent || !agent.hasSession) {
+        // No conversation yet (at most a prepared agent warming the cache),
+        // but the MCP manager may have started; tear it down.
+        agent?.abort();
         void mcpManagerRef.current?.stop().catch(() => {});
         exit();
         return;
@@ -1223,6 +1440,31 @@ export function App({
             ).join("\n"),
           });
           break;
+        case "/effort": {
+          const model = getModel(settings.model);
+          const levels = getModelEffortLevels(model);
+          if (levels.length === 0) {
+            pushRow({
+              kind: "info",
+              text: `${model.name} doesn't have an effort setting.`,
+            });
+            break;
+          }
+          const requested = arg.trim().toLowerCase();
+          if (!requested) {
+            setEffortPickerOpen(true);
+            break;
+          }
+          if (!isGatewayEffort(requested) || !levels.includes(requested)) {
+            pushRow({
+              kind: "error",
+              text: `Unknown effort "${arg.trim()}". Use one of: ${levels.join(", ")}.`,
+            });
+            break;
+          }
+          switchModel(model.id, { effort: requested });
+          break;
+        }
         case "/model": {
           // The interactive picker is restricted to Axon's own models for now.
           // Third-party providers (Anthropic, OpenAI-compatible) are still
@@ -1283,15 +1525,17 @@ export function App({
           resetTranscript();
           break;
         case "/new":
-          // Drop the agent entirely so the next message starts a fresh session.
+          // Drop the agent entirely; the next message goes to a fresh session
+          // whose agent is created (and its cache warmed) right away.
           clearQueue();
-          agentRef.current = null;
+          discardAgent();
           titleTaskRef.current = null;
           setSessionTitle("");
           setTerminalTitle("orbcode");
           setTasks("");
           setContextTokens(0);
           resetTranscript();
+          prepareFreshAgent();
           break;
         case "/analytics": {
           const url = `${APP_URL}/orbital`;
@@ -1308,6 +1552,7 @@ export function App({
             break;
           }
           setResumableSessions({ here, everywhere });
+          prefetchResumeShares(everywhere);
           break;
         }
         case "/rewind":
@@ -1517,7 +1762,7 @@ export function App({
           const updated = { ...settings, token: undefined };
           setSettings(updated);
           saveSettings(updated);
-          agentRef.current = null;
+          discardAgent();
           setView("login");
           break;
         }
@@ -1545,7 +1790,10 @@ export function App({
       switchTheme,
       resetTranscript,
       clearQueue,
+      discardAgent,
+      prepareFreshAgent,
       openRewind,
+      prefetchResumeShares,
     ],
   );
 
@@ -1661,7 +1909,7 @@ export function App({
     if (oldManager) {
       await oldManager.stop().catch(() => {});
     }
-    agentRef.current = null;
+    discardAgent();
     const refreshed = loadSettings();
     setSettings(refreshed);
     if (getAuthToken(refreshed)) {
@@ -1676,7 +1924,7 @@ export function App({
         if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp);
       });
     }
-  }, []);
+  }, [discardAgent]);
 
   // Apply a user-confirmed migration selection: write the chosen entries to
   // ~/.orbcode/settings.json, then rebuild the MCP manager so the new
@@ -1744,12 +1992,38 @@ export function App({
     [pushRow, rebuildMcpManager],
   );
 
+  const handleResumeDecision = useCallback(
+    (decision: ResumeDecision) => {
+      const session = pendingResume?.session;
+      setPendingResume(null);
+      if (!session) return;
+      if (decision === "resume") {
+        resumeSession(session);
+        return;
+      }
+      handleCommand("/new");
+      pushRow({
+        kind: "info",
+        text:
+          session.cwd === process.cwd()
+            ? `Started a new conversation. Use /task to bring in "${session.title || session.id}" if you need it.`
+            : `Started a new conversation. "${session.title || session.id}" is still available from /resume.`,
+      });
+    },
+    [pendingResume, resumeSession, handleCommand, pushRow],
+  );
+
   // Apply --resume and an initial prompt (`orbcode "do something"`) on startup.
   const bootedRef = useRef(false);
   useEffect(() => {
     if (bootedRef.current) return;
     bootedRef.current = true;
-    if (initialSession) handleResume(initialSession);
+    // A prompt given alongside --resume <id> is meant for that session, so
+    // don't stop to confirm a cold resume first.
+    if (initialSession) {
+      if (initialPrompt) resumeSession(initialSession);
+      else void handleResume(initialSession);
+    }
     if (initialAction === "resume") handleCommand("/resume");
     // If this project ships untrusted hooks, ask before running anything; the
     // startup prompt waits until the user decides.
@@ -1776,14 +2050,22 @@ export function App({
         if (pendingMcp.length > 0) setPendingMcpApproval(pendingMcp);
       });
     }
+    // A plain launch waits for the user's first message: warm the prompt
+    // cache meanwhile. (An initial prompt is sent right away, and a resumed
+    // session's prefix is its whole history, so neither is warmed.)
+    if (!initialSession && !initialPrompt && initialAction !== "resume") {
+      prepareFreshAgent();
+    }
     refreshUsage();
   }, [
     initialSession,
     initialAction,
     initialPrompt,
+    resumeSession,
     handleResume,
     handleCommand,
     handleSubmit,
+    prepareFreshAgent,
     refreshUsage,
   ]);
 
@@ -1906,9 +2188,12 @@ export function App({
       const updated = { ...loadSettings(), token };
       setSettings(updated);
       saveSettings(updated);
-      agentRef.current = null;
+      discardAgent();
       setView("chat");
-      fetchDynamicModels(token).catch(() => {});
+      // Warm once the catalog is in, so the warmup resolves the right model.
+      fetchDynamicModels(token)
+        .catch(() => {})
+        .finally(prepareFreshAgent);
       setUsage({
         plan: profile.plan,
         usagePercentage: profile.usagePercentage,
@@ -1920,7 +2205,7 @@ export function App({
         text: `Signed in${who ? ` as ${who}` : ""}. Ready when you are.`,
       });
     },
-    [pushRow],
+    [discardAgent, prepareFreshAgent, pushRow],
   );
 
   const taskLines = useMemo(
@@ -1940,9 +2225,11 @@ export function App({
     !pendingMcpApproval &&
     !modelPickerOpen &&
     !themePickerOpen &&
+    !effortPickerOpen &&
     !mcpPickerOpen &&
     !mcpMigrationEntries &&
     !resumableSessions &&
+    !pendingResume &&
     !rewindPoints &&
     !taskPickerSessions &&
     !linkManagerOpen &&
@@ -1952,9 +2239,11 @@ export function App({
     !!pendingFollowup ||
     modelPickerOpen ||
     themePickerOpen ||
+    effortPickerOpen ||
     mcpPickerOpen ||
     !!mcpMigrationEntries ||
     !!resumableSessions ||
+    !!pendingResume ||
     !!rewindPoints ||
     !!taskPickerSessions ||
     linkManagerOpen ||
@@ -2003,7 +2292,11 @@ export function App({
   const rowsHeight = rowLayout.height;
 
   let dynamicHeight = 0;
-  if (updateInfo?.updateAvailable && updateInfo.latest) dynamicHeight += 6;
+  if (
+    updateInfo?.stagedVersion ||
+    (updateInfo?.updateAvailable && updateInfo.latest)
+  )
+    dynamicHeight += 6;
   const reasoningWrapWidth = Math.max(20, wrapWidth - 2);
   const streamingReasoningDisplay = streamingReasoning
     ? tailForHeight(streamingReasoning, 3, reasoningWrapWidth)
@@ -2203,7 +2496,26 @@ export function App({
               {rowBottomSpacerHeight > 0 && (
                 <Box height={rowBottomSpacerHeight} flexShrink={0} />
               )}
-              {updateInfo?.updateAvailable && updateInfo.latest && (
+              {updateInfo?.stagedVersion && (
+                <Box
+                  marginTop={1}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={COLORS.success}
+                  paddingX={2}
+                  alignSelf="flex-start"
+                >
+                  <Text color={COLORS.success} bold>
+                    ✓ Update installed: v{updateInfo.stagedVersion}
+                  </Text>
+                  <Text>
+                    Restart <Text color={COLORS.accent}>orbcode</Text> to apply.
+                  </Text>
+                </Box>
+              )}
+              {!updateInfo?.stagedVersion &&
+                updateInfo?.updateAvailable &&
+                updateInfo.latest && (
                 <Box
                   marginTop={1}
                   flexDirection="column"
@@ -2325,6 +2637,10 @@ export function App({
             />
             <StatusBar
               modelId={settings.model}
+              effort={getModelEffort(
+                { modelEfforts: withSessionModelEfforts(settings.modelEfforts) },
+                getModel(settings.model),
+              )}
               contextTokens={contextTokens}
               totalCost={totalCost}
               state={busy ? busyLabel : ""}
@@ -2383,11 +2699,40 @@ export function App({
                 canUseEidoBase={hasEidoBaseAccess}
                 canUseEidoPro={hasEidoProAccess}
                 canUseLumen={hasLumenAccess}
-                onSelect={(modelId) => {
+                modelEfforts={withSessionModelEfforts(settings.modelEfforts)}
+                onSelect={(modelId, effort) => {
                   setModelPickerOpen(false);
-                  switchModel(modelId);
+                  switchModel(modelId, { effort });
                 }}
                 onCancel={() => setModelPickerOpen(false)}
+              />
+            )}
+            {effortPickerOpen && (
+              <EffortPicker
+                modelName={getModel(settings.model).name}
+                levels={getModelEffortLevels(getModel(settings.model))}
+                current={
+                  getModelEffort(
+                    { modelEfforts: withSessionModelEfforts(settings.modelEfforts) },
+                    getModel(settings.model),
+                  ) ?? "medium"
+                }
+                onSelect={(effort, scope) => {
+                  setEffortPickerOpen(false);
+                  if (scope === "saved") {
+                    switchModel(settings.model, { effort });
+                    return;
+                  }
+                  setSessionModelEffort(settings.model, effort);
+                  // Re-render so the status bar shows the override.
+                  setSettings((current) => ({ ...current }));
+                  setRows((prev) => withHeaderModel(prev, settings.model));
+                  pushRow({
+                    kind: "info",
+                    text: `${getModel(settings.model).name} · ${effort[0].toUpperCase()}${effort.slice(1)} effort (this session only)`,
+                  });
+                }}
+                onCancel={() => setEffortPickerOpen(false)}
               />
             )}
             {themePickerOpen && (
@@ -2408,6 +2753,14 @@ export function App({
                 cwd={process.cwd()}
                 onSelect={handleResume}
                 onCancel={() => setResumableSessions(null)}
+              />
+            )}
+            {pendingResume && (
+              <ResumeConfirm
+                estimate={pendingResume.estimate}
+                estimating={pendingResume.estimating}
+                onDecision={handleResumeDecision}
+                onCancel={() => setPendingResume(null)}
               />
             )}
             {rewindPoints && (

@@ -5,11 +5,14 @@ import {
   DEFAULT_HEADERS,
   getClientMetadataHeaders,
   X_AXONCODE_TASKID,
+  X_AXONCODE_WARMUP,
   X_AXON_REPO,
   X_ORGANIZATIONID,
+  X_REASONING_EFFORT,
 } from "./headers.js";
 import { stripReasoningDetails, type LLMClient } from "./llmClient.js";
 import { getGatewayModelId, getModel } from "./models.js";
+import { getModelEffort, loadModelEfforts } from "../config/settings.js";
 import type { ApiStreamChunk } from "./stream.js";
 
 interface CompletionUsage {
@@ -62,17 +65,21 @@ export class AxonClient implements LLMClient {
     if (this.options.organizationId)
       headers[X_ORGANIZATIONID] = this.options.organizationId;
     if (this.options.repo) headers[X_AXON_REPO] = this.options.repo;
+    // Read per request (not per session): an effort picked in any chat on
+    // this machine applies to every other chat's next turn.
+    const effort = getModelEffort(loadModelEfforts(), model);
+    if (effort) headers[X_REASONING_EFFORT] = effort;
     return headers;
   }
 
-  async *createMessage(
+  /** Shared by createMessage and warmup: the prompt cache only hits when the
+   *  model, system prompt and tools are identical between the two. */
+  private buildRequest(
+    model: ReturnType<typeof getModel>,
     systemPrompt: string,
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
     tools: OpenAI.Chat.ChatCompletionTool[],
-    abortSignal?: AbortSignal,
-  ): AsyncGenerator<ApiStreamChunk> {
-    const model = getModel(this.options.modelId);
-
+  ): OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming {
     const requestOptions: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
       {
         model: getGatewayModelId(model),
@@ -90,6 +97,45 @@ export class AxonClient implements LLMClient {
       requestOptions.tool_choice = "auto";
       requestOptions.parallel_tool_calls = true;
     }
+    return requestOptions;
+  }
+
+  async warmup(
+    systemPrompt: string,
+    tools: OpenAI.Chat.ChatCompletionTool[],
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
+    const model = getModel(this.options.modelId);
+    const requestOptions = this.buildRequest(
+      model,
+      systemPrompt,
+      [{ role: "user", content: "Hi" }],
+      tools,
+    );
+    requestOptions.max_tokens = 1;
+    const stream = await this.client.chat.completions.create(requestOptions, {
+      headers: { ...this.requestHeaders(model), [X_AXONCODE_WARMUP]: "1" },
+      signal: abortSignal,
+    });
+    // Drain so the gateway sees a completed request (and bills/logs it).
+    for await (const _chunk of stream) {
+      // discard
+    }
+  }
+
+  async *createMessage(
+    systemPrompt: string,
+    messages: OpenAI.Chat.ChatCompletionMessageParam[],
+    tools: OpenAI.Chat.ChatCompletionTool[],
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<ApiStreamChunk> {
+    const model = getModel(this.options.modelId);
+    const requestOptions = this.buildRequest(
+      model,
+      systemPrompt,
+      messages,
+      tools,
+    );
 
     const stream = await this.client.chat.completions.create(requestOptions, {
       headers: this.requestHeaders(model),

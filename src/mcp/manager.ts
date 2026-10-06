@@ -26,6 +26,8 @@ export class McpManager {
 	/** project-scope server names that require user approval before connecting. */
 	private pendingApproval: Set<string> = new Set()
 	private started = false
+	/** the initial connection pass from start(), for whenStarted() */
+	private startup: Promise<unknown> = Promise.resolve()
 
 	constructor(cwd: string, disabled: string[], enabled: string[]) {
 		this.cwd = cwd
@@ -37,6 +39,18 @@ export class McpManager {
 	async start(): Promise<McpSnapshot> {
 		if (this.started) return this.snapshot()
 		this.started = true
+		const startup = this.connectAll()
+		this.startup = startup
+		return startup
+	}
+
+	/** Settles once the connection pass begun by start() has finished, so the
+	 *  tool list is final (immediately when start() was never called). */
+	async whenStarted(): Promise<void> {
+		await this.startup.catch(() => {})
+	}
+
+	private async connectAll(): Promise<McpSnapshot> {
 		const { servers } = loadMcpConfig(this.cwd)
 		this.configs.clear()
 		this.states.clear()
