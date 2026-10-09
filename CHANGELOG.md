@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Remove queued messages.** The queue panel now shows a clickable `[remove]` action beside each queued message, letting you drop a message you no longer want to send without waiting for it to be drained.
+
 ## [6.9.7] - 2026-10-06
 
 ### Added

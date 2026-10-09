@@ -637,6 +637,16 @@ export function App({
     setQueuedMessages([]);
   }, []);
 
+  const removeQueued = useCallback((index: number) => {
+    const queue = queueRef.current;
+    const clamped = Math.min(Math.max(index, 0), queue.length - 1);
+    queueRef.current = [
+      ...queue.slice(0, clamped),
+      ...queue.slice(clamped + 1),
+    ];
+    setQueuedMessages(queueRef.current);
+  }, []);
+
   const scrollTranscriptBy = useCallback((lines: number) => {
     setScrollOffset((current) => Math.max(0, current + lines));
   }, []);
@@ -2623,6 +2633,7 @@ export function App({
                 messages={queuedMessages}
                 width={wrapWidth}
                 onForceSend={forceSendQueued}
+                onRemove={removeQueued}
               />
             )}
             <InputBox

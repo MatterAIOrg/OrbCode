@@ -6,7 +6,8 @@ import type { SubmittedPrompt } from "../../attachments.js";
 /** Messages shown before the queue collapses into a "… N more" line. */
 const MAX_VISIBLE = 5;
 const QUEUE_PREVIEW_LIMIT = 80;
-const ACTION_TAG = "[send now]";
+const SEND_TAG = "[send now]";
+const REMOVE_TAG = "[remove]";
 
 function fit(text: string, maxWidth: number): string {
   if (text.length <= maxWidth) return text;
@@ -30,6 +31,8 @@ export interface QueuedMessagesProps {
   width: number;
   /** Force-send the message at `index` (0 = next in line) without waiting. */
   onForceSend: (index: number) => void;
+  /** Remove the message at `index` from the queue. */
+  onRemove: (index: number) => void;
 }
 
 /** Messages typed while the agent is streaming, each with an action to
@@ -38,13 +41,14 @@ export function QueuedMessages({
   messages,
   width,
   onForceSend,
+  onRemove,
 }: QueuedMessagesProps) {
   const [hovered, setHovered] = useState<number | null>(null);
   const header = fit(
     `Queue (${messages.length}) · ${width < 56 ? "ctrl+s" : "ctrl+s sends the next one now"}`,
     width,
   );
-  const textWidth = Math.max(8, width - 6 - ACTION_TAG.length);
+  const textWidth = Math.max(8, width - 6 - SEND_TAG.length - REMOVE_TAG.length - 1);
 
   return (
     <Box flexDirection="column" paddingLeft={1} marginBottom={1}>
@@ -71,7 +75,22 @@ export function QueuedMessages({
                 if (hovered !== index) setHovered(index);
               }}
             >
-              {` ${ACTION_TAG}`}
+              {` ${SEND_TAG}`}
+            </Text>
+            <Text
+              color={isHovered ? COLORS.accent : COLORS.primary}
+              bold={isHovered}
+              selectable={false}
+              onMouseDown={(event) => {
+                event.stopPropagation?.();
+                onRemove(index);
+              }}
+              onMouseMove={(event) => {
+                event.stopPropagation?.();
+                if (hovered !== index) setHovered(index);
+              }}
+            >
+              {` ${REMOVE_TAG}`}
             </Text>
           </Box>
         );
