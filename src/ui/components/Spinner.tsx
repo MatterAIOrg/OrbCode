@@ -32,9 +32,35 @@ function pickTip(): string {
 	return TIPS[Math.floor(Math.random() * TIPS.length)] ?? TIPS[0]
 }
 
-export function Spinner({ label, showTip = false }: { label: string; showTip?: boolean }) {
+/** "45s", "2m 13s", "1h 4m" */
+export function formatElapsed(ms: number): string {
+	const seconds = Math.max(0, Math.floor(ms / 1000))
+	if (seconds < 60) return `${seconds}s`
+	const minutes = Math.floor(seconds / 60)
+	if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+/** "840", "4.2k", "1.3M" */
+export function formatTokenCount(tokens: number): string {
+	if (tokens < 1000) return String(Math.round(tokens))
+	if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}k`
+	return `${(tokens / 1_000_000).toFixed(1)}M`
+}
+
+interface SpinnerProps {
+	label: string
+	showTip?: boolean
+	/** Start of the whole turn, so the timer survives label changes. Defaults to mount time. */
+	startedAt?: number
+	/** Output tokens generated this turn; read on every frame so it counts up live. */
+	tokensRef?: { readonly current: number }
+}
+
+export function Spinner({ label, showTip = false, startedAt: turnStartedAt, tokensRef }: SpinnerProps) {
 	const [frame, setFrame] = useState(0)
-	const [startedAt] = useState(Date.now())
+	const [mountedAt] = useState(Date.now())
+	const startedAt = turnStartedAt ?? mountedAt
 	const [tip] = useState(pickTip)
 	const [tipVisible, setTipVisible] = useState(false)
 	const [, setTick] = useState(0)
@@ -57,12 +83,15 @@ export function Spinner({ label, showTip = false }: { label: string; showTip?: b
 		return () => clearTimeout(timer)
 	}, [showTip])
 
-	const seconds = Math.floor((Date.now() - startedAt) / 1000)
+	const tokens = tokensRef?.current ?? 0
 	return (
 		<Box flexDirection="column">
 			<Text color={COLORS.thinking}>
-				{FRAMES[frame]} {label}
-				<Text color={COLORS.dim}> ({seconds}s · esc to interrupt)</Text>
+				{FRAMES[frame]} {label}…
+				<Text color={COLORS.dim}>
+					{" "}({formatElapsed(Date.now() - startedAt)}
+					{tokens > 0 ? ` · ↓ ${formatTokenCount(tokens)} tokens` : ""} · esc to interrupt)
+				</Text>
 			</Text>
 			{tipVisible && <Text color={COLORS.info}>└── TIP: {tip}</Text>}
 		</Box>

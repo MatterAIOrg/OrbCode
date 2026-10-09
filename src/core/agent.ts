@@ -8,10 +8,22 @@ import {
 	attachmentSummary,
 	formatAttachmentContext,
 } from "../attachments.js"
-import { REASONING_DETAILS_FIELD, type LLMClient } from "../api/llmClient.js"
+import {
+	foldSystemMessages,
+	REASONING_CONTENT_FIELD,
+	REASONING_DETAILS_FIELD,
+	type LLMClient,
+} from "../api/llmClient.js"
 import { getModel } from "../api/models.js"
 import { createLLMClient } from "../api/provider.js"
-import { buildSystemPrompt } from "../prompts/system.js"
+import {
+	buildContextReminders,
+	buildEnvironmentMessage,
+	buildSystemPrompt,
+	isTokensLeftNote,
+	systemReminder,
+	tokensLeftNote,
+} from "../prompts/system.js"
 import {
 	describeToolCall,
 	disposeSearchFiles,
@@ -20,7 +32,6 @@ import {
 	getApprovalKind,
 	type ToolContext,
 } from "../tools/index.js"
-import { walkFiles } from "../tools/executors/listFiles.js"
 import { previewFileChange } from "../tools/executors/files.js"
 import { extractFigmaUrls, figmaFetch } from "../tools/executors/figma.js"
 import { stripSearchPageMetadataForDisplay } from "../tools/executors/searchFiles/format.js"
@@ -44,8 +55,8 @@ import {
 } from "./checkpoints.js"
 import { HookRunner, type HooksConfig } from "./hooks.js"
 import { McpManager } from "../mcp/manager.js"
-import { loadMemoryFiles } from "../memory/loader.js"
-import { loadSkills } from "../skills/loader.js"
+import { loadMemoryFiles, renderMemorySection } from "../memory/loader.js"
+import { loadSkills, renderSkillCatalog } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
 import { unifiedDiff } from "../utils/diff.js"
 import { parseToolCallArguments } from "../utils/jsonRepair.js"
@@ -95,17 +106,11 @@ const MAX_STREAM_RETRIES = 3
 const STALE_WRITE_TOLERANCE_MS = 2000
 
 // --- Context management -----------------------------------------------------
-/** Start stubbing stale tool results once context passes this fraction of the window. */
-const PRUNE_TRIGGER_FRACTION = 0.4
-/** The most recent tool results are always sent verbatim. */
+// History is append-only between compactions: rewriting an earlier message
+// changes the request prefix and throws away the provider's prompt cache from
+// that point on.
+/** A size-limited summary request still sends the most recent tool results verbatim. */
 const KEEP_RECENT_TOOL_RESULTS = 4
-/** The prune boundary only advances in batches this large, so the request prefix
- *  (and the gateway's prompt cache) stays stable between prunes. */
-const PRUNE_BATCH = 6
-/** Results shorter than this are not worth stubbing. */
-const PRUNE_MIN_CHARS = 1500
-/** Tools whose output is bulky and can simply be re-fetched. */
-const PRUNABLE_TOOLS = new Set(["read_file", "search_files", "list_files", "Bash", "execute_command", "web_fetch", "web_search"])
 /** Summarize the history before a step once context passes this fraction of the window. */
 const AUTO_COMPACT_FRACTION = 0.8
 /** Rough chars-per-token for content the gateway hasn't measured yet. */
@@ -293,21 +298,36 @@ function isParallelReadOnlyCall(toolCall: PendingToolCall): boolean {
 	}
 }
 
-function getGitSummary(cwd: string): string {
+function gitOutput(cwd: string, command: string): string | undefined {
 	try {
-		const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, stdio: ["ignore", "pipe", "ignore"] })
-			.toString()
-			.trim()
-		const status = execSync("git status --short", { cwd, stdio: ["ignore", "pipe", "ignore"] })
-			.toString()
-			.trimEnd()
-			.split("\n")
-			.slice(0, 20)
-			.join("\n")
-		return `## Git Repository Information\n- Current Branch: ${branch}\n${status ? `\n### Working Tree Changes\n${status}` : "- Working tree clean"}`
+		return execSync(command, { cwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trimEnd()
 	} catch {
-		return ""
+		return undefined
 	}
+}
+
+/** Git snapshot for the first message's context reminder; empty outside a repo. */
+function getGitSummary(cwd: string): string {
+	const branch = gitOutput(cwd, "git rev-parse --abbrev-ref HEAD")
+	if (branch === undefined) return ""
+	const mainBranch = gitOutput(cwd, "git symbolic-ref --short refs/remotes/origin/HEAD")?.replace(/^origin\//, "")
+	const user = gitOutput(cwd, "git config user.name")
+	const status = (gitOutput(cwd, "git status --short") ?? "").split("\n").filter(Boolean)
+	const commits = gitOutput(cwd, "git log --oneline -n 5")
+	return [
+		"# gitStatus",
+		"This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
+		"",
+		`Current branch: ${branch}`,
+		...(mainBranch ? ["", `Main branch (you will usually use this for PRs): ${mainBranch}`] : []),
+		...(user ? ["", `Git user: ${user}`] : []),
+		"",
+		"Status:",
+		status.length === 0
+			? "(clean)"
+			: status.slice(0, 20).join("\n") + (status.length > 20 ? `\n… (${status.length - 20} more)` : ""),
+		...(commits ? ["", "Recent commits:", commits] : []),
+	].join("\n")
 }
 
 /**
@@ -498,6 +518,10 @@ export class Agent {
 	private options: AgentOptions
 	private client: LLMClient
 	private systemPrompt: string
+	/** AGENTS.md instructions and skills catalog, sent as conversation context
+	 *  (not in the system prompt) so the system prompt stays cacheable. */
+	private memorySection = ""
+	private skillCatalog = ""
 	private messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
 	private transcript: SessionTranscriptEntry[] = []
 	private transcriptReasoning = ""
@@ -536,8 +560,6 @@ export class Agent {
 	private pendingStartContext = ""
 	/** guards Stop-hook forced continuation against infinite loops */
 	private stopHookActive = false
-	/** tool results at message indexes below this are sent as short stubs (see pruneStaleToolResults) */
-	private prunedBefore = 0
 	/** set after a failed auto-compaction so it isn't retried on every step of
 	 *  the same turn; cleared at the start of each turn and on any success */
 	private autoCompactFailed = false
@@ -603,15 +625,14 @@ export class Agent {
 		}
 		this.sessionApproveEdits = options.autoApproveEdits
 		this.mcp = options.mcp
-		// Build the system prompt with AGENTS.md memory files and the skills
-		// catalog injected, so the model sees project/user instructions and
-		// knows which skills it can invoke. An explicit override (from
-		// `orbcode -s <text>`) bypasses the default entirely.
-		const memoryFiles = options.systemPromptOverride ? [] : loadMemoryFiles(options.cwd)
-		const skills = options.systemPromptOverride ? new Map() : loadSkills(options.cwd)
-		this.systemPrompt = options.systemPromptOverride
-			? options.systemPromptOverride
-			: buildSystemPrompt(options.cwd, { memoryFiles, skills })
+		// AGENTS.md instructions and the skills catalog reach the model with the
+		// first message (see contextReminders / environmentMessage). An explicit
+		// override (from `orbcode -s <text>`) bypasses them and the default prompt.
+		if (!options.systemPromptOverride) {
+			this.memorySection = renderMemorySection(loadMemoryFiles(options.cwd))
+			this.skillCatalog = renderSkillCatalog(loadSkills(options.cwd))
+		}
+		this.systemPrompt = options.systemPromptOverride ?? buildSystemPrompt()
 		this.client =
 			options.client ??
 			createLLMClient({
@@ -721,7 +742,9 @@ export class Agent {
 			if (restored.length > 0) {
 				this.messages.push({
 					role: "user",
-					content: `System reminder: The user restored these files to an earlier state, so any edits you made to them since are gone:\n${restored.join("\n")}`,
+					content: systemReminder(
+						`The user restored these files to an earlier state, so any edits you made to them since are gone:\n${restored.join("\n")}`,
+					),
 				})
 			}
 			this.persist()
@@ -751,7 +774,6 @@ export class Agent {
 		this.measuredMessages = Math.min(this.measuredMessages, this.messages.length)
 		this.stopHookActive = false
 		this.autoCompactFailed = false
-		this.prunedBefore = Math.min(this.prunedBefore, this.messages.length)
 		this.repeatTracker.clear()
 		// Persist even when nothing is left, so the rewound turns don't come
 		// back on /resume.
@@ -862,7 +884,6 @@ export class Agent {
 		this.pendingStartContext = ""
 		this.sessionStarted = false
 		this.stopHookActive = false
-		this.prunedBefore = 0
 		this.autoCompactFailed = false
 		this.measuredMessages = 0
 		this.repeatTracker.clear()
@@ -938,84 +959,55 @@ export class Agent {
 		return this.sessionStarted || this.messages.length > 0
 	}
 
-	private buildEnvironmentDetails(): string {
-		const files = walkFiles(this.options.cwd, true, 200)
-		const git = getGitSummary(this.options.cwd)
-		const now = new Date()
-		const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
-		const timeZoneOffset = -now.getTimezoneOffset() / 60
-		const timeZoneOffsetHours = Math.floor(Math.abs(timeZoneOffset))
-		const timeZoneOffsetMinutes = Math.abs(Math.round((Math.abs(timeZoneOffset) - timeZoneOffsetHours) * 60))
-		const timeZoneOffsetStr = `${timeZoneOffset >= 0 ? "+" : "-"}${timeZoneOffsetHours}:${timeZoneOffsetMinutes.toString().padStart(2, "0")}`
-		const linkedRepos = renderLinkedReposSection(this.options.cwd)
-		return `# Environment Details
-
-## Current Workspace Directory (${this.options.cwd}) Files
-${files.join("\n") || "(empty directory)"}
-${files.length >= 200 ? "\n(File list truncated.)" : ""}
-
-${git}
-${linkedRepos ? `\n${linkedRepos}` : ""}
-## Current Time
-Current time in ISO 8601 UTC format: ${now.toISOString()}
-User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
+	/** <system-reminder> blocks that open the first user message. */
+	private contextReminders(): string {
+		return buildContextReminders(this.memorySection, getGitSummary(this.options.cwd))
 	}
 
-	/** Conversation history with internal markers stripped, ready for the model. */
-	private outgoingMessages(): OpenAI.Chat.ChatCompletionMessageParam[] {
-		const toolNames = new Map<string, string>()
-		if (this.prunedBefore > 0) {
-			for (const message of this.messages) {
-				if (message.role !== "assistant") continue
-				for (const call of message.tool_calls ?? []) {
-					if (call.type === "function") toolNames.set(call.id, call.function.name)
-				}
-			}
+	/** System message that follows the first user message. */
+	private environmentMessage(): OpenAI.Chat.ChatCompletionSystemMessageParam {
+		return {
+			role: "system",
+			content: buildEnvironmentMessage({
+				cwd: this.options.cwd,
+				isGitRepo: gitOutput(this.options.cwd, "git rev-parse --is-inside-work-tree") === "true",
+				modelName: getModel(this.options.modelId).name,
+				skillCatalog: this.skillCatalog,
+				linkedRepos: renderLinkedReposSection(this.options.cwd),
+			}),
 		}
-		return this.messages.map((message, index) => {
-			if (message.role === "tool" && index < this.prunedBefore) {
-				const name = toolNames.get(message.tool_call_id) ?? ""
-				const text = contentToText(message.content)
-				if (PRUNABLE_TOOLS.has(name) && text.length >= PRUNE_MIN_CHARS) {
-					const lines = text.split("\n").length
-					return {
-						...message,
-						content: `[Earlier ${name} result (${lines} lines) removed to save context. Re-run the call if you still need it.]`,
-					}
-				}
-				return message
-			}
-			return message.role === "user"
-				? {
-						...message,
-						content:
-							typeof message.content === "string"
-								? stripUserQueryTags(message.content)
-								: message.content.map((part) =>
-										part.type === "text" ? { ...part, text: stripUserQueryTags(part.text) } : part,
-									),
-					}
-				: message
-		})
+	}
+
+	/** System message reporting the context window left, sent after each user message and tool round. */
+	private tokensLeftMessage(): OpenAI.Chat.ChatCompletionSystemMessageParam {
+		const window = getModel(this.options.modelId).contextWindow
+		return { role: "system", content: tokensLeftNote(window - this.estimatedContextTokens()) }
 	}
 
 	/**
-	 * Once context is large, stop resending old bulky tool results verbatim. The
-	 * stored history is untouched (sessions keep everything); only the outgoing
-	 * copy is stubbed. The boundary only advances in batches so the request prefix
-	 * stays identical between advances and the gateway's prompt cache keeps hitting.
+	 * Conversation history with internal markers stripped, ready for the model.
+	 * The environment stays a system message after the first user message; the
+	 * per-step <total_tokens> notes are folded into the message before them,
+	 * since a gateway that hoists system messages into the leading prompt would
+	 * otherwise rewrite the start of every request.
 	 */
-	private pruneStaleToolResults(): void {
-		const window = getModel(this.options.modelId).contextWindow
-		if (this.contextTokens < window * PRUNE_TRIGGER_FRACTION) return
-		const toolIndexes: number[] = []
-		this.messages.forEach((message, index) => {
-			if (message.role === "tool") toolIndexes.push(index)
-		})
-		if (toolIndexes.length <= KEEP_RECENT_TOOL_RESULTS) return
-		const boundary = toolIndexes[toolIndexes.length - KEEP_RECENT_TOOL_RESULTS]
-		const newlyStale = toolIndexes.filter((index) => index >= this.prunedBefore && index < boundary).length
-		if (newlyStale >= PRUNE_BATCH) this.prunedBefore = boundary
+	private outgoingMessages(): OpenAI.Chat.ChatCompletionMessageParam[] {
+		return foldSystemMessages(
+			this.messages.map((message) =>
+				message.role === "user"
+					? {
+							...message,
+							content:
+								typeof message.content === "string"
+									? stripUserQueryTags(message.content)
+									: message.content.map((part) =>
+											part.type === "text" ? { ...part, text: stripUserQueryTags(part.text) } : part,
+										),
+						}
+					: message,
+			),
+			isTokensLeftNote,
+		)
 	}
 
 	/** Note appended to a tool result when the model keeps repeating the same call. */
@@ -1109,8 +1101,10 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				.map((attachment) => `<attached_image name="${attachment.name.replace(/[\r\n"]/g, " ")}" />`)
 				.join("\n")}\n</attached_images>`
 		}
-		if (!this.firstMessageSent) {
-			userContent = `${this.buildEnvironmentDetails()}\n\n${userContent}`
+		const isFirstMessage = !this.firstMessageSent
+		if (isFirstMessage) {
+			const reminders = this.contextReminders()
+			if (reminders) userContent = `${reminders}\n\n${userContent}`
 			this.firstMessageSent = true
 		}
 		// SessionStart context sits above the prompt; UserPromptSubmit context
@@ -1142,6 +1136,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 						]
 					: userContent,
 		})
+		this.messages.push(isFirstMessage ? this.environmentMessage() : this.tokensLeftMessage())
 		// Persist immediately so a hard kill before the first model response
 		// still leaves the user's prompt on disk.
 		this.persist()
@@ -1224,7 +1219,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				// Keep the conversation consistent: note the interruption for the model.
 				this.messages.push({
 					role: "user",
-					content: "System reminder: The user interrupted this response before it finished.",
+					content: systemReminder("The user interrupted this response before it finished."),
 				})
 		} else {
 			onEvent({ type: "error", message: sanitizeErrorMessage(error) })
@@ -1258,7 +1253,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		if (result.blocked && !this.stopHookActive) {
 			this.stopHookActive = true
 			const reason = result.blockReason || "A Stop hook asked you to keep going."
-			this.messages.push({ role: "user", content: `System reminder (Stop hook): ${reason}` })
+			this.messages.push({ role: "user", content: systemReminder(`Stop hook: ${reason}`) })
 			return true
 		}
 		return false
@@ -1493,27 +1488,34 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 	 * verbatim after it, so the new request isn't lost in the summary.
 	 */
 	private replaceHistoryWithSummary(summary: string, continueWork: boolean): void {
-		const last = this.messages[this.messages.length - 1]
+		// The unanswered user message, if any, is the last one apart from
+		// trailing harness system messages (which are regenerated below).
+		let lastIndex = this.messages.length - 1
+		while (lastIndex >= 0 && this.messages[lastIndex]?.role === "system") lastIndex--
+		const last = this.messages[lastIndex]
 		const pending = continueWork && last?.role === "user" ? last : undefined
+		const reminders = this.contextReminders()
 		this.messages = [
 			{
 				role: "user",
 				content:
+					(reminders ? `${reminders}\n\n` : "") +
 					`# Conversation Summary\n\nThe conversation history was compacted. Summary of everything so far:\n\n${summary}` +
 					(continueWork
 						? "\n\nContinue the work described above from where it left off. Do not restart or repeat steps that are already done."
 						: ""),
 			},
+			this.environmentMessage(),
 			...(pending ? [pending] : []),
 		]
 		// The summary is small; the next usage report replaces this estimate.
 		this.contextTokens = this.messages.reduce((total, message) => total + messageTokenEstimate(message), 0)
 		this.measuredMessages = this.messages.length
+		if (pending) this.messages.push(this.tokensLeftMessage())
 		this.autoCompactFailed = false
 		// Checkpoints index into the history that was just replaced.
 		deleteBackups(this.taskId, this.checkpoints)
 		this.checkpoints = []
-		this.prunedBefore = 0
 		this.repeatTracker.clear()
 	}
 
@@ -1616,14 +1618,14 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		let assistantText = ""
 		// A reasoning segment is "open" from its first delta until visible content
 		// (text or a tool call) begins. We emit reasoning-done at that transition so
-		// "Thought for Ns" reflects only the thinking time — not the answer that
-		// follows — and the live "Thinking" block stops before the answer streams.
-		// A fresh segment can re-open if the model interleaves reasoning with content.
+		// the live "Thinking" block stops before the answer streams. A fresh
+		// segment can re-open if the model interleaves reasoning with content.
 		let reasoningOpen = false
 		let reasoningStart = 0
+		let reasoningText = ""
 		let reasoningDetails: unknown
-		// Once a reasoning-done row is committed to the transcript we can't roll it
-		// back, so a mid-stream retry after that point isn't clean.
+		// Once reasoning-done has been emitted the thinking segment is closed out
+		// and can't be rolled back, so a mid-stream retry after that point isn't clean.
 		let reasoningRowCommitted = false
 		const finalizeReasoning = () => {
 			if (reasoningOpen) {
@@ -1645,6 +1647,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			assistantText = ""
 			reasoningOpen = false
 			reasoningStart = 0
+			reasoningText = ""
 			reasoningDetails = undefined
 			toolCallsByIndex.clear()
 			nextSyntheticIndex = 10000
@@ -1652,7 +1655,6 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			return true
 		}
 
-		this.pruneStaleToolResults()
 		const stream = this.streamWithRetry(
 			() => this.client.createMessage(this.systemPrompt, this.outgoingMessages(), getActiveTools(this.mcp), signal),
 			signal,
@@ -1673,6 +1675,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 						reasoningOpen = true
 						reasoningStart = Date.now()
 					}
+					reasoningText += chunk.text
 					onEvent({ type: "reasoning-delta", text: chunk.text })
 					break
 				case "reasoning_details":
@@ -1728,6 +1731,13 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 				function: { name: tc.name, arguments: tc.arguments || "{}" },
 			}))
 		}
+		// Replay this step's reasoning verbatim on every later request, as other
+		// OpenAI-compatible clients do: the model sees its earlier thinking and the
+		// message never changes, so the provider's prompt cache keeps matching.
+		// Left off when there is none (strict endpoints reject unknown fields).
+		if (reasoningText) {
+			;(assistantMessage as unknown as Record<string, unknown>)[REASONING_CONTENT_FIELD] = reasoningText
+		}
 		// Stash reasoning blocks (opaque) so the next turn can replay them. The
 		// field is persisted with the session and stripped on the OpenAI path.
 		if (reasoningDetails !== undefined) {
@@ -1782,6 +1792,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		for (let index = batchEnd; index < toolCalls.length; index++) {
 			await runToolCall(toolCalls[index])
 		}
+		if (!completed) this.messages.push(this.tokensLeftMessage())
 		// Persist after every model step: a hard kill mid-turn (crash, closed
 		// terminal, kill signal) loses at most the in-flight tool call instead
 		// of the entire turn's accumulated history.

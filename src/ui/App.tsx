@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -115,10 +116,12 @@ import {
   type ResumeCostEstimate,
 } from "../core/resumeCost.js";
 import {
+  appendRow,
   diffViewHeight,
   formatToolName,
   formatUserBlock,
   RowView,
+  toolGroupHeading,
   type Row,
 } from "./components/rows.js";
 import { LinkManager } from "./components/LinkManager.js";
@@ -613,7 +616,27 @@ export function App({
   }, []);
 
   const agentRef = useRef<Agent | null>(null);
-  const expandReasoningRef = useRef(false);
+  // ctrl+o expansion state for grouped tool rows.
+  const expandToolsRef = useRef(false);
+  // Turn-wide spinner stats: elapsed time and output tokens. Tokens are the
+  // provider-reported count so far plus ~4 chars/token for the live stream.
+  const [turnStartedAt, setTurnStartedAt] = useState(() => Date.now());
+  const turnTokensRef = useRef(0);
+  const turnCommittedTokensRef = useRef(0);
+  const turnStreamedCharsRef = useRef(0);
+  const countStreamedChars = useCallback((chars: number) => {
+    turnStreamedCharsRef.current += chars;
+    turnTokensRef.current =
+      turnCommittedTokensRef.current +
+      Math.round(turnStreamedCharsRef.current / 4);
+  }, []);
+  useLayoutEffect(() => {
+    if (!busy) return;
+    setTurnStartedAt(Date.now());
+    turnTokensRef.current = 0;
+    turnCommittedTokensRef.current = 0;
+    turnStreamedCharsRef.current = 0;
+  }, [busy]);
   const reasoningBufferRef = useRef("");
   const textBufferRef = useRef("");
   // taskId for which a title fetch has already been started (once per task).
@@ -762,7 +785,9 @@ export function App({
   }, []);
 
   const pushRow = useCallback((row: DistributiveOmit<Row, "id">) => {
-    setRows((prev) => [...prev, { ...row, id: rowId() } as Row]);
+    setRows((prev) =>
+      appendRow(prev, { ...row, id: rowId() } as Row, expandToolsRef.current),
+    );
   }, []);
 
   // Wipe the visible transcript — a clean slate for /clear, /new and /resume.
@@ -785,22 +810,20 @@ export function App({
     (event: AgentEvent) => {
       switch (event.type) {
         case "reasoning-delta":
+          countStreamedChars(event.text.length);
           reasoningBufferRef.current += event.text;
           setStreamingReasoning(reasoningBufferRef.current);
           setBusyLabel("Thinking");
           break;
         case "reasoning-done":
-          pushRow({
-            kind: "reasoning",
-            text: reasoningBufferRef.current,
-            durationMs: event.durationMs,
-            expanded: expandReasoningRef.current,
-          });
+          // The live "Thinking" block ends here; completed thinking is never
+          // rendered, so there is no row to commit.
           reasoningBufferRef.current = "";
           setStreamingReasoning("");
           setBusyLabel("Working");
           break;
         case "text-delta":
+          countStreamedChars(event.text.length);
           textBufferRef.current += event.text;
           setStreamingText(textBufferRef.current);
           setBusyLabel("Working");
@@ -827,7 +850,7 @@ export function App({
           setBusyLabel("Working");
           break;
         case "tool-start":
-          setBusyLabel("Working");
+          setBusyLabel(toolActivityLabel(event.name));
           break;
         case "tool-end":
           setBusyLabel("Working");
@@ -844,6 +867,10 @@ export function App({
           setTasks(event.todos);
           break;
         case "usage":
+          // The provider's count replaces the streamed-character estimate.
+          turnCommittedTokensRef.current += event.outputTokens;
+          turnStreamedCharsRef.current = 0;
+          turnTokensRef.current = turnCommittedTokensRef.current;
           setContextTokens(event.inputTokens + event.outputTokens);
           setTotalCost(event.totalCost);
           // A usage chunk arrives once per LLM response, so the plan/usage
@@ -1111,14 +1138,9 @@ export function App({
       // Replay the exact display transcript when available. Agent also builds
       // a best-effort tool/result history for sessions from the legacy schema.
       for (const entry of resumedAgent.displayTranscript) {
-        if (entry.kind === "reasoning") {
-          pushRow({
-            ...entry,
-            expanded: expandReasoningRef.current,
-          });
-        } else {
-          pushRow(entry);
-        }
+        // Thinking is shown live only; replayed reasoning entries render nothing.
+        if (entry.kind === "reasoning") continue;
+        pushRow(entry);
       }
       pushRow({
         kind: "info",
@@ -1261,11 +1283,8 @@ export function App({
         setTasks(result.todos);
         setContextTokens(agent.lastContextTokens);
         for (const entry of agent.displayTranscript) {
-          if (entry.kind === "reasoning") {
-            pushRow({ ...entry, expanded: expandReasoningRef.current });
-          } else {
-            pushRow(entry);
-          }
+          if (entry.kind === "reasoning") continue;
+          pushRow(entry);
         }
         setPromptPrefill({ id: Date.now(), text: result.text });
       }
@@ -2220,13 +2239,12 @@ export function App({
       });
     }
     if (key.ctrl && input === "o") {
-      const expanded = !expandReasoningRef.current;
-      expandReasoningRef.current = expanded;
-      // Re-render the whole transcript (including past thinking) with the
-      // new expansion state.
+      const expanded = !expandToolsRef.current;
+      expandToolsRef.current = expanded;
+      // Re-render the transcript's grouped tool rows with the new state.
       setRows((prev) =>
         prev.map((row) =>
-          row.kind === "reasoning" ? { ...row, expanded } : row,
+          row.kind === "tool-group" ? { ...row, expanded } : row,
         ),
       );
       // The terminal adapter replaces the retained screen rows in place.
@@ -2606,7 +2624,12 @@ export function App({
               )}
               {streamingReasoning && (
                 <Box flexDirection="column" marginTop={1}>
-                  <Spinner label="Thinking" showTip />
+                  <Spinner
+                    label="Thinking"
+                    showTip
+                    startedAt={turnStartedAt}
+                    tokensRef={turnTokensRef}
+                  />
                   <Box paddingLeft={2}>
                     <Text color={COLORS.dim} italic>
                       {streamingReasoningDisplay}
@@ -2679,6 +2702,8 @@ export function App({
                   <Spinner
                     key={busyLabel}
                     label={busyLabel}
+                    startedAt={turnStartedAt}
+                    tokensRef={turnTokensRef}
                     showTip={
                       busyLabel === "Thinking" || busyLabel === "Working"
                     }
@@ -2940,6 +2965,33 @@ export function App({
   );
 }
 
+/** Spinner verb for the tool that is running. */
+function toolActivityLabel(name: string): string {
+  switch (name) {
+    case "read_file":
+      return "Reading";
+    case "search_files":
+    case "codebase_search":
+    case "web_search":
+      return "Searching";
+    case "list_files":
+    case "list_code_definition_names":
+      return "Listing";
+    case "Bash":
+    case "execute_command":
+      return "Running";
+    case "file_edit":
+    case "multi_file_edit":
+    case "file_write":
+      return "Editing";
+    case "web_fetch":
+    case "figma_fetch":
+      return "Fetching";
+    default:
+      return "Working";
+  }
+}
+
 /** Count the number of terminal rows a block of text will occupy (accounting
  * for wrapping at `width` columns). */
 function wrapHeight(text: string, width: number): number {
@@ -3021,7 +3073,7 @@ function estimateRowLines(row: Row, width: number): number {
         wrappedAt("/help     all commands", secondCellWidth),
       );
       const shortcuts = wrappedAt(
-        "shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d/c exit",
+        "shift+tab approvals · ctrl+o expand · esc interrupt · ctrl+d/c exit",
         panelWidth,
       );
       // Action/footer top margins plus Header's bottom margin add three rows.
@@ -3034,8 +3086,6 @@ function estimateRowLines(row: Row, width: number): number {
     case "assistant":
       // Blank messages render nothing (see rows.tsx).
       return row.text.trim() ? 1 + wrapped(`● ${row.text}`) : 0;
-    case "reasoning":
-      return row.expanded ? 2 + wrapped(row.text, w - 2) : 2;
     case "tool": {
       const heading = `${formatToolName(row.name)} ${row.summary}`;
       let h = 1 + wrapped(heading);
@@ -3054,6 +3104,11 @@ function estimateRowLines(row: Row, width: number): number {
         h += wrapped(row.resultPreview, w - 2);
       }
       return h;
+    }
+    case "tool-group": {
+      const heading = `● ${toolGroupHeading(row.tools)}${row.expanded ? "" : " (ctrl+o to expand)"}`;
+      // Entry lines are truncated to one row each (see rows.tsx).
+      return 1 + wrapped(heading) + (row.expanded ? row.tools.length : 1);
     }
     case "info":
       return 1 + wrapped(row.text);

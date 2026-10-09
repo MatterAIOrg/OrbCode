@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] - 2026-10-09
+
+### Added
+
+- **Grouped exploration tools.** Consecutive read-only calls (file reads, searches, listings, LSP, web search/fetch, read-only shell commands) collapse into one row such as `● Read 3 files, searched for 1 pattern, ran 1 command`, with a `⎿` line that swaps to the latest call as each finishes. `ctrl+o` expands groups alongside thinking. Edits, errors, mutating commands and assistant text still render as their own rows and start a new group. Resumed sessions are grouped the same way. Covered by `test/tool-group.test.tsx`.
+- **Turn-wide spinner stats.** The spinner shows elapsed time for the whole turn (no longer resetting when the label changes) and output tokens counting up live, e.g. `Reading… (2m 13s · ↓ 4.2k tokens · esc to interrupt)`. The label follows the running tool (Reading, Searching, Running, Editing, Fetching).
+
+### Changed
+
+- **Request layout, matching Claude Code.** The system prompt is now static (role definition, tool guide, and a harness section explaining how context is delivered), so the prompt cache hits across sessions and projects. Per-session context moved into the conversation: the first user message opens with `<system-reminder>` blocks for AGENTS.md instructions and a git snapshot (branch, main branch, git user, status, recent commits), and a separate system message right after it carries the environment (working directory, platform, shell, OS, model, linked repos, skills catalog, date). Each later user message and each round of tool results ends with a `<total_tokens>N tokens left</total_tokens>` note; these change every step, so they are appended to the message before them rather than sent as system messages, which a gateway would merge into the leading prompt. Direct providers through the AI SDK (Anthropic, custom OpenAI-compatible endpoints) get the environment folded into the first user turn, since they may reject a mid-conversation system message. The 200-file workspace listing is no longer attached; the model explores with the shell. After compaction, the reminders and environment are re-sent with the summary instead of being lost.
+- **Reasoning is replayed.** Each assistant message keeps the reasoning the model streamed for it and sends it back unchanged as `reasoning_content` on every later request, as other OpenAI-compatible clients do. The model sees its earlier thinking and the message never changes, so the prompt cache keeps matching. Previously the gateway injected a stored copy into only the newest message.
+- Interrupt, Stop-hook and file-restore notes to the model now use `<system-reminder>` tags.
+- **Thinking is live-only.** Reasoning is shown while it streams and leaves nothing behind: the static `✦ Thought for 43s (ctrl+o to show thinking)` summary row is gone, and `ctrl+o` no longer expands past thinking — completed thinking never renders, in this session or a resumed one. `ctrl+o` now only expands/collapses grouped tool rows.
+
+### Fixed
+
+- **Prompt cache stopped growing in long sessions.** Once context passed 40% of the window (~93k tokens on GLM 5.3), OrbCode replaced old tool results in the request with short stubs. That rewrote the conversation from its first tool result onward, so the provider could only reuse the cached system prompt, tools and first message (~20k tokens) and billed the rest at the uncached rate. History is now append-only until auto-compaction at 80%, so each request extends the previous one and the cached prefix keeps growing. Covered by `test/agent-context.test.ts`, which checks that no request rewrites earlier history in a long session.
+
 ## [6.9.8] - 2026-10-09
 
 ### Added

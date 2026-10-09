@@ -18,7 +18,7 @@ import {
 import type OpenAI from "openai"
 
 import { parseToolCallArguments } from "../utils/jsonRepair.js"
-import { REASONING_DETAILS_FIELD, type LLMClient } from "./llmClient.js"
+import { foldSystemMessages, REASONING_DETAILS_FIELD, type LLMClient } from "./llmClient.js"
 
 // `ReasoningPart` isn't re-exported from "ai"; derive it from the exported
 // assistant content union so we don't depend on a transitive package path.
@@ -51,8 +51,11 @@ export class AiSdkClient implements LLMClient {
 		const isAnthropic = model.provider === "anthropic"
 
 		// Replay stored thinking blocks only on Anthropic, where they round-trip
-		// with their signatures; other providers ignore the side-channel.
-		const aiMessages = toModelMessages(messages, isAnthropic)
+		// with their signatures; other providers ignore the side-channel. The
+		// environment system message is folded into the user turn before it:
+		// Anthropic only accepts a leading system prompt, and arbitrary
+		// OpenAI-compatible endpoints may reject a system message mid-conversation.
+		const aiMessages = toModelMessages(foldSystemMessages(messages, () => true), isAnthropic)
 		if (isAnthropic) applyCacheBreakpoint(aiMessages)
 
 		const aiTools = toAiTools(tools)
@@ -250,8 +253,9 @@ function toModelMessages(
 				out.push({ role: "tool", content: [result] })
 				break
 			}
-			// "system"/"developer"/"function" roles don't appear in OrbCode history
-			// (the system prompt is passed separately) — ignore defensively.
+			// "system" messages are folded beforehand (see createMessage) and the
+			// system prompt is passed separately; "developer"/"function" roles
+			// don't appear in OrbCode history — ignore defensively.
 		}
 	}
 	return out

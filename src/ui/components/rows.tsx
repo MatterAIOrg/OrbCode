@@ -3,6 +3,7 @@ import { Box, Text } from "../primitives.js"
 
 import type { AttachmentSummary } from "../../attachments.js"
 import { COLORS } from "../../branding.js"
+import { isReadOnlyCommand } from "../../tools/readOnlyCommand.js"
 import { renderMarkdown } from "../markdown.js"
 import { Header } from "./Header.js"
 
@@ -10,7 +11,6 @@ export type Row =
 	| { kind: "header"; id: string; cwd: string; modelName: string }
 	| { kind: "user"; id: string; text: string; attachments?: AttachmentSummary[] }
 	| { kind: "assistant"; id: string; text: string }
-	| { kind: "reasoning"; id: string; text: string; durationMs: number; expanded: boolean }
 	| {
 		kind: "tool"
 		id: string
@@ -20,9 +20,97 @@ export type Row =
 		isError: boolean
 		diff?: string
 	}
+	/** A run of consecutive read-only tool calls collapsed into one summary line. */
+	| { kind: "tool-group"; id: string; tools: GroupedTool[]; expanded: boolean }
 	| { kind: "info"; id: string; text: string }
 	| { kind: "error"; id: string; text: string }
 	| { kind: "completion"; id: string; text: string }
+
+export interface GroupedTool {
+	name: string
+	summary: string
+}
+
+/** Read-only exploration tools whose output the user rarely needs to see. */
+const GROUPABLE_TOOLS = new Set([
+	"read_file",
+	"search_files",
+	"codebase_search",
+	"list_files",
+	"list_code_definition_names",
+	"lsp",
+	"check_background",
+	"web_search",
+	"web_fetch",
+])
+
+/** Successful, diff-less observation calls collapse into the surrounding tool group. */
+export function isGroupableTool(row: { name: string; summary: string; isError: boolean; diff?: string }): boolean {
+	if (row.isError || row.diff) return false
+	if (GROUPABLE_TOOLS.has(row.name)) return true
+	return (row.name === "Bash" || row.name === "execute_command") && isReadOnlyCommand(row.summary)
+}
+
+/**
+ * Append a row to the transcript, folding a groupable tool call into the tool
+ * group directly before it (or starting a new one). Any other row — assistant
+ * text, an edit, an error — ends the group, so each group covers one
+ * uninterrupted stretch of exploration.
+ */
+export function appendRow(rows: Row[], row: Row, expanded: boolean): Row[] {
+	if (row.kind !== "tool" || !isGroupableTool(row)) return [...rows, row]
+	const tool: GroupedTool = { name: row.name, summary: row.summary }
+	const last = rows[rows.length - 1]
+	if (last?.kind === "tool-group") {
+		return [...rows.slice(0, -1), { ...last, tools: [...last.tools, tool] }]
+	}
+	return [...rows, { kind: "tool-group", id: row.id, tools: [tool], expanded }]
+}
+
+type ToolTally = { singular: string; plural: string; count: number }
+
+/** "Read 3 files, searched for 2 patterns, ran 1 command" */
+export function toolGroupHeading(tools: GroupedTool[]): string {
+	const tallies = new Map<string, ToolTally>()
+	const add = (key: string, singular: string, pluralForm: string, count = 1) => {
+		const tally = tallies.get(key) ?? { singular, plural: pluralForm, count: 0 }
+		tally.count += count
+		tallies.set(key, tally)
+	}
+	for (const tool of tools) {
+		switch (tool.name) {
+			case "read_file": {
+				const files = /across (\d+) files?$/.exec(tool.summary)
+				add("read", "read 1 file", "read # files", files ? Number(files[1]) : 1)
+				break
+			}
+			case "search_files":
+			case "codebase_search":
+				add("search", "searched for 1 pattern", "searched for # patterns")
+				break
+			case "list_files":
+			case "list_code_definition_names":
+				add("list", "listed 1 directory", "listed # directories")
+				break
+			case "Bash":
+			case "execute_command":
+				add("run", "ran 1 command", "ran # commands")
+				break
+			case "web_search":
+				add("web", "searched the web once", "searched the web # times")
+				break
+			case "web_fetch":
+				add("fetch", "fetched 1 page", "fetched # pages")
+				break
+			default:
+				add(tool.name, `used ${formatToolName(tool.name)} once`, `used ${formatToolName(tool.name)} # times`)
+		}
+	}
+	const heading = [...tallies.values()]
+		.map((tally) => (tally.count === 1 ? tally.singular : tally.plural.replace("#", String(tally.count))))
+		.join(", ")
+	return heading.charAt(0).toUpperCase() + heading.slice(1)
+}
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
 	update_todo_list: "Update Tasks",
@@ -94,6 +182,10 @@ interface DiffViewProps {
 	maxLines?: number
 	/** Keep live approval rows to one terminal line instead of wrapping code. */
 	maxWidth?: number
+}
+
+function oneLine(text: string): string {
+	return text.replace(/\s*\n\s*/g, " ")
 }
 
 function truncateLine(text: string, maxWidth: number | undefined): string {
@@ -170,11 +262,6 @@ export function DiffView({ diff, maxLines = MAX_DIFF_LINES, maxWidth }: DiffView
 	)
 }
 
-export function formatDuration(durationMs: number): string {
-	const seconds = durationMs / 1000
-	return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`
-}
-
 /** Build a padded user block exactly as wide as the transcript. */
 export function formatUserBlock(text: string, width: number, attachments: AttachmentSummary[] = []): string {
 	const lineWidth = Math.max(1, width)
@@ -235,22 +322,6 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 					</Text>
 				</Box>
 			)
-		case "reasoning":
-			return (
-				<Box marginTop={1} flexDirection="column" flexShrink={0}>
-					<Text color={COLORS.thinking} italic>
-						✦ Thought for {formatDuration(row.durationMs)}
-						{!row.expanded && <Text color={COLORS.dim}> (ctrl+o to show thinking)</Text>}
-					</Text>
-					{row.expanded && (
-						<Box paddingLeft={2} flexShrink={0}>
-							<Text color={COLORS.dim} italic>
-								{row.text.trim()}
-							</Text>
-						</Box>
-					)}
-				</Box>
-			)
 		case "tool":
 			return (
 				<Box flexDirection="column" marginTop={1} flexShrink={0}>
@@ -274,6 +345,30 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 					)}
 				</Box>
 			)
+		case "tool-group": {
+			// One line per entry so the height estimate stays exact; the ⎿ line
+			// swaps to the latest call while collapsed.
+			const lineWidth = Math.max(1, width - 4)
+			const latest = row.tools[row.tools.length - 1]
+			return (
+				<Box flexDirection="column" marginTop={1} flexShrink={0}>
+					<Text>
+						<Text color={COLORS.success}>● </Text>
+						<Text bold>{toolGroupHeading(row.tools)}</Text>
+						{!row.expanded && <Text color={COLORS.dim}> (ctrl+o to expand)</Text>}
+					</Text>
+					{row.expanded
+						? row.tools.map((tool, i) => (
+								<Text key={i} color={COLORS.dim}>
+									{truncateLine(`  ⎿ ${formatToolName(tool.name)} ${oneLine(tool.summary)}`, lineWidth + 4)}
+								</Text>
+							))
+						: latest && (
+								<Text color={COLORS.dim}>{truncateLine(`  ⎿ ${oneLine(latest.summary)}`, lineWidth + 4)}</Text>
+							)}
+				</Box>
+			)
+		}
 		case "info":
 			return (
 				<Box marginTop={1} flexShrink={0}>

@@ -1,14 +1,11 @@
 import * as os from "node:os";
 
 import { getShell, isCmdShell } from "../utils/shell.js";
-import type { MemoryFile } from "../memory/types.js";
-import { renderMemorySection } from "../memory/loader.js";
-import type { Skill } from "../skills/types.js";
-import { renderSkillCatalog } from "../skills/loader.js";
 
 // Role definition and tool guide ported verbatim from the Orbital extension
-// (agent mode roleDefinition + applyDiffToolDescription). Only the system
-// information section is adapted from the IDE to the CLI environment.
+// (agent mode roleDefinition + applyDiffToolDescription). Per-session context
+// is not part of the system prompt; see buildEnvironmentMessage /
+// buildContextReminders and the harness section that explains them.
 
 function shellDescription(): string {
 	const shell = getShell();
@@ -238,39 +235,96 @@ Replace the entire TODO list with an updated checklist reflecting the current st
 IMPORTANT: Use attempt_completion tool when you have completed the task. This signals that you are done.
 `;
 
-function getSystemInfoSection(cwd: string): string {
-  return `# System Information
+const harnessSection = `# Harness
 
-- Operating System: ${process.platform === "darwin" ? `macOS ${os.release()}` : `${process.platform} ${os.release()}`}
-- Default Shell: ${shellDescription()}
-- Home Directory: ${os.homedir()}
-- Current Workspace Directory: ${cwd}
+The role definition and tool guide above describe context in generic terms; this is how OrbCode CLI actually delivers it:
 
-The Current Workspace Directory is the directory the user launched OrbCode CLI from, and is therefore the default directory for all tool operations. Commands run in the current workspace directory unless a different cwd is passed; changing directories inside a command does not modify the workspace directory. When the user initially gives you a task, a listing of filepaths in the current workspace directory will be included in the Environment Details section. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current workspace directory, you can use \`ls\` or \`find\` through Bash. Prefer a non-recursive \`ls\` for generic directories where you don't need the nested structure, like the Desktop.`;
+- Per-session context is sent as conversation messages, not in this system prompt. The first user message may open with <system-reminder> blocks holding the "Project & User Instructions (AGENTS.md)" section and the git status at session start. A system message right after it holds the Environment details: primary working directory (the Current Workspace Directory), platform, shell, model, linked repositories, the "Available Skills" catalog and today's date.
+- <system-reminder> blocks, the Environment details and <total_tokens> notes come from the harness, not the user. Heed them, but don't mention them in your response to the user.
+- Each later user message and each round of tool results ends with <total_tokens>N tokens left</total_tokens>: the room left in your context window. When the conversation grows long, older context is summarized automatically, so you don't need to wrap up early or hand off mid-task.
+- Text you output outside of tool calls is shown to the user as GitHub-flavored markdown in a terminal.
+
+# Workspace
+
+The Current Workspace Directory is the directory the user launched OrbCode CLI from, and is therefore the default directory for all tool operations. Commands run in the current workspace directory unless a different cwd is passed; changing directories inside a command does not modify the workspace directory. No file listing is attached; explore the project with the shell (\`ls\`, \`rg --files\`, \`git ls-files\`) rather than guessing at its layout. Prefer a non-recursive \`ls\` for generic directories where you don't need the nested structure, like the Desktop.`;
+
+/**
+ * The static system prompt. Everything per-session (cwd, git state, AGENTS.md,
+ * skills, date) is sent as conversation messages instead, so this prefix is
+ * byte-identical across sessions and projects and the prompt cache keeps hitting.
+ */
+export function buildSystemPrompt(): string {
+  return [roleDefinition, toolGuide, harnessSection].join("\n\n");
 }
 
-export interface SystemPromptOptions {
-  /** AGENTS.md memory files to inject (lowest precedence first). */
-  memoryFiles?: MemoryFile[];
-  /** Skills catalog to advertise to the model. */
-  skills?: Map<string, Skill>;
+export interface EnvironmentOptions {
+  cwd: string;
+  isGitRepo: boolean;
+  modelName: string;
+  /** Rendered skills catalog (empty when there are none). */
+  skillCatalog?: string;
+  /** Rendered linked-repositories section (empty when there are none). */
+  linkedRepos?: string;
+  now?: Date;
 }
 
-export function buildSystemPrompt(
-  cwd: string,
-  options: SystemPromptOptions = {},
-): string {
-  const memorySection = options.memoryFiles
-    ? renderMemorySection(options.memoryFiles)
-    : "";
-  const skillSection = options.skills ? renderSkillCatalog(options.skills) : "";
+/** Environment details, sent as a system message right after the first user message. */
+export function buildEnvironmentMessage(options: EnvironmentOptions): string {
+  const now = options.now ?? new Date();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const offset = -now.getTimezoneOffset();
+  const offsetStr = `${offset >= 0 ? "+" : "-"}${Math.floor(Math.abs(offset) / 60)}:${(Math.abs(offset) % 60).toString().padStart(2, "0")}`;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   return [
-    roleDefinition,
-    toolGuide,
-    getSystemInfoSection(cwd),
-    memorySection,
-    skillSection,
+    `# Environment
+You have been invoked in the following environment:
+ - Primary working directory: ${options.cwd}
+ - Is a git repository: ${options.isGitRepo}
+ - Home directory: ${os.homedir()}
+ - Platform: ${process.platform}
+ - Shell: ${shellDescription()}
+ - OS Version: ${process.platform === "darwin" ? `macOS (Darwin ${os.release()})` : `${os.type()} ${os.release()}`}
+
+You are powered by the model ${options.modelName}.`,
+    options.linkedRepos,
+    options.skillCatalog,
+    `Today's date is ${today}. User time zone: ${timeZone}, UTC${offsetStr}.`,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** Wrap harness-provided context the model should heed but not echo. */
+export function systemReminder(text: string): string {
+  return `<system-reminder>\n${text}\n</system-reminder>`;
+}
+
+/** Context prepended to the first user message: AGENTS.md instructions and the git snapshot. */
+export function buildContextReminders(memorySection: string, gitStatus: string): string {
+  const reminders: string[] = [];
+  if (memorySection) {
+    reminders.push(
+      systemReminder(
+        `Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.\n\n${memorySection}`,
+      ),
+    );
+  }
+  if (gitStatus) {
+    reminders.push(
+      systemReminder(
+        `As you answer the user's questions, you can use the following context:\n${gitStatus}\n\nThis context was attached automatically; it isn't part of the user's message.`,
+      ),
+    );
+  }
+  return reminders.join("\n");
+}
+
+/** Remaining context-window budget, appended to each user message and tool round. */
+export function tokensLeftNote(tokensLeft: number): string {
+  return `<total_tokens>${Math.max(0, Math.round(tokensLeft))} tokens left</total_tokens>`;
+}
+
+export function isTokensLeftNote(text: string): boolean {
+  return text.startsWith("<total_tokens>");
 }

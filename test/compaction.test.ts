@@ -112,9 +112,10 @@ test("a resumed session past 80% compacts before its first request and keeps the
 	await agent.runTurn("now add tests")
 	assert.equal(client.requests[0].tools, 0, "first request is the summary")
 	const next = client.requests[1].messages
-	assert.equal(next.length, 2)
+	assert.deepEqual(next.map((m) => m.role), ["user", "system", "user"])
 	assert.match(String(next[0].content), /SUMMARY/)
-	assert.match(String(next[1].content), /now add tests/)
+	assert.match(String(next[1].content), /^# Environment/)
+	assert.match(String(next[2].content), /now add tests\n\n<total_tokens>\d+ tokens left<\/total_tokens>$/)
 })
 
 test("tool output added since the last usage report counts toward the threshold", async () => {
