@@ -84,7 +84,7 @@ export function Header({ cwd, modelName }: { cwd: string; modelName: string }) {
 				</Box>
 				<Box marginTop={1}>
 					<Text color={COLORS.dim}>
-						shift+tab approvals · ctrl+o thinking · esc interrupt · ctrl+d/c exit
+						shift+tab approvals · ctrl+o expand · esc interrupt · ctrl+d/c exit
 					</Text>
 				</Box>
 			</Box>

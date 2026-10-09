@@ -1618,15 +1618,14 @@ export class Agent {
 		let assistantText = ""
 		// A reasoning segment is "open" from its first delta until visible content
 		// (text or a tool call) begins. We emit reasoning-done at that transition so
-		// "Thought for Ns" reflects only the thinking time — not the answer that
-		// follows — and the live "Thinking" block stops before the answer streams.
-		// A fresh segment can re-open if the model interleaves reasoning with content.
+		// the live "Thinking" block stops before the answer streams. A fresh
+		// segment can re-open if the model interleaves reasoning with content.
 		let reasoningOpen = false
 		let reasoningStart = 0
 		let reasoningText = ""
 		let reasoningDetails: unknown
-		// Once a reasoning-done row is committed to the transcript we can't roll it
-		// back, so a mid-stream retry after that point isn't clean.
+		// Once reasoning-done has been emitted the thinking segment is closed out
+		// and can't be rolled back, so a mid-stream retry after that point isn't clean.
 		let reasoningRowCommitted = false
 		const finalizeReasoning = () => {
 			if (reasoningOpen) {

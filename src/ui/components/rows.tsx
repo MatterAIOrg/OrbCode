@@ -11,7 +11,6 @@ export type Row =
 	| { kind: "header"; id: string; cwd: string; modelName: string }
 	| { kind: "user"; id: string; text: string; attachments?: AttachmentSummary[] }
 	| { kind: "assistant"; id: string; text: string }
-	| { kind: "reasoning"; id: string; text: string; durationMs: number; expanded: boolean }
 	| {
 		kind: "tool"
 		id: string
@@ -263,11 +262,6 @@ export function DiffView({ diff, maxLines = MAX_DIFF_LINES, maxWidth }: DiffView
 	)
 }
 
-export function formatDuration(durationMs: number): string {
-	const seconds = durationMs / 1000
-	return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`
-}
-
 /** Build a padded user block exactly as wide as the transcript. */
 export function formatUserBlock(text: string, width: number, attachments: AttachmentSummary[] = []): string {
 	const lineWidth = Math.max(1, width)
@@ -326,22 +320,6 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 						<Text color={COLORS.primary}>● </Text>
 						{renderMarkdown(row.text.trimEnd())}
 					</Text>
-				</Box>
-			)
-		case "reasoning":
-			return (
-				<Box marginTop={1} flexDirection="column" flexShrink={0}>
-					<Text color={COLORS.thinking} italic>
-						✦ Thought for {formatDuration(row.durationMs)}
-						{!row.expanded && <Text color={COLORS.dim}> (ctrl+o to show thinking)</Text>}
-					</Text>
-					{row.expanded && (
-						<Box paddingLeft={2} flexShrink={0}>
-							<Text color={COLORS.dim} italic>
-								{row.text.trim()}
-							</Text>
-						</Box>
-					)}
 				</Box>
 			)
 		case "tool":
