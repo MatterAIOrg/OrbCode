@@ -129,6 +129,18 @@ import {
 } from "./components/TranscriptViewport.js";
 import { ScrollToBottomChip } from "./components/ScrollToBottomChip.js";
 import { QueuedMessages } from "./components/QueuedMessages.js";
+import {
+  BackgroundShells,
+  backgroundShellsHeight,
+  backgroundShellsLabel,
+} from "./components/BackgroundShells.js";
+import {
+  killBackgroundCommand,
+  killBackgroundCommandsFor,
+  listBackgroundCommands,
+  subscribeBackgroundCommands,
+  type BackgroundCommand,
+} from "../tools/executors/backgroundCommands.js";
 import { Toast } from "./components/Toast.js";
 import { copyToClipboard } from "../utils/clipboard.js";
 import {
@@ -506,6 +518,11 @@ export function App({
   // Drained one-per-turn on each `turn-end` event so multi-step work can
   // keep flowing without making the user wait for the previous response.
   const [queuedMessages, setQueuedMessages] = useState<SubmittedPrompt[]>([]);
+  // Running background shells (Bash with background=true) of the current
+  // task. Finished shells drop out; the agent is told about them instead.
+  const [bgShells, setBgShells] = useState<BackgroundCommand[]>([]);
+  const [bgExpanded, setBgExpanded] = useState(false);
+  const [, setBgTick] = useState(0);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [effortPickerOpen, setEffortPickerOpen] = useState(false);
@@ -646,6 +663,37 @@ export function App({
     ];
     setQueuedMessages(queueRef.current);
   }, []);
+
+  const refreshBgShells = useCallback(() => {
+    const taskId = agentRef.current?.taskId;
+    // Copy each entry so React sees status changes on the mutable records.
+    setBgShells(
+      taskId
+        ? listBackgroundCommands(taskId)
+            .filter((cmd) => cmd.status === "running")
+            .map((cmd) => ({ ...cmd }))
+            .reverse()
+        : [],
+    );
+  }, []);
+  useEffect(() => {
+    refreshBgShells();
+    return subscribeBackgroundCommands(refreshBgShells);
+  }, [refreshBgShells]);
+
+  const bgPanelOpen = bgExpanded && bgShells.length > 0;
+  // Collapse once the last shell finishes, so the next one starts collapsed.
+  useEffect(() => {
+    if (bgShells.length === 0) setBgExpanded(false);
+  }, [bgShells.length]);
+
+  // Tick once a second while the panel is open so elapsed time and the
+  // output tail stay live.
+  useEffect(() => {
+    if (!bgPanelOpen) return;
+    const timer = setInterval(() => setBgTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [bgPanelOpen]);
 
   const scrollTranscriptBy = useCallback((lines: number) => {
     setScrollOffset((current) => Math.max(0, current + lines));
@@ -949,12 +997,15 @@ export function App({
     const agent = agentRef.current;
     agentRef.current = null;
     agent?.abort();
+    // Background shells belong to the task being left.
+    if (agent) killBackgroundCommandsFor(agent.taskId);
+    refreshBgShells();
     textBufferRef.current = "";
     reasoningBufferRef.current = "";
     setStreamingText("");
     setStreamingReasoning("");
     setBusy(false);
-  }, []);
+  }, [refreshBgShells]);
 
   // Force-send: jump a queued message to the front of the queue, then skip
   // the wait for the in-flight turn. Aborting makes the agent's `finally`
@@ -2180,6 +2231,11 @@ export function App({
       );
       // The terminal adapter replaces the retained screen rows in place.
     }
+    // Ctrl+B expands/collapses the background shells panel.
+    if (key.ctrl && input === "b" && view === "chat") {
+      if (bgShells.length > 0) setBgExpanded((prev) => !prev);
+      return;
+    }
     // Ctrl+S force-sends the next queued message without waiting for the
     // in-flight turn (the queue panel advertises this next to each message).
     if (
@@ -2280,6 +2336,10 @@ export function App({
       2 +
       Math.min(5, queuedMessages.length) +
       (queuedMessages.length > 5 ? 1 : 0);
+  }
+
+  if (bgPanelOpen) {
+    bottomControlsHeight += backgroundShellsHeight(bgShells.length);
   }
 
   const contentHeight = Math.max(1, termRows - bottomControlsHeight);
@@ -2636,6 +2696,16 @@ export function App({
                 onRemove={removeQueued}
               />
             )}
+            {bgPanelOpen && (
+              <BackgroundShells
+                shells={bgShells}
+                width={wrapWidth}
+                onStop={(id) => {
+                  killBackgroundCommand(id);
+                }}
+                onCollapse={() => setBgExpanded(false)}
+              />
+            )}
             <InputBox
               active={inputActive}
               width={wrapWidth}
@@ -2662,6 +2732,13 @@ export function App({
               plan={usage?.plan}
               usagePercentage={usage?.usagePercentage}
               tieredUsage={usage?.tieredUsage}
+              shellsLabel={
+                bgShells.length > 0
+                  ? backgroundShellsLabel(bgShells.length)
+                  : undefined
+              }
+              shellsExpanded={bgPanelOpen}
+              onShellsClick={() => setBgExpanded((prev) => !prev)}
             />
           </Box>
         </Box>

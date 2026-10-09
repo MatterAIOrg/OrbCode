@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Box, Text } from "../primitives.js";
 
 import { COLORS } from "../../branding.js";
@@ -54,6 +54,10 @@ interface StatusBarProps {
   plan?: string;
   usagePercentage?: number;
   tieredUsage?: AxonCodeTieredUsage;
+  /** Background shells summary, e.g. "1 shell running"; hidden when unset. */
+  shellsLabel?: string;
+  shellsExpanded?: boolean;
+  onShellsClick?: () => void;
 }
 
 function truncate(text: string, max: number): string {
@@ -117,7 +121,11 @@ export function StatusBar({
   plan: _plan,
   usagePercentage: _usagePercentage,
   tieredUsage,
+  shellsLabel,
+  shellsExpanded,
+  onShellsClick,
 }: StatusBarProps) {
+  const [shellsHovered, setShellsHovered] = useState(false);
   const model = getModel(modelId);
   // Refresh after each agent turn, which also catches branch switches made by
   // commands during that turn without spawning git for every streaming frame.
@@ -131,6 +139,24 @@ export function StatusBar({
     <Box flexDirection="column" width="100%">
       <Box flexDirection="row" width="100%">
         <Box flexGrow={1} minWidth={0} overflow="hidden">
+          {shellsLabel && !exitConfirmationActive && (
+            <Box flexShrink={0}>
+              <Text
+                color={shellsHovered ? COLORS.accent : COLORS.warning}
+                bold={shellsHovered}
+                selectable={false}
+                onMouseDown={(event) => {
+                  event.stopPropagation?.();
+                  onShellsClick?.();
+                }}
+                onMouseMove={() => setShellsHovered(true)}
+                onMouseOut={() => setShellsHovered(false)}
+              >
+                {`● ${shellsLabel} ${shellsExpanded ? "▾" : "▸"}`}
+              </Text>
+              <Text color={COLORS.dim}>{" · "}</Text>
+            </Box>
+          )}
           {exitConfirmationActive ? (
             <Text color={COLORS.warning} bold wrap="truncate">
               Press Ctrl+D again to exit

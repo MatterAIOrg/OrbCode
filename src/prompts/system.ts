@@ -185,8 +185,11 @@ The \`Bash\` tool runs bash commands on the user's system. It is your primary to
 - \`cwd\` (required, string or null): Absolute working directory, or null for the workspace directory. You already have the Current Workspace Directory in the Environment Details section.
 - \`message\` (required): One-line description shown to the user.
 - \`isDangerous\` (required): true only for destructive or irreversible commands.
+- \`background\` (optional): Set to true to run the command in the background (non-blocking). The command runs asynchronously and you can check its status later with the check_background tool. Use for long-running commands like downloads, builds, or tests.
 
 CRITICAL: If the command is a very long running process, prefer to let the user know so they can run it manually in their terminal. If the user specifically requests to run a long running command, you may proceed.
+
+**Background commands:** For long-running commands (downloads, builds, tests, installs), set \`background: true\` to run them asynchronously. The command starts immediately and returns a command ID. The user sees running commands in the status bar and can view or stop them there, so never ask the user to copy the ID or check on the command, and don't repeat the ID in your reply. You are told when a background command finishes (in a <background_commands> note on the next user message); use \`check_background\` yourself when you need its output, and \`kill_background\` to stop a command that is no longer needed.
 
 Command validity rules: a command is never empty, never just \`:\`, never a bare single word with no arguments (except \`ls\` or \`pwd\`), and never contains tool-call markup tokens or angle-bracket tags of any kind.
 

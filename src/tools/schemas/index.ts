@@ -12,6 +12,8 @@ import useSkill from "./use_skill.js"
 import figmaFetch from "./figma_fetch.js"
 import webFetch from "./web_fetch.js"
 import webSearch from "./web_search.js"
+import checkBackground from "./check_background.js"
+import killBackground from "./kill_background.js"
 
 // Native tool schemas ported from the Orbital extension. File discovery and
 // content search (list_files, search_files) are deliberately not exposed: the
@@ -33,4 +35,6 @@ export const nativeTools = [
 	figmaFetch,
 	webFetch,
 	webSearch,
+	checkBackground,
+	killBackground,
 ] satisfies OpenAI.Chat.ChatCompletionTool[]
