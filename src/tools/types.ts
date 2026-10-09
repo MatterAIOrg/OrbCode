@@ -10,6 +10,8 @@ export interface ToolContext {
 	signal?: AbortSignal
 	/** called with the absolute path of a file right before a tool writes it, so it can be backed up for /rewind */
 	beforeWrite?: (filePath: string) => void
+	/** task that owns background commands started from this context */
+	taskId?: string
 }
 
 export interface ToolResult {

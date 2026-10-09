@@ -50,6 +50,7 @@ import { renderLinkedReposSection } from "../config/links.js"
 import { unifiedDiff } from "../utils/diff.js"
 import { parseToolCallArguments } from "../utils/jsonRepair.js"
 import { normalizeTodoList } from "../utils/todos.js"
+import { takeFinishedBackgroundCommands } from "../tools/executors/backgroundCommands.js"
 import {
 	countDiffLines,
 	detectGitRepo,
@@ -344,7 +345,24 @@ function jsonRepairNote(toolName: string, args: Record<string, unknown>): string
 	return `[OrbCode] The ${toolName} arguments were malformed JSON and were auto-repaired before execution. Interpreted arguments: ${preview}. Emit strictly valid JSON in future tool calls — every key and string value must be double-quoted.`
 }
 
+/** Completion notes for background commands that finished since the last turn. */
+function backgroundCommandsNote(taskId: string): string {
+	const finished = takeFinishedBackgroundCommands(taskId)
+	if (finished.length === 0) return ""
+	const lines = finished.map((cmd) => {
+		const outcome =
+			cmd.status === "killed"
+				? "was stopped"
+				: `${cmd.status} (exit ${cmd.exitCode === null ? "unknown" : cmd.exitCode})`
+		return `- ${cmd.id}: \`${cmd.command}\` ${outcome}`
+	})
+	return `<background_commands>\nThese background commands finished since your last turn. Use check_background with the id if you need the output.\n${lines.join("\n")}\n</background_commands>`
+}
+
 function formatResultPreview(toolName: string, text: string): string {
+	if ((toolName === "Bash" || toolName === "execute_command") && text.startsWith("Background command started")) {
+		return "Running in background · ctrl+b to view"
+	}
 	const visibleText = toolName === "search_files" ? stripSearchPageMetadataForDisplay(text) : text
 	if (!visibleText) return ""
 	const lines = visibleText.split("\n")
@@ -1021,6 +1039,7 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 			cwd: this.options.cwd,
 			token: this.options.token,
 			signal: this.abortController?.signal,
+			taskId: this.taskId,
 			beforeWrite: (filePath) => {
 				const checkpoint = this.checkpoints[this.checkpoints.length - 1]
 				if (checkpoint) snapshotFile(this.taskId, checkpoint, filePath)
@@ -1104,6 +1123,8 @@ User time zone: ${timeZone}, UTC${timeZoneOffsetStr}`
 		if (promptContext) {
 			userContent = `${userContent}\n\n${wrapHookContext("UserPromptSubmit", promptContext)}`
 		}
+		const backgroundNote = backgroundCommandsNote(this.taskId)
+		if (backgroundNote) userContent = `${userContent}\n\n${backgroundNote}`
 		const supportedImages = getModel(this.options.modelId).supportsImages ? imageAttachments : []
 		if (supportedImages.length !== imageAttachments.length) {
 			onEvent({ type: "system", message: "The current model does not support image attachments.", isError: true })

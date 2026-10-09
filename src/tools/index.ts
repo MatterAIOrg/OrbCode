@@ -6,6 +6,8 @@ import { fileEdit, fileWrite, multiFileEdit, readFile } from "./executors/files.
 import { listFiles } from "./executors/listFiles.js"
 import { disposeSearchFiles, normalizeSearchFilePattern, searchFiles } from "./executors/searchFiles.js"
 import { executeCommand } from "./executors/executeCommand.js"
+import { checkBackground } from "./executors/checkBackground.js"
+import { killBackground } from "./executors/killBackground.js"
 import { useSkill } from "./executors/skills.js"
 import { webFetch, webSearch } from "./executors/web.js"
 import { figmaFetch } from "./executors/figma.js"
@@ -59,6 +61,10 @@ export function describeToolCall(toolName: string, args: Record<string, unknown>
 		case "Bash":
 		case "execute_command":
 			return String(args.command ?? "")
+		case "check_background":
+			return `checking background command ${String(args.id ?? "")}`
+		case "kill_background":
+			return `killing background command ${String(args.id ?? "")}`
 		case "list_files":
 			return `${args.path ?? "."}${args.recursive ? " (recursive)" : ""}`
 		case "search_files": {
@@ -98,6 +104,8 @@ const executors: Record<string, (args: Record<string, unknown>, context: ToolCon
 	search_files: searchFiles,
 	Bash: executeCommand,
 	execute_command: executeCommand,
+	check_background: checkBackground,
+	kill_background: killBackground,
 	web_search: webSearch,
 	web_fetch: webFetch,
 	figma_fetch: figmaFetch,

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.8] - 2026-10-09
+
+### Added
+
+- **Background commands.** `Bash` gains a `background` parameter: long-running commands (downloads, builds, tests, installs) start detached and return a command ID immediately instead of blocking the turn for up to the 120s timeout. Output is captured to a temp file. Two new tools manage them: `check_background <id>` polls status (running/completed/failed/killed), exit code, and output — including partial output while still running — and `kill_background <id>` sends SIGTERM to the command's process group (SIGKILL after 3s). The status bar shows `● N shells running`; click it or press `ctrl+b` to expand a panel listing each shell's command, status, elapsed time, pid, cwd and latest output line, with `[stop]` and `[collapse]` actions. Only running shells are listed; finished ones drop out and the agent is told about them on the next turn instead of asking you to check an ID. Shells are scoped to the task that started them: they don't appear in other tasks and are stopped when you start a new task, resume another session, or exit OrbCode. Finished commands are pruned from the registry (and their temp files deleted) after one hour. Covered by `test/background-commands.test.ts` (`npm run test:background`).
+- **Remove queued messages.** The queue panel now shows a clickable `[remove]` action beside each queued message, letting you drop a message you no longer want to send without waiting for it to be drained.
+
 ## [6.9.7] - 2026-10-06
 
 ### Added

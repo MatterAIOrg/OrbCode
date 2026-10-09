@@ -1,20 +1,51 @@
 import { spawn } from "node:child_process"
+import * as fs from "node:fs"
 
 import { getShell, getShellRunArgs, isCmdShell } from "../../utils/shell.js"
 import { type ToolContext, type ToolResult, resolveWorkspacePath } from "../types.js"
+import { startBackgroundCommand } from "./backgroundCommands.js"
 
 const COMMAND_TIMEOUT_MS = 120_000
 const MAX_OUTPUT_CHARS = 30_000
+
+/** Some models stringify a null `cwd`; treat those spellings as "workspace". */
+const NULLISH_CWD = new Set(["", "null", "undefined", "none"])
+
+function resolveCwd(raw: unknown, workspace: string): string {
+	if (raw === null || raw === undefined) return workspace
+	const value = String(raw).trim()
+	if (NULLISH_CWD.has(value.toLowerCase())) return workspace
+	return resolveWorkspacePath(workspace, value)
+}
 
 export async function executeCommand(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
 	const command = String(args.command ?? "").trim()
 	if (!command) {
 		return { text: "FAILED: command is empty", isError: true }
 	}
-	const cwd = args.cwd ? resolveWorkspacePath(context.cwd, String(args.cwd)) : context.cwd
+	const cwd = resolveCwd(args.cwd, context.cwd)
+	const background = Boolean(args.background)
 
 	if (context.signal?.aborted) return { text: "Command not run: the turn was interrupted.", isError: true }
 
+	// A missing cwd makes spawn fail with a misleading "ENOENT ... /bin/bash".
+	if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
+		return { text: `FAILED: working directory does not exist: ${cwd}`, isError: true }
+	}
+
+	// Background mode: start detached and return immediately
+	if (background) {
+		const bgCmd = startBackgroundCommand(command, cwd, getShell(), getShellRunArgs(command), context.taskId)
+		return {
+			text:
+				`Background command started (id: ${bgCmd.id}, pid: ${bgCmd.pid}). ` +
+				`The user sees it in the status bar and can view or stop it there. ` +
+				`You will be told when it finishes; call check_background yourself if you need its output sooner. ` +
+				`Do not ask the user to check on it or mention its id.`,
+		}
+	}
+
+	// Foreground mode: wait for completion (existing behavior)
 	return new Promise<ToolResult>((resolve) => {
 		const isWindows = process.platform === "win32"
 		const child = spawn(getShell(), getShellRunArgs(command), {
