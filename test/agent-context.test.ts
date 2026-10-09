@@ -5,7 +5,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import type OpenAI from "openai"
 
-import type { LLMClient } from "../src/api/llmClient.js"
+import { foldSystemMessages, type LLMClient } from "../src/api/llmClient.js"
 import type { ApiStreamChunk } from "../src/api/stream.js"
 import { Agent } from "../src/core/agent.js"
 
@@ -15,6 +15,8 @@ interface ScriptedStep {
 	/** tool calls to emit, or none for a final text answer */
 	tools?: { name: string; args: Record<string, unknown> }[]
 	text?: string
+	/** reasoning streamed before the step's visible output */
+	reasoning?: string
 	/** reported context size for this step */
 	inputTokens?: number
 }
@@ -41,6 +43,7 @@ class ScriptedClient implements LLMClient {
 			return
 		}
 		const step = this.steps[this.index++] ?? { text: "done" }
+		if (step.reasoning) yield { type: "reasoning", text: step.reasoning }
 		if (step.tools) {
 			yield {
 				type: "native_tool_calls",
@@ -128,33 +131,6 @@ test("an edit between repeats resets the loop counter", async () => {
 	for (const text of toolTexts(client.requests.at(-1)!.messages)) assert.doesNotMatch(text, /identical/)
 })
 
-test("stale bulky tool results are stubbed once context is large; recent ones stay verbatim", async () => {
-	// 232k window: 100k input tokens is past the 40% prune trigger.
-	const steps: ScriptedStep[] = Array.from({ length: 12 }, (_, i) => ({ tools: [readRegion(i)], inputTokens: 100_000 }))
-	steps.push({ text: "done", inputTokens: 100_000 })
-	const client = new ScriptedClient(steps)
-	const { agent } = makeAgent(client)
-	await agent.runTurn("read a lot")
-	const texts = toolTexts(client.requests.at(-1)!.messages)
-	assert.equal(texts.length, 12)
-	const stubbed = texts.filter((t) => t.startsWith("[Earlier read_file result"))
-	assert.ok(stubbed.length >= 6, `expected at least one batch stubbed, got ${stubbed.length}`)
-	// The four most recent results are never stubbed.
-	for (const t of texts.slice(-4)) assert.doesNotMatch(t, /^\[Earlier/)
-	// Stubbed results are the oldest ones, contiguous from the start.
-	const firstFull = texts.findIndex((t) => !t.startsWith("[Earlier"))
-	assert.equal(stubbed.length, firstFull)
-})
-
-test("small contexts are never pruned", async () => {
-	const steps: ScriptedStep[] = Array.from({ length: 10 }, (_, i) => ({ tools: [readRegion(i)], inputTokens: 5_000 }))
-	steps.push({ text: "done", inputTokens: 5_000 })
-	const client = new ScriptedClient(steps)
-	const { agent } = makeAgent(client)
-	await agent.runTurn("read a lot")
-	for (const t of toolTexts(client.requests.at(-1)!.messages)) assert.doesNotMatch(t, /^\[Earlier/)
-})
-
 test("history is auto-compacted when the context nears the window, and the turn continues", async () => {
 	const client = new ScriptedClient([
 		{ tools: [readRegion(0)], inputTokens: 10_000 },
@@ -168,12 +144,13 @@ test("history is auto-compacted when the context nears the window, and the turn 
 	assert.ok(events.some((e) => /Conversation compacted/.test(e)))
 	const compactRequests = client.requests.filter((r) => r.toolCount === 0)
 	assert.equal(compactRequests.length, 1)
-	// The request after compaction starts from a single summary message.
+	// The request after compaction starts from the summary, then the re-sent environment.
 	const afterIdx = client.requests.findIndex((r) => r.toolCount === 0) + 1
 	const after = client.requests[afterIdx].messages
-	assert.equal(after.length, 1)
+	assert.deepEqual(after.map((m) => m.role), ["user", "system"])
 	assert.match(String(after[0].content), /SUMMARY-OF-WORK/)
 	assert.match(String(after[0].content), /Continue the work described above/)
+	assert.match(String(after[1].content), /^# Environment/)
 })
 
 test("a failing auto-compaction is reported once and does not derail the turn", async () => {
@@ -230,4 +207,96 @@ test("whitespace-only content before a tool call is not kept as an assistant mes
 	assert.deepEqual(assistantTexts, ["All done."])
 	const sentAssistant = client.requests.at(-1)!.messages.find((m) => m.role === "assistant")!
 	assert.equal(sentAssistant.content, null)
+})
+
+test("the environment is a system message after the first user message; token notes are folded; each request extends the previous one", async () => {
+	const client = new ScriptedClient([
+		{ tools: [readRegion(0)], inputTokens: 10_000 },
+		{ tools: [readRegion(1)], inputTokens: 11_000 },
+		{ text: "done", inputTokens: 12_000 },
+		{ text: "again", inputTokens: 13_000 },
+	])
+	const { agent } = makeAgent(client)
+	await agent.runTurn("first")
+	await agent.runTurn("second")
+	for (const request of client.requests) {
+		// Gateways hoist system messages into the leading prompt, so the only one
+		// sent must never change: the environment, as Claude Code sends it.
+		const systemIndexes = request.messages.flatMap((m, i) => (m.role === "system" ? [i] : []))
+		assert.deepEqual(systemIndexes, [1])
+		assert.match(String(request.messages[1].content), /^# Environment/)
+	}
+	assertEachRequestExtendsThePrevious(client)
+	assert.match(String(client.requests[0].messages[0].content), /first$/)
+	const last = client.requests[client.requests.length - 1].messages.at(-1)!
+	assert.match(String(last.content), /second\n\n<total_tokens>\d+ tokens left<\/total_tokens>$/)
+})
+
+test("each step's reasoning is replayed unchanged as reasoning_content on later requests", async () => {
+	const client = new ScriptedClient([
+		{ reasoning: "look at the file first", tools: [readRegion(0)], inputTokens: 10_000 },
+		{ tools: [readRegion(1)], inputTokens: 11_000 },
+		{ reasoning: "enough context now", text: "done", inputTokens: 12_000 },
+		{ text: "again", inputTokens: 13_000 },
+	])
+	const { agent } = makeAgent(client)
+	await agent.runTurn("first")
+	await agent.runTurn("second")
+	const reasoning = (messages: Messages) =>
+		messages
+			.filter((m) => m.role === "assistant")
+			.map((m) => (m as unknown as Record<string, unknown>).reasoning_content)
+	assert.deepEqual(reasoning(client.requests[1].messages), ["look at the file first"])
+	// A step without reasoning carries no field; earlier messages never change.
+	assert.deepEqual(reasoning(client.requests[3].messages), ["look at the file first", undefined, "enough context now"])
+	assertEachRequestExtendsThePrevious(client)
+})
+
+test("foldSystemMessages moves selected system messages into the turn before them", () => {
+	const messages: Messages = [
+		{ role: "user", content: "hi" },
+		{ role: "system", content: "# Environment" },
+		{ role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "x", arguments: "{}" } }] },
+		{ role: "tool", tool_call_id: "c1", content: "out" },
+		{ role: "system", content: "<total_tokens>5 tokens left</total_tokens>" },
+	]
+	const notesOnly = foldSystemMessages(messages, (text) => text.startsWith("<total_tokens>"))
+	assert.deepEqual(notesOnly.map((m) => m.role), ["user", "system", "assistant", "tool"])
+	assert.equal(notesOnly[3].content, "out\n\n<total_tokens>5 tokens left</total_tokens>")
+	// The AI SDK client folds everything: no system message survives.
+	const all = foldSystemMessages(messages, () => true)
+	assert.deepEqual(all.map((m) => m.role), ["user", "assistant", "tool"])
+	assert.equal(all[0].content, "hi\n\n# Environment")
+})
+
+/** Gateways cache by prefix: every request must start with the previous one
+ *  (only its last message may grow, as harness notes are appended to it). */
+function assertEachRequestExtendsThePrevious(client: ScriptedClient): void {
+	for (let i = 1; i < client.requests.length; i++) {
+		const previous = client.requests[i - 1].messages
+		const current = client.requests[i].messages
+		const changed = previous
+			.slice(0, -1)
+			.findIndex((message, index) => JSON.stringify(message) !== JSON.stringify(current[index]))
+		assert.equal(changed, -1, `request ${i} rewrote message ${changed} of ${previous.length}`)
+		assert.ok(
+			String(contentText(current[previous.length - 1])).startsWith(String(contentText(previous[previous.length - 1]))),
+			`request ${i} rewrote the previous last message`,
+		)
+	}
+}
+
+function contentText(message: Messages[number]): string {
+	const content = (message as { content?: unknown }).content
+	return typeof content === "string" ? content : JSON.stringify(content)
+}
+
+test("a long session past 40% of the window never rewrites earlier history, so the prompt cache keeps growing", async () => {
+	// 232k window: 100k input tokens per step is well into large-context territory.
+	const steps: ScriptedStep[] = Array.from({ length: 12 }, (_, i) => ({ tools: [readRegion(i)], inputTokens: 100_000 }))
+	steps.push({ text: "done", inputTokens: 100_000 })
+	const client = new ScriptedClient(steps)
+	const { agent } = makeAgent(client)
+	await agent.runTurn("read a lot")
+	assertEachRequestExtendsThePrevious(client)
 })
