@@ -56,7 +56,7 @@ test("delays slash-command tips on the thinking indicator", async () => {
     await screen.renderOnce();
     const frame = screen.captureCharFrame();
 
-    assert.match(frame, /Thinking \(0s · esc to interrupt\)/);
+    assert.match(frame, /Thinking… \(0s · esc to interrupt\)/);
     assert.doesNotMatch(frame, /└── TIP: /);
     assert.equal(TIP_DELAY_MS, 2_000);
   } finally {
@@ -384,7 +384,7 @@ test("renders Working spinner below streaming response text while busy", async (
     await screen.renderOnce();
     const frame = screen.captureCharFrame();
     assert.match(frame, /● Streaming response content\.\.\./);
-    assert.match(frame, /Working \(0s · esc to interrupt\)/);
+    assert.match(frame, /Working… \(0s · esc to interrupt\)/);
   } finally {
     act(() => screen.renderer.destroy());
   }
