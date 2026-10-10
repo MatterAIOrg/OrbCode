@@ -150,9 +150,30 @@ export async function readFile(args: Record<string, unknown>, context: ToolConte
 	}
 }
 
+/**
+ * Why a write/edit target is unusable, phrased so the model can recover. An
+ * empty file_path would otherwise resolve to the cwd and fail with EISDIR.
+ */
+function targetPathError(rawPath: string, filePath: string): string | undefined {
+	if (!rawPath.trim()) {
+		return "file_path is missing. The tool call arguments were likely cut off before file_path was sent (e.g. the output limit was reached mid-call). Re-issue the call with file_path set; for very large files, write a first part with file_write and append the rest with file_edit."
+	}
+	try {
+		if (fs.statSync(filePath).isDirectory()) {
+			return `${filePath} is a directory; file_path must name a file.`
+		}
+	} catch {
+		// Missing path: a new file.
+	}
+	return undefined
+}
+
 export async function fileWrite(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-	const filePath = resolveWorkspacePath(context.cwd, String(args.file_path ?? ""))
+	const rawPath = String(args.file_path ?? "")
+	const filePath = resolveWorkspacePath(context.cwd, rawPath)
 	const content = String(args.content ?? "")
+	const pathError = targetPathError(rawPath, filePath)
+	if (pathError) return { text: `Error writing file: ${pathError}`, isError: true }
 	try {
 		context.beforeWrite?.(filePath)
 		fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -339,6 +360,8 @@ function applyEdit(content: string, edit: EditSpec): EditOutcome {
 
 function editOneFile(context: ToolContext, edits: EditSpec[]): string[] {
 	const filePath = resolveWorkspacePath(context.cwd, edits[0].file_path)
+	const pathError = targetPathError(String(edits[0].file_path ?? ""), filePath)
+	if (pathError) return edits.map(() => `FAILED: ${pathError}`)
 	let content: string
 	try {
 		content = fs.readFileSync(filePath, "utf8")
