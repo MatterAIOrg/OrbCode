@@ -2216,9 +2216,6 @@ export function App({
       }
       return;
     }
-    if (key.escape && busy && !pendingApproval && !pendingFollowup) {
-      agentRef.current?.abort();
-    }
     if (key.tab && key.shift) {
       setApprovalMode((prev) => {
         const next: ApprovalMode =
@@ -2739,6 +2736,11 @@ export function App({
               onSubmit={handleSubmit}
               supportsImages={getModel(settings.model).supportsImages}
               onHeightChange={setInputBoxHeight}
+              // Esc interrupts only once the prompt is empty; an Esc that
+              // clears typed text never stops the running turn.
+              onEscape={() => {
+                if (busy) agentRef.current?.abort();
+              }}
               onDoubleEscape={() => openRewind(true)}
               prefill={promptPrefill}
             />
