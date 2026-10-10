@@ -927,6 +927,7 @@ export class Agent {
 				contextTokens: this.contextTokens,
 				todos: this.todos,
 				lastGitHead: this.lastGitHead,
+				gitBranch: gitOutput(this.options.cwd, "git branch --show-current") || undefined,
 				messages: this.messages,
 				transcript: this.transcript,
 				checkpoints: this.checkpoints,
