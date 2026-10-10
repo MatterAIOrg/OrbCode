@@ -5,7 +5,7 @@ export default {
 	function: {
 		name: "web_fetch",
 		description:
-			"Fetch content from a URL using curl. Use this when you need to scrape or retrieve content from a web page. Returns the raw HTML/text content from the URL.",
+			"Fetch a web page as cleaned markdown. Long pages are cut to a budget: pass a prompt describing what you need and only the most relevant sections are returned; without one you get the top of the page.",
 		strict: true,
 		parameters: {
 			type: "object",
@@ -14,8 +14,13 @@ export default {
 					type: "string",
 					description: "The URL to fetch content from",
 				},
+				prompt: {
+					type: ["string", "null"],
+					description:
+						"What you are looking for on the page, e.g. 'rate limits for the batch API'. Null to read the page from the top",
+				},
 			},
-			required: ["url"],
+			required: ["url", "prompt"],
 			additionalProperties: false,
 		},
 	},
