@@ -262,35 +262,30 @@ export function DiffView({ diff, maxLines = MAX_DIFF_LINES, maxWidth }: DiffView
 	)
 }
 
-/** Build a padded user block exactly as wide as the transcript. */
+/**
+ * Build the user block: `❯` sits in the same column as the assistant's `●`,
+ * and wrapped or continuation lines hang under the text, not the marker.
+ */
 export function formatUserBlock(text: string, width: number, attachments: AttachmentSummary[] = []): string {
-	const lineWidth = Math.max(1, width)
-	const paddingX = Math.min(2, Math.floor((lineWidth - 1) / 2))
-	const contentWidth = Math.max(1, lineWidth - paddingX * 2)
+	const lineWidth = Math.max(3, width)
 	const normalizedText = (text || "").replace(/\t/g, "  ")
+	const textLines = (normalizedText || (attachments.length > 0 ? "Attached files" : "")).split("\n")
 	const attachmentLines = attachments.map(
 		(attachment) =>
-			`  📎 ${attachment.name}${attachment.kind === "image" ? " · image" : ""}${attachment.truncated ? " · truncated" : ""}`,
+			`📎 ${attachment.name}${attachment.kind === "image" ? " · image" : ""}${attachment.truncated ? " · truncated" : ""}`,
 	)
-	const sourceLines = [`❯ ${normalizedText || (attachments.length > 0 ? "Attached files" : "")}`, ...attachmentLines].flatMap(
-		(line) => line.split("\n"),
-	)
-	const blank = " ".repeat(lineWidth)
-	const output: string[] = [blank]
-	for (const sourceLine of sourceLines) {
-		if (sourceLine.length === 0) {
-			output.push(blank)
+	const output: string[] = [""]
+	for (const [index, line] of [...textLines, ...attachmentLines].entries()) {
+		const marker = index === 0 ? "❯ " : "  "
+		if (line.length === 0) {
+			output.push(marker.trimEnd())
 			continue
 		}
-		for (let offset = 0; offset < sourceLine.length; offset += contentWidth) {
-			output.push(
-				" ".repeat(paddingX) +
-				sourceLine.slice(offset, offset + contentWidth).padEnd(contentWidth) +
-				" ".repeat(paddingX),
-			)
+		for (let offset = 0; offset < line.length; offset += lineWidth - 2) {
+			output.push((offset === 0 ? marker : "  ") + line.slice(offset, offset + lineWidth - 2))
 		}
 	}
-	output.push(blank)
+	output.push("")
 	return output.join("\n")
 }
 
@@ -318,7 +313,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 				<Box marginTop={1} flexDirection="column" flexShrink={0}>
 					<Text>
 						<Text color={COLORS.primary}>● </Text>
-						{renderMarkdown(row.text.trimEnd())}
+						{renderMarkdown(row.text.trimEnd(), Math.max(20, width - 2))}
 					</Text>
 				</Box>
 			)
@@ -387,7 +382,7 @@ export const RowView = React.memo(function RowView({ row, width }: { row: Row; w
 					<Text color={COLORS.success} bold>
 						✔ Task completed
 					</Text>
-					<Text>{renderMarkdown(row.text.trimEnd())}</Text>
+					<Text>{renderMarkdown(row.text.trimEnd(), Math.max(20, width - 4))}</Text>
 				</Box>
 			)
 	}

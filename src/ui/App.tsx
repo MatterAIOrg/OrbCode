@@ -124,6 +124,7 @@ import {
   toolGroupHeading,
   type Row,
 } from "./components/rows.js";
+import { markdownRowCount } from "./markdown.js";
 import { LinkManager } from "./components/LinkManager.js";
 import { PluginManager } from "./components/PluginManager.js";
 import {
@@ -3085,7 +3086,9 @@ function estimateRowLines(row: Row, width: number): number {
       );
     case "assistant":
       // Blank messages render nothing (see rows.tsx).
-      return row.text.trim() ? 1 + wrapped(`● ${row.text}`) : 0;
+      return row.text.trim()
+        ? 1 + markdownRowCount(row.text, Math.max(20, w - 2), w, 2)
+        : 0;
     case "tool": {
       const heading = `${formatToolName(row.name)} ${row.summary}`;
       let h = 1 + wrapped(heading);
@@ -3115,7 +3118,7 @@ function estimateRowLines(row: Row, width: number): number {
     case "error":
       return 1 + wrapped(`✗ ${row.text}`);
     case "completion":
-      return 4 + wrapped(row.text, w - 4);
+      return 4 + markdownRowCount(row.text, Math.max(20, w - 4), w - 4);
     default:
       return 1;
   }
