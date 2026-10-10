@@ -137,6 +137,44 @@ test("treats a raw linefeed as Shift+Enter in the composer", async () => {
   }
 });
 
+test("Esc clears typed text without interrupting, then interrupts once empty", async () => {
+  let escapes = 0;
+  const screen = await testRender(
+    <InputBox
+      active
+      width={80}
+      slashCommands={[]}
+      onSubmit={() => {}}
+      supportsImages
+      onEscape={() => {
+        escapes++;
+      }}
+    />,
+    { width: 80, height: 8, kittyKeyboard: true },
+  );
+
+  try {
+    await act(async () => {
+      await screen.mockInput.typeText("draft");
+      await screen.flush();
+      screen.mockInput.pressEscape();
+      await screen.flush();
+    });
+
+    assert.equal(escapes, 0);
+    assert.doesNotMatch(screen.captureCharFrame(), /draft/);
+
+    await act(async () => {
+      screen.mockInput.pressEscape();
+      await screen.flush();
+    });
+
+    assert.equal(escapes, 1);
+  } finally {
+    act(() => screen.renderer.destroy());
+  }
+});
+
 test("collapses multiline and large pastes into paste chips to avoid terminal overflow", async () => {
   let submittedText = "";
   const screen = await testRender(

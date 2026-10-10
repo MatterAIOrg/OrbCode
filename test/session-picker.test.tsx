@@ -18,6 +18,8 @@ function session(id: string, title: string, cwd: string, minutesAgo: number): Se
     totalCost: 0,
     contextTokens: 0,
     todos: "",
+    gitBranch: "main",
+    sizeBytes: 1782580,
     messages: [{ role: "user", content: "hi" }],
   } as SessionData;
 }
@@ -37,7 +39,7 @@ async function renderPicker(props: Partial<React.ComponentProps<typeof SessionPi
       onCancel={() => {}}
       {...props}
     />,
-    { width: 110, height: 12 },
+    { width: 110, height: 20 },
   );
   return { screen, selected };
 }
@@ -49,6 +51,7 @@ test("resume picker lists this directory first and Tab switches to all directori
     let frame = screen.captureCharFrame();
     assert.match(frame, /this directory/);
     assert.match(frame, /fix login bug/);
+    assert.match(frame, /5 minutes ago · main · 1\.7MB/);
     assert.doesNotMatch(frame, /billing refactor/);
     assert.match(frame, /tab all directories/);
 
@@ -61,8 +64,10 @@ test("resume picker lists this directory first and Tab switches to all directori
     assert.match(frame, /all directories/);
     assert.match(frame, /billing refactor/);
     // Sessions from other directories show where they live; local ones don't.
-    assert.match(frame, /billing refactor.*\/work\/billing-service/);
-    assert.doesNotMatch(frame, /fix login bug.*\/work\/app/);
+    assert.match(frame, /1 minute ago · main · 1\.7MB · \/work\/billing-service/);
+    assert.doesNotMatch(frame, /\/work\/app/);
+    // Entries are separated by a blank line.
+    assert.match(frame, /billing-service\s*│\n│\s*│\n│\s+fix login bug/);
 
     await act(async () => {
       screen.mockInput.pressEnter();

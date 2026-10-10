@@ -86,7 +86,9 @@ export function RewindPicker({ points, onSelect, onCancel }: RewindPickerProps) 
 						{i + 1}. {label}
 					</Text>
 				))}
-				<Text color={COLORS.info}>↑/↓ select · enter confirm · esc back</Text>
+				<Box marginTop={1}>
+					<Text color={COLORS.info}>↑/↓ select · enter confirm · esc back</Text>
+				</Box>
 			</PopoverBox>
 		)
 	}
@@ -103,19 +105,21 @@ export function RewindPicker({ points, onSelect, onCancel }: RewindPickerProps) 
 			<Text color={COLORS.dim}>Restore the code and/or conversation to the point before…</Text>
 			<Box height={1} />
 			{windowStart > 0 && <Text color={COLORS.dim}>  ↑ {windowStart} more</Text>}
-			{visible.map((index) => {
+			{visible.map((index, i) => {
 				const point = points[index]
 				const isSelected = index === selected
 				const color = isSelected ? COLORS.accent : undefined
 				if (!point) {
 					return (
-						<Text key="current" color={color} italic>
-							{isSelected ? "❯ " : "  "}(current)
-						</Text>
+						<Box key="current" marginTop={i === 0 ? 0 : 1}>
+							<Text color={color} italic>
+								{isSelected ? "❯ " : "  "}(current)
+							</Text>
+						</Box>
 					)
 				}
 				return (
-					<Box key={point.id} flexDirection="column">
+					<Box key={point.id} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
 						<Text color={color}>
 							{isSelected ? "❯ " : "  "}
 							{preview(point, 80)}
@@ -127,7 +131,9 @@ export function RewindPicker({ points, onSelect, onCancel }: RewindPickerProps) 
 			{windowStart + VISIBLE_ROWS < total && (
 				<Text color={COLORS.dim}>  ↓ {total - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text color={COLORS.info}>↑/↓ select · enter continue · esc cancel</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.info}>↑/↓ select · enter continue · esc cancel</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

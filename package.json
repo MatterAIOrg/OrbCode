@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "7.0.0",
+  "version": "7.0.1",
   "description": "OrbCode CLI — agentic coding in your terminal, by MatterAI",
   "type": "module",
   "bin": {
@@ -48,7 +48,7 @@
     "test:resume": "node --import tsx --test test/resume-cost.test.ts",
     "test:compaction": "node --import tsx --test test/compaction.test.ts test/agent-context.test.ts test/files.test.ts",
     "test:effort": "node --import tsx --test test/model-effort.test.ts test/model-persistence.test.ts",
-    "test:ui": "bun test test/ui-viewport.test.tsx test/session-picker.test.tsx test/rewind-picker.test.tsx test/resume-confirm.test.tsx test/model-picker.test.tsx test/effort-picker.test.tsx test/tool-group.test.tsx",
+    "test:ui": "bun test test/ui-viewport.test.tsx test/session-picker.test.tsx test/rewind-picker.test.tsx test/resume-confirm.test.tsx test/model-picker.test.tsx test/effort-picker.test.tsx test/tool-group.test.tsx test/markdown-table.test.tsx",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {
@@ -65,7 +65,8 @@
     "pdf-parse": "^2.4.5",
     "picomatch": "4.0.4",
     "react": "^19.2.0",
-    "read-excel-file": "^9.2.0"
+    "read-excel-file": "^9.2.0",
+    "string-width": "^7.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

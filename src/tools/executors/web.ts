@@ -63,7 +63,7 @@ export async function webFetch(args: Record<string, unknown>, context: ToolConte
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${context.token}`,
 			},
-			body: JSON.stringify({ url: targetUrl }),
+			body: JSON.stringify({ url: targetUrl, prompt: typeof args.prompt === "string" ? args.prompt : undefined }),
 			signal: AbortSignal.timeout(30_000),
 		})
 		if (!response.ok) {

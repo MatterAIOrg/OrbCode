@@ -240,7 +240,9 @@ export function ModelPicker({
 			{windowStart + VISIBLE_ROWS < models.length && (
 				<Text color={COLORS.dim}>  ↓ {models.length - windowStart - VISIBLE_ROWS} more</Text>
 			)}
-			<Text color={COLORS.dim}>↑/↓ select{effortHint} · enter confirm · esc cancel</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.dim}>↑/↓ select{effortHint} · enter confirm · esc cancel</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

@@ -47,9 +47,11 @@ export function HookTrustPrompt({ cwd, commands, onDecision }: HookTrustPromptPr
 				))}
 				{extra > 0 && <Text color={COLORS.dim}> … {extra} more</Text>}
 			</Box>
-			<Text color={COLORS.dim}>
-				Only trust hooks from a repository you trust. (y) trust &amp; enable · (n or Enter) keep disabled
-			</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.dim}>
+					Only trust hooks from a repository you trust. (y) trust &amp; enable · (n or Enter) keep disabled
+				</Text>
+			</Box>
 		</Box>
 	)
 }

@@ -4,7 +4,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
 
-import { readFile } from "../src/tools/executors/files.js"
+import { fileEdit, fileWrite, readFile } from "../src/tools/executors/files.js"
 import read_file_schema from "../src/tools/schemas/read_file.js"
 import { describeToolCall } from "../src/tools/index.js"
 
@@ -103,4 +103,27 @@ test("readFile caps characters, not just lines (minified files, many files per c
 	)
 	assert.ok(batch.text.length < 215_000, `got ${batch.text.length} chars`)
 	assert.match(batch.text, /Skipped wide\.txt: this call reached its 200000-character limit/)
+})
+
+test("fileWrite and fileEdit reject a missing file_path or a directory target", async () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "orbcode-test-"))
+	const context = { cwd: tmpDir, setTodos: () => {} }
+
+	const missing = await fileWrite({ content: "hello" }, context)
+	assert.equal(missing.isError, true)
+	assert.match(missing.text, /file_path is missing/)
+	assert.doesNotMatch(missing.text, /EISDIR/)
+
+	fs.mkdirSync(path.join(tmpDir, "sub"))
+	const dir = await fileWrite({ file_path: "sub", content: "hello" }, context)
+	assert.equal(dir.isError, true)
+	assert.match(dir.text, /is a directory/)
+
+	const edit = await fileEdit({ old_string: "a", new_string: "b" }, context)
+	assert.equal(edit.isError, true)
+	assert.match(edit.text, /file_path is missing/)
+
+	const ok = await fileWrite({ file_path: "sub/new.txt", content: "hello" }, context)
+	assert.equal(ok.isError, undefined)
+	assert.equal(fs.readFileSync(path.join(tmpDir, "sub/new.txt"), "utf8"), "hello")
 })

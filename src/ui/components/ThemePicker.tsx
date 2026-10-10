@@ -69,7 +69,9 @@ export function ThemePicker({ current, onSelect, onCancel }: ThemePickerProps) {
 					</Box>
 				)
 			})}
-			<Text color={COLORS.dim}>↑/↓ select · enter confirm · d/l quick select · esc cancel</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.dim}>↑/↓ select · enter confirm · d/l quick select · esc cancel</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

@@ -28,6 +28,8 @@ interface InputBoxProps {
 	supportsImages: boolean
 	/** Reports the complete rendered height, including autocomplete popups. */
 	onHeightChange?: (height: number) => void
+	/** Esc pressed on an empty prompt (an Esc that clears the prompt never reaches this). */
+	onEscape?: () => void
 	/** Esc pressed twice in quick succession on an empty prompt. */
 	onDoubleEscape?: () => void
 	/** Replaces the prompt text whenever `id` changes (e.g. the message being edited after a rewind). */
@@ -150,6 +152,7 @@ export function InputBox({
 	onSubmit,
 	supportsImages,
 	onHeightChange,
+	onEscape,
 	onDoubleEscape,
 	prefill,
 }: InputBoxProps) {
@@ -401,12 +404,16 @@ export function InputBox({
 		(input, key) => {
 			const currentValue = valueRef.current
 			const currentCursor = cursorRef.current
-			if (key.escape && (currentValue.length > 0 || attachmentsRef.current.length > 0)) {
+			if (
+				key.escape &&
+				(currentValue.length > 0 || attachmentsRef.current.length > 0 || pasteChipsRef.current.length > 0)
+			) {
 				clearComposer()
 				lastEscapeRef.current = 0
 				return
 			}
 			if (key.escape) {
+				onEscape?.()
 				const now = Date.now()
 				if (onDoubleEscape && now - lastEscapeRef.current < DOUBLE_ESCAPE_MS) {
 					lastEscapeRef.current = 0

@@ -40,6 +40,10 @@ export interface SessionData {
 	todos: string
 	/** Last observed Git commit, used to report commits across resumed sessions. */
 	lastGitHead?: string
+	/** Git branch at the last save, shown in the resume picker. */
+	gitBranch?: string
+	/** Size of the session file in bytes. Set by `listSessions`, never persisted. */
+	sizeBytes?: number
 	messages: OpenAI.Chat.ChatCompletionMessageParam[]
 	/** Exact visible TUI history. Optional for sessions written before v0.4.2. */
 	transcript?: SessionTranscriptEntry[]
@@ -108,9 +112,10 @@ export function listSessions(cwd?: string): SessionData[] {
 	const sessions: SessionData[] = []
 	for (const file of files) {
 		try {
-			const data = JSON.parse(fs.readFileSync(path.join(getSessionsDir(), file), "utf8")) as SessionData
+			const raw = fs.readFileSync(path.join(getSessionsDir(), file))
+			const data = JSON.parse(raw.toString("utf8")) as SessionData
 			if ((cwd === undefined || data.cwd === cwd) && Array.isArray(data.messages) && data.messages.length > 0) {
-				sessions.push(data)
+				sessions.push({ ...data, sizeBytes: raw.length })
 			}
 		} catch {
 			// skip unreadable session files
