@@ -94,8 +94,10 @@ export function LinkManager({ links, status, onAdd, onRemove, onClose }: LinkMan
 					<Text underline> </Text>
 				</Text>
 			)}
-			{status && <Text color={COLORS.dim}>{status}</Text>}
-			<Text color={COLORS.dim}>↑/↓ select · enter add/remove · d remove · esc done</Text>
+			<Box marginTop={1} flexDirection="column">
+				{status && <Text color={COLORS.dim}>{status}</Text>}
+				<Text color={COLORS.dim}>↑/↓ select · enter add/remove · d remove · esc done</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

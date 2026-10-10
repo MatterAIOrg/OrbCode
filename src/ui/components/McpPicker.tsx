@@ -321,7 +321,9 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 				<Text color={COLORS.dim}>
 					Add servers with: orbcode mcp add &lt;name&gt; &lt;command&gt; [args...]
 				</Text>
-				<Text color={COLORS.dim}>esc to close</Text>
+				<Box marginTop={1}>
+					<Text color={COLORS.dim}>esc to close</Text>
+				</Box>
 			</PopoverBox>
 		)
 	}
@@ -344,7 +346,9 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 					{pendingConfirm.title}
 				</Text>
 				<Text>{pendingConfirm.body}</Text>
-				<Text color={COLORS.dim}>y confirm · n / esc cancel</Text>
+				<Box marginTop={1}>
+					<Text color={COLORS.dim}>y confirm · n / esc cancel</Text>
+				</Box>
 			</PopoverBox>
 		)
 	}
@@ -385,13 +389,15 @@ export function McpPicker({ manager, onChanged, onCancel, onDeleted }: McpPicker
 					actionSelected={actionSelected}
 				/>
 			)}
-			<Text color={COLORS.dim}>
-				{busy
-					? busyMessage
-					: actionMode
-						? "↑/↓ select action · enter execute · esc back"
-						: "↑/↓ select server · enter open actions · esc close"}
-			</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.dim}>
+					{busy
+						? busyMessage
+						: actionMode
+							? "↑/↓ select action · enter execute · esc back"
+							: "↑/↓ select server · enter open actions · esc close"}
+				</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

@@ -1,5 +1,5 @@
 import React, { useState } from "react"
-import { Text, useInput } from "../primitives.js"
+import { Box, Text, useInput } from "../primitives.js"
 
 import { COLORS } from "../../branding.js"
 import { describeResumeCost, formatIdle, formatTokens, type ResumeCostEstimate } from "../../core/resumeCost.js"
@@ -62,7 +62,9 @@ export function ResumeConfirm({ estimate, estimating = false, onDecision, onCanc
 					</Text>
 				)
 			})}
-			<Text color={COLORS.info}>↑/↓ select · enter confirm · esc cancel</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.info}>↑/↓ select · enter confirm · esc cancel</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

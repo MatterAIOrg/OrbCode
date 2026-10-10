@@ -86,7 +86,9 @@ export function McpApprovalPrompt({ serverNames, onApprove }: McpApprovalPromptP
 				{windowStart + VISIBLE_ROWS < count && (
 					<Text color={COLORS.dim}>  ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
 				)}
-				<Text color={COLORS.dim}>space toggle · enter confirm · esc reject all</Text>
+				<Box marginTop={1}>
+					<Text color={COLORS.dim}>space toggle · enter confirm · esc reject all</Text>
+				</Box>
 			</Box>
 		</Box>
 	)

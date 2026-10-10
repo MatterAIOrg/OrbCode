@@ -2798,6 +2798,7 @@ export function App({
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          backgroundColor={theme.backdrop}
           zIndex={100}
         >
           <Box

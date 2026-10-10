@@ -16,6 +16,8 @@ export interface OrbCodeTheme {
   background: string;
   panel: string;
   panelRaised: string;
+  /** Translucent scrim drawn over the app behind a centered popover. */
+  backdrop: string;
   selection: string;
   primary: string;
   accent: string;
@@ -37,6 +39,7 @@ export const DARK_THEME: OrbCodeTheme = {
   background: "#141414",
   panel: "#151B20",
   panelRaised: "#1D252C",
+  backdrop: "#000000B3",
   selection: "#203945",
   primary: "#E7F2F5",
   accent: "#c4fdff",
@@ -58,6 +61,7 @@ export const LIGHT_THEME: OrbCodeTheme = {
   background: "#FFFFFF",
   panel: "#F1F3F5",
   panelRaised: "#E5E7EB",
+  backdrop: "#00000066",
   selection: "#D4EAF1",
   primary: "#12262F",
   accent: "#3a5455",

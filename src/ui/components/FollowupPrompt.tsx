@@ -63,7 +63,9 @@ export function FollowupPrompt({ question, suggestions, onAnswer }: FollowupProm
 				type your own: {custom}
 				{isCustomSelected && <Text underline> </Text>}
 			</Text>
-			<Text color={COLORS.dim}>↑/↓ select · enter confirm · 1-{Math.min(suggestions.length, 9)} quick pick</Text>
+			<Box marginTop={1}>
+				<Text color={COLORS.dim}>↑/↓ select · enter confirm · 1-{Math.min(suggestions.length, 9)} quick pick</Text>
+			</Box>
 		</PopoverBox>
 	)
 }

@@ -83,7 +83,9 @@ export function McpMigrationPicker({
           Install Claude Code or Claude Desktop, or add servers with `orbcode
           mcp add`.
         </Text>
-        <Text color={COLORS.dim}>esc to close</Text>
+        <Box marginTop={1}>
+          <Text color={COLORS.dim}>esc to close</Text>
+        </Box>
       </PopoverBox>
     );
   }
@@ -132,9 +134,11 @@ export function McpMigrationPicker({
       {windowStart + VISIBLE_ROWS < count && (
         <Text color={COLORS.dim}> ↓ {count - windowStart - VISIBLE_ROWS} more</Text>
       )}
-      <Text color={COLORS.dim}>
-        space toggle · enter confirm ({checkedCount}/{count}) · esc cancel
-      </Text>
+      <Box marginTop={1}>
+        <Text color={COLORS.dim}>
+          space toggle · enter confirm ({checkedCount}/{count}) · esc cancel
+        </Text>
+      </Box>
     </PopoverBox>
   );
 }
