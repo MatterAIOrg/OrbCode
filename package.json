@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "7.0.1",
+  "version": "7.0.2",
   "description": "OrbCode CLI — agentic coding in your terminal, by MatterAI",
   "type": "module",
   "bin": {
@@ -43,6 +43,7 @@
     "test:search": "node --import tsx --test test/search-files.test.ts",
     "test:rewind": "node --import tsx --test test/rewind.test.ts",
     "test:headless": "node --import tsx --test test/headless.test.ts",
+    "test:headless-resume": "node --import tsx --test test/headless-resume.test.ts",
     "test:autoupdate": "node --import tsx --test test/auto-update.test.ts",
     "test:warmup": "node --import tsx --test test/cache-warmup.test.ts",
     "test:resume": "node --import tsx --test test/resume-cost.test.ts",

@@ -47,6 +47,7 @@ Usage:
   orbcode -p "..." --apiKey <key>   headless: API key for that endpoint
   orbcode --resume        list previous sessions to resume
   orbcode --resume <id>   resume a previous session by id
+  orbcode -p "…" --resume <id>  headless: continue a prior session (multi-turn, keeps context)
   orbcode -s "<prompt>"   override the default system prompt (replaces it entirely;
                           accepts -s <text>, --system-prompt <text>, and
                           --system-prompt=<text> for values that start with '-')
@@ -265,6 +266,10 @@ async function main(): Promise<void> {
 			requireModel,
 			outputFile,
 			verbose,
+			// `--resume <id>` with `-p` continues that session (multi-turn headless):
+			// `initialSession` is already loaded above. `--resume` with no id only
+			// makes sense interactively (there is no picker here), so it is ignored.
+			resume: initialSession,
 		})
 		return
 	}

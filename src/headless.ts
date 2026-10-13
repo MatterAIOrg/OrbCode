@@ -23,6 +23,7 @@ import { fetchProfile } from "./auth/auth.js"
 import { getAuthToken, getPendingProjectHooks, loadSettings } from "./config/settings.js"
 import { Agent } from "./core/agent.js"
 import type { AgentEvent } from "./core/events.js"
+import type { SessionData } from "./core/sessions.js"
 import { McpManager } from "./mcp/manager.js"
 
 export interface HeadlessOptions {
@@ -36,6 +37,13 @@ export interface HeadlessOptions {
 	outputFile?: string
 	/** When true, print tool-start/tool-end events to stderr for observability. */
 	verbose?: boolean
+	/**
+	 * A previous session to continue instead of starting fresh — multi-turn
+	 * headless mode. The agent is seeded with the session's messages, so a
+	 * follow-up prompt builds on the prior context (no re-reading the repo), and
+	 * the same session id is kept. Loaded from `--resume <id>` in `index.tsx`.
+	 */
+	resume?: SessionData
 }
 
 /**
@@ -50,7 +58,7 @@ export function isOutputFileWrite(outputFile: string | undefined, toolName: stri
 
 /** Non-interactive `orbcode -p "prompt"` mode: prints the final response to stdout. */
 export async function runHeadless(prompt: string, options: HeadlessOptions): Promise<void> {
-	const { yolo, systemPromptOverride, outputMode = "text", requireModel, outputFile, verbose } = options
+	const { yolo, systemPromptOverride, outputMode = "text", requireModel, outputFile, verbose, resume } = options
 	const settings = loadSettings()
 	const token = getAuthToken(settings)
 
@@ -208,6 +216,7 @@ export async function runHeadless(prompt: string, options: HeadlessOptions): Pro
 		hooks: settings.hooks,
 		mcp,
 		systemPromptOverride,
+		resume,
 		callbacks: {
 			onEvent: (event: AgentEvent) => {
 				switch (event.type) {
