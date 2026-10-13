@@ -1,6 +1,6 @@
 {
   "name": "@matterailab/orbcode",
-  "version": "7.0.2",
+  "version": "7.0.3",
   "description": "OrbCode CLI — agentic coding in your terminal, by MatterAI",
   "type": "module",
   "bin": {
@@ -67,7 +67,8 @@
     "picomatch": "4.0.4",
     "react": "^19.2.0",
     "read-excel-file": "^9.2.0",
-    "string-width": "^7.2.0"
+    "string-width": "^7.2.0",
+    "@vscode/ripgrep": "1.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
@@ -77,8 +78,7 @@
     "typescript": "^5.7.2"
   },
   "optionalDependencies": {
-    "@ff-labs/fff-node": "0.10.1",
-    "@vscode/ripgrep": "1.18.0"
+    "@ff-labs/fff-node": "0.10.1"
   },
   "keywords": [
     "orbcode",

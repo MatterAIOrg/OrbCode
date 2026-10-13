@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import { createRequire } from "node:module"
 import * as path from "node:path"
 
 /**
@@ -9,6 +10,60 @@ import * as path from "node:path"
  *   - Windows: Git Bash when installed, else ComSpec (cmd.exe).
  */
 let cached: string | undefined
+let cachedRgBinDir: string | null | undefined
+
+const require = createRequire(import.meta.url)
+
+/**
+ * Resolve the bundled `@vscode/ripgrep` binary path, if installed for this
+ * platform/arch (`darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`,
+ * `win32-x64`, `win32-arm64`, etc.).
+ */
+export function getBundledRipgrepPath(): string | undefined {
+	try {
+		const mod = require("@vscode/ripgrep") as { rgPath?: unknown }
+		if (typeof mod.rgPath === "string" && fs.statSync(mod.rgPath, { throwIfNoEntry: false })?.isFile()) {
+			return mod.rgPath
+		}
+	} catch {
+		// Platform binary package may not be installed on an unsupported architecture.
+	}
+	return undefined
+}
+
+/**
+ * Directory containing the bundled `rg` (`rg.exe` on Windows) binary, so we
+ * can append it to `PATH` when spawning shell commands and hooks. Appending
+ * (rather than prepending) respects any `rg` the user already has on `PATH`
+ * while guaranteeing `rg` works out of the box when not installed globally.
+ */
+export function getBundledRipgrepDir(): string | undefined {
+	if (cachedRgBinDir === undefined) {
+		const rgPath = getBundledRipgrepPath()
+		cachedRgBinDir = rgPath ? path.dirname(rgPath) : null
+	}
+	return cachedRgBinDir ?? undefined
+}
+
+/**
+ * Return `baseEnv` with the bundled ripgrep directory appended to `PATH` (or
+ * `Path` on Windows when that casing is used) if not already present.
+ */
+export function withBundledToolsOnPath(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	const rgDir = getBundledRipgrepDir()
+	if (!rgDir) return { ...baseEnv }
+	const env: NodeJS.ProcessEnv = { ...baseEnv }
+	const pathKey =
+		process.platform === "win32"
+			? (Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH")
+			: "PATH"
+	const current = env[pathKey] ?? ""
+	const entries = current.split(path.delimiter).filter(Boolean)
+	if (!entries.includes(rgDir)) {
+		env[pathKey] = entries.length > 0 ? `${current}${path.delimiter}${rgDir}` : rgDir
+	}
+	return env
+}
 
 function firstExisting(candidates: string[]): string | undefined {
 	return candidates.find((candidate) => {
