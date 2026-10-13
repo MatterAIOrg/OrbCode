@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.4] - 2026-10-13
+
+### Added
+
+- **"Compact and resume" option in the cold-cache resume confirmation prompt.** When resuming a session with an expired prompt cache or large context (`ResumeConfirm`), you can now pick `2. Compact and resume` (between `Resume` and `Start a new conversation`) to resume the session and immediately run normal conversation compaction (`/compact`) so subsequent turns carry the compacted summary instead of the full history.
+
 ## [7.0.3] - 2026-10-13
 
 ### Fixed

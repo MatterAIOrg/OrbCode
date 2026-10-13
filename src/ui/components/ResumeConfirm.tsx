@@ -5,7 +5,7 @@ import { COLORS } from "../../branding.js"
 import { describeResumeCost, formatIdle, formatTokens, type ResumeCostEstimate } from "../../core/resumeCost.js"
 import { PopoverBox } from "./PopoverBox.js"
 
-export type ResumeDecision = "resume" | "new"
+export type ResumeDecision = "resume" | "compact" | "new"
 
 interface ResumeConfirmProps {
 	estimate: ResumeCostEstimate
@@ -18,6 +18,11 @@ interface ResumeConfirmProps {
 const OPTIONS: Array<{ decision: ResumeDecision; label: string; hint?: string }> = [
 	{ decision: "resume", label: "Resume" },
 	{
+		decision: "compact",
+		label: "Compact and resume",
+		hint: "Summarize the conversation so later turns use less context",
+	},
+	{
 		decision: "new",
 		label: "Start a new conversation",
 		hint: "OrbCode can look this one up if you refer to it later",
@@ -27,7 +32,7 @@ const OPTIONS: Array<{ decision: ResumeDecision; label: string; hint?: string }>
 /**
  * Shown before resuming a session whose prompt cache has expired: the first
  * turn re-reads the whole context at the uncached price, so a long-idle,
- * large session gets a chance to start fresh instead.
+ * large session gets a chance to compact or start fresh instead.
  */
 export function ResumeConfirm({ estimate, estimating = false, onDecision, onCancel }: ResumeConfirmProps) {
 	const [selected, setSelected] = useState(0)

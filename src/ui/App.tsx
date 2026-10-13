@@ -904,6 +904,9 @@ export function App({
             reasoningBufferRef.current = "";
             setStreamingReasoning("");
           }
+          if (agentRef.current) {
+            setContextTokens(agentRef.current.lastContextTokens);
+          }
           setBusy(false);
           maybeFetchTitle();
           refreshUsage();
@@ -1080,7 +1083,7 @@ export function App({
   );
 
   const resumeSession = useCallback(
-    (session: SessionData) => {
+    (session: SessionData): boolean => {
       setResumableSessions(null);
       setPendingResume(null);
       // A session from another directory continues in that directory, so its
@@ -1095,7 +1098,7 @@ export function App({
             kind: "error",
             text: `Can't resume "${session.title || session.id}": its directory ${session.cwd} no longer exists.`,
           });
-          return;
+          return false;
         }
         const oldManager = mcpManagerRef.current;
         mcpManagerRef.current = null;
@@ -1147,6 +1150,7 @@ export function App({
         kind: "info",
         text: `Resumed session: ${session.title || session.id}${switchedDir ? ` · working directory is now ${session.cwd}` : ""}`,
       });
+      return true;
     },
     [createAgent, clearQueue, discardAgent, pushRow, resetTranscript],
   );
@@ -2080,6 +2084,12 @@ export function App({
       if (!session) return;
       if (decision === "resume") {
         resumeSession(session);
+        return;
+      }
+      if (decision === "compact") {
+        if (resumeSession(session)) {
+          handleCommand("/compact");
+        }
         return;
       }
       handleCommand("/new");

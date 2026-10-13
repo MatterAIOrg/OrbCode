@@ -106,6 +106,20 @@ function session(contextTokens: number, opts: { turns?: number; charsPerReply?: 
 	}
 }
 
+test("compacting immediately upon resuming replaces history with the summary and updates contextTokens", async () => {
+	const client = new Client((_m, tools) => (tools === 0 ? summary() : final()))
+	const { agent } = makeAgent(client, session(200_000))
+	await agent.compact()
+	assert.equal(client.summaries.length, 1)
+	assert.ok(agent.lastContextTokens < 5_000, `expected compacted contextTokens < 5000, got ${agent.lastContextTokens}`)
+	await agent.runTurn("now add tests")
+	const next = client.requests.at(-1)!.messages
+	assert.deepEqual(next.map((m) => m.role), ["user", "system", "user"])
+	assert.match(String(next[0].content), /SUMMARY/)
+	assert.match(String(next[1].content), /^# Environment/)
+	assert.match(String(next[2].content), /now add tests\n\n<total_tokens>\d+ tokens left<\/total_tokens>$/)
+})
+
 test("a resumed session past 80% compacts before its first request and keeps the new message verbatim", async () => {
 	const client = new Client((_m, tools) => (tools === 0 ? summary() : final()))
 	const { agent } = makeAgent(client, session(200_000))
