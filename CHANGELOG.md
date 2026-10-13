@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.3] - 2026-10-13
+
+### Fixed
+
+- **Bundled `rg` (ripgrep) is now on `PATH` for `Bash` commands and hooks across all OSes.** `@vscode/ripgrep` was previously in `optionalDependencies` and only resolved by the legacy `search_files` executor; shell commands spawned by `Bash` (`executeCommand`, background commands) and hooks inherited the raw `process.env.PATH`, so `rg` failed with `command not found` on machines where ripgrep was not installed globally. `@vscode/ripgrep` is now a regular dependency (installing the matching platform binary via its per-OS/arch packages on macOS, Linux, and Windows), and its `bin/` directory is appended to `PATH` for all spawned shell commands and hooks so `rg` works out of the box while still respecting any system `rg` already on the user's `PATH`.
+
 ## [7.0.0] - 2026-10-09
 
 ### Added

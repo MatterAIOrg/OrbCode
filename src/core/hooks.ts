@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 
-import { getShell, getShellRunArgs } from "../utils/shell.js"
+import { getShell, getShellRunArgs, withBundledToolsOnPath } from "../utils/shell.js"
 
 /**
  * Lifecycle hooks, modeled on Claude Code's hooks feature. Users configure
@@ -369,7 +369,7 @@ const HOOK_ENV_REDACT_PATTERN = /(?:^|_)(TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDEN
  *  credential — hooks must never see the user's API token. */
 function buildHookEnv(cwd: string): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { MATTERAI_PROJECT_DIR: cwd }
-	for (const [key, value] of Object.entries(process.env)) {
+	for (const [key, value] of Object.entries(withBundledToolsOnPath(process.env))) {
 		if (value === undefined) continue
 		if (HOOK_ENV_REDACT_EXACT.has(key)) continue
 		if (HOOK_ENV_REDACT_PATTERN.test(key)) continue

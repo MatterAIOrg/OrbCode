@@ -3,6 +3,8 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
+import { withBundledToolsOnPath } from "../../utils/shell.js"
+
 export interface BackgroundCommand {
 	id: string
 	/** Task that started the command; scopes listing, notices and cleanup. */
@@ -126,7 +128,7 @@ export function startBackgroundCommand(
 
 	const child = spawn(shell, shellArgs, {
 		cwd,
-		env: { ...process.env, TERM: "dumb" },
+		env: { ...withBundledToolsOnPath(process.env), TERM: "dumb" },
 		stdio: ["ignore", "pipe", "pipe"],
 		detached: process.platform !== "win32",
 	})

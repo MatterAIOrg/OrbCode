@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 
-import { getShell, getShellRunArgs, isCmdShell } from "../../utils/shell.js"
+import { getShell, getShellRunArgs, isCmdShell, withBundledToolsOnPath } from "../../utils/shell.js"
 import { type ToolContext, type ToolResult, resolveWorkspacePath } from "../types.js"
 import { startBackgroundCommand } from "./backgroundCommands.js"
 
@@ -50,7 +50,7 @@ export async function executeCommand(args: Record<string, unknown>, context: Too
 		const isWindows = process.platform === "win32"
 		const child = spawn(getShell(), getShellRunArgs(command), {
 			cwd,
-			env: { ...process.env, TERM: "dumb" },
+			env: { ...withBundledToolsOnPath(process.env), TERM: "dumb" },
 			stdio: ["ignore", "pipe", "pipe"],
 			// Own process group, so a timeout/interrupt can kill grandchildren too
 			// (`find /` started by the shell would otherwise outlive the shell and
