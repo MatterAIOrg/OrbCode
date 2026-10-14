@@ -106,7 +106,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
 					<Text color={COLORS.dim}>
 						Approve the &quot;Authorize OrbCode CLI&quot; dialog at:
 					</Text>
-					<Text color={COLORS.dim}> {authorizeUrl}</Text>
+					<Text color={COLORS.dim}>
+						{" "}
+						<Text color={COLORS.dim} underline href={authorizeUrl}>
+							{authorizeUrl}
+						</Text>
+					</Text>
 					<Text color={COLORS.dim}>Esc to cancel</Text>
 				</>
 			) : (

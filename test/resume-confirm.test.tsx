@@ -29,7 +29,8 @@ test("resume confirm explains the cold-cache cost and defaults to Resume", async
     assert.match(frame, /inactive for 1d 1h 17m and is 785k tokens long/);
     assert.match(frame, /22% of your weekly usage limit/);
     assert.match(frame, /❯ 1\. Resume/);
-    assert.match(frame, /2\. Start a new conversation/);
+    assert.match(frame, /2\. Compact and resume/);
+    assert.match(frame, /3\. Start a new conversation/);
 
     await act(async () => {
       screen.mockInput.pressArrow("down");
@@ -39,7 +40,15 @@ test("resume confirm explains the cold-cache cost and defaults to Resume", async
       screen.mockInput.pressEnter();
       await screen.flush();
     });
-    assert.deepEqual(decisions, ["new"]);
+    await act(async () => {
+      screen.mockInput.pressArrow("down");
+      await screen.flush();
+    });
+    await act(async () => {
+      screen.mockInput.pressEnter();
+      await screen.flush();
+    });
+    assert.deepEqual(decisions, ["compact", "new"]);
   } finally {
     act(() => screen.renderer.destroy());
   }

@@ -315,6 +315,11 @@ async function main(): Promise<void> {
 	})
 	const initialMode = loadSettings().theme
 	const initialTheme = initialMode === "light" ? LIGHT_THEME : DARK_THEME
+	// Ensure OpenTUI's native capability detector enables OSC 8 hyperlinks and
+	// 24-bit color even in terminals/multiplexers that don't export COLORTERM.
+	if (!process.env.COLORTERM) {
+		process.env.COLORTERM = "truecolor"
+	}
 	const renderer = await createCliRenderer({
 		targetFps: 60,
 		gatherStats: false,
