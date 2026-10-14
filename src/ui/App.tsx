@@ -2587,7 +2587,7 @@ export function App({
         const url = getLinkUrlAt(renderer, event.x, event.y);
         if (!url) return;
         renderer.clearSelection();
-        void open(url).catch(() => {});
+        void open(url).catch(() => showToast("✗ Could not open link"));
       }}
       onMouseMove={(event) => {
         const hasLink = Boolean(getLinkUrlAt(renderer, event.x, event.y));

@@ -6,7 +6,7 @@ import { Text } from "./primitives.js"
 
 /** Inline markdown: code spans, bold, italics, markdown links, and autolinks. */
 const INLINE_MARKDOWN =
-	/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<![\w*])\*[^*\n]+\*(?![\w*])|\[[^\]]+\]\((?:[^()\s]+|\([^()\s]*\))+\)|<https?:\/\/[^\s<>]+>)/g
+	/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<![\w*])\*[^*\n]+\*(?![\w*])|\[[^\]]+\]\((?:[^()\s]|\([^()\s]*\))+\)|<https?:\/\/[^\s<>]+>)/g
 
 const BARE_URL = /https?:\/\/[^\s<>`"']+/g
 
@@ -76,8 +76,18 @@ function renderTextWithUrls(text: string, keyPrefix: string, style?: InlineStyle
 	let index = 0
 
 	while ((match = BARE_URL.exec(text))) {
-		const { url, trailing } = splitTrailingUrlPunctuation(match[0])
+		const rawMatch = match[0]
+		const rawPrefixUrl = fallbackUrls?.find(
+			(candidate) => candidate.startsWith(rawMatch) && candidate !== rawMatch,
+		)
+		const { url, trailing } = rawPrefixUrl
+			? { url: rawMatch, trailing: "" }
+			: splitTrailingUrlPunctuation(rawMatch)
 		if (!url) continue
+		const fullUrl =
+			rawPrefixUrl ??
+			fallbackUrls?.find((candidate) => candidate.startsWith(url) && candidate !== url)
+		const href = fullUrl && !fallbackUrls?.includes(url) ? fullUrl : url
 		if (match.index > cursor) {
 			nodes.push(renderStyledSegment(text.slice(cursor, match.index), `${keyPrefix}-t${index}`, style))
 		}
@@ -88,7 +98,7 @@ function renderTextWithUrls(text: string, keyPrefix: string, style?: InlineStyle
 				bold={style?.bold}
 				italic={style?.italic}
 				underline
-				href={url}
+				href={href}
 			>
 				{url}
 			</Text>,
@@ -239,7 +249,7 @@ function splitCells(line: string): string[] {
 /** Cell text as it will appear: inline markers render away, links keep their URL. */
 function cellText(cell: string): string {
 	return cell.replace(INLINE_MARKDOWN, (token) => {
-		const link = /^\[([^\]]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)$/.exec(token)
+		const link = /^\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)$/.exec(token)
 		if (link) return `${link[1]} ${link[2]}`
 		if (token.startsWith("<") && token.endsWith(">")) return token.slice(1, -1)
 		if (token.startsWith("**") || token.startsWith("__")) return token.slice(2, -2)
@@ -519,7 +529,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
 				</Text>,
 			)
 		} else {
-			const link = /^\[([^\]]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)$/.exec(token)
+			const link = /^\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)$/.exec(token)
 			if (link) {
 				nodes.push(
 					<React.Fragment key={key}>

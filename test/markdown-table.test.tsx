@@ -164,18 +164,26 @@ test("attaches clickable OSC 8 link URLs to markdown links, autolinks, bare URLs
       .map((chunk: any) => ({ text: chunk.text, url: chunk.link.url }));
 
     const urls = new Set(linkedChunks.map((c: { text: string; url: string }) => c.url));
-    assert.ok(urls.has("https://matterai.so/docs"));
-    assert.ok(urls.has("https://en.wikipedia.org/wiki/Foo_(bar)"));
-    assert.ok(urls.has("https://orbcode.dev/auto"));
-    assert.ok(urls.has("https://orbcode.dev/bare"));
-    assert.ok(urls.has("http://localhost:3000/test"));
-    assert.ok(urls.has("https://orbcode.dev/inline"));
-    assert.ok(urls.has("https://orbcode.dev/bold"));
-    assert.ok(urls.has("https://orbcode.dev/code-block"));
-    assert.ok(
-      urls.has("https://orbcode.dev/very/long/table/url/path/that/wraps"),
-      "wrapped URL inside a narrow table cell should retain the full target href",
+    assert.deepEqual(
+      urls,
+      new Set([
+        "https://matterai.so/docs",
+        "https://en.wikipedia.org/wiki/Foo_(bar)",
+        "https://orbcode.dev/auto",
+        "https://orbcode.dev/bare",
+        "http://localhost:3000/test",
+        "https://orbcode.dev/inline",
+        "https://orbcode.dev/bold",
+        "https://orbcode.dev/code-block",
+        "https://orbcode.dev/very/long/table/url/path/that/wraps",
+      ]),
+      "every wrapped fragment inside a narrow table cell should retain the full target href without emitting a truncated prefix URL",
     );
+
+    // Ensure malformed markdown links with long unclosed parens run in linear time (no ReDoS).
+    const startMs = performance.now();
+    renderMarkdown(`[Docs](https://example.com/${"a".repeat(80)}`, 80);
+    assert.ok(performance.now() - startMs < 50, "unclosed markdown link should parse in linear time");
   } finally {
     act(() => screen.renderer.destroy());
   }
