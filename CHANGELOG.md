@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.5] - 2026-10-14
+
+### Changed
+
+- **Background updates install after 15 minutes on npm instead of 24 hours.** `MIN_RELEASE_AGE_MS` (`src/utils/autoUpdate.ts`) is lowered from 24h to 15 min, so staged updates reach users the same day a release ships while still keeping a short window to catch and supersede a bad release.
+
+### Fixed
+
+- **The updater no longer stalls on a bad or incompatible `latest` release.** Instead of inspecting only the registry's `latest` tag, `resolveUpdateNotice` now collects every non-deprecated, non-prerelease release newer than the running version that has been public for at least the age window, and stages the newest one this Node version can run (`engines.node`), that is newer than what is already staged, and that has not previously failed to start (`isBadVersion`). A broken or engine-incompatible release at `latest` no longer blocks updates; the next eligible release is picked instead.
+- **`@vscode/ripgrep` is now a regular dependency in `package.json`.** The 7.0.3 fix updated the changelog and PATH handling but left the package in `optionalDependencies`, so installs that skip optional dependencies (e.g. `--no-optional`) still shipped without the bundled `rg` binary. It now installs unconditionally on all platforms.
+
 ## [7.0.4] - 2026-10-13
 
 ### Added

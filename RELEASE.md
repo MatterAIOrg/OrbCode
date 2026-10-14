@@ -24,7 +24,7 @@ bumping the version is all that's needed; no source change required.
 
 Installed CLIs stage new releases under `~/.orbcode/versions/` and roll back to
 the previous version if a release fails to start (see `src/utils/autoUpdate.ts`
-and `bin/select-version.js`). Releases auto-install only after 24h on npm, so
+and `bin/select-version.js`). Releases auto-install only after 15 minutes on npm, so
 **ship a fix within a day to keep a bad release from spreading**, and keep these
 invariants so old and new versions can run against the same `~/.orbcode`:
 

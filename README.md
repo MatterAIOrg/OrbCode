@@ -85,7 +85,7 @@ orbcode
 ```
 
 Updates install in the background: a new release (once it has been public for
-24h) is downloaded into `~/.orbcode/versions/`, verified, and used from your
+15 min) is downloaded into `~/.orbcode/versions/`, verified, and used from your
 next launch — the banner just says to restart. If a new version fails to start,
 OrbCode falls back to the previous one. To opt out, set
 `ORBCODE_DISABLE_AUTOUPDATE=1` or `"autoUpdates": false` in
