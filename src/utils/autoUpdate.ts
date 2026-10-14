@@ -20,7 +20,7 @@ const execFileAsync = promisify(execFile);
 
 /** Only auto-install releases that have been public this long, so a bad
  *  release can be caught (and superseded) before it reaches everyone. */
-export const MIN_RELEASE_AGE_MS = 24 * 60 * 60 * 1_000;
+export const MIN_RELEASE_AGE_MS = 15 * 60 * 1_000;
 /** After a failed install, stay quiet (and show the manual banner) this long. */
 const FAILURE_BACKOFF_MS = 24 * 60 * 60 * 1_000;
 /** Old version dirs are removed once they have been superseded this long. */
@@ -145,12 +145,17 @@ export function satisfiesNodeEngine(range: string | undefined, nodeVersion: stri
 }
 
 interface ReleaseInfo {
-  publishedAt: number | null;
+  version: string;
+  publishedAt: number;
   nodeEngine?: string;
-  deprecated: boolean;
 }
 
-async function fetchReleaseInfo(pkg: string, version: string): Promise<ReleaseInfo | null> {
+/**
+ * Every non-deprecated release newer than `current` that has been public for
+ * at least MIN_RELEASE_AGE_MS, newest first. Null when the registry can't be
+ * read.
+ */
+async function fetchEligibleReleases(pkg: string, current: string): Promise<ReleaseInfo[] | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REGISTRY_TIMEOUT_MS);
   try {
@@ -163,14 +168,21 @@ async function fetchReleaseInfo(pkg: string, version: string): Promise<ReleaseIn
       time?: Record<string, string>;
       versions?: Record<string, { engines?: { node?: unknown }; deprecated?: unknown }>;
     };
-    const manifest = doc.versions?.[version];
-    if (!manifest) return null;
-    const published = Date.parse(doc.time?.[version] ?? "");
-    return {
-      publishedAt: Number.isFinite(published) ? published : null,
-      nodeEngine: typeof manifest.engines?.node === "string" ? manifest.engines.node : undefined,
-      deprecated: manifest.deprecated !== undefined && manifest.deprecated !== false,
-    };
+    const releases: ReleaseInfo[] = [];
+    for (const [version, manifest] of Object.entries(doc.versions ?? {})) {
+      // Registry data becomes a path and an npm argument later on.
+      if (!isVersionString(version) || version.includes("-")) continue;
+      if (compareVersions(version, current) <= 0) continue;
+      if (manifest.deprecated !== undefined && manifest.deprecated !== false) continue;
+      const published = Date.parse(doc.time?.[version] ?? "");
+      if (!Number.isFinite(published) || Date.now() - published < MIN_RELEASE_AGE_MS) continue;
+      releases.push({
+        version,
+        publishedAt: published,
+        nodeEngine: typeof manifest.engines?.node === "string" ? manifest.engines.node : undefined,
+      });
+    }
+    return releases.sort((a, b) => compareVersions(b.version, a.version));
   } catch {
     return null;
   } finally {
@@ -473,28 +485,36 @@ export async function resolveUpdateNotice(
         : null;
     const latest = info.latest;
     if (!info.updateAvailable || !latest) return stagedNotice ?? info;
-    // Registry data becomes a path and an npm argument below.
     if (!isVersionString(latest)) return stagedNotice ?? quiet;
     if (staged && compareVersions(staged, latest) >= 0) return stagedNotice ?? info;
     if (readRecentFailure()) return info;
 
-    const release = await fetchReleaseInfo(pkg, latest);
-    // Registry hiccup or a pulled release: stay quiet and retry next launch.
-    if (!release || release.deprecated || release.publishedAt === null) return stagedNotice ?? quiet;
-    if (Date.now() - release.publishedAt < MIN_RELEASE_AGE_MS) return stagedNotice ?? quiet;
+    // Registry hiccup: stay quiet and retry next launch.
+    const releases = await fetchEligibleReleases(pkg, info.current);
+    if (!releases) return stagedNotice ?? quiet;
 
     const nodePath = getNodePath()!;
     const nodeVersion = await getNodeVersion(nodePath);
-    if (!nodeVersion || !satisfiesNodeEngine(release.nodeEngine, nodeVersion)) return info;
+    if (!nodeVersion) return info;
+    // Newest release past the age window that this Node can run and that
+    // isn't newer-than-nothing compared with what's already staged.
+    const target = releases.find(
+      (r) =>
+        satisfiesNodeEngine(r.nodeEngine, nodeVersion) &&
+        (!staged || compareVersions(r.version, staged) > 0) &&
+        !isBadVersion(r.version),
+    );
+    if (!target) return stagedNotice ?? quiet;
+    const version = target.version;
 
-    const error = await stageVersion(pkg, latest, nodePath);
+    const error = await stageVersion(pkg, version, nodePath);
     if (error === "locked") return stagedNotice ?? quiet;
     if (error) {
-      writeFailure(latest, error);
+      writeFailure(version, error);
       return info;
     }
     clearFailure();
-    return { ...quiet, stagedVersion: latest };
+    return { ...quiet, stagedVersion: version };
   } catch {
     return info;
   }
