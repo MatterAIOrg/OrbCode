@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **"Compact and resume" option in the cold-cache resume confirmation prompt.** When resuming a session with an expired prompt cache or large context (`ResumeConfirm`), you can now pick `2. Compact and resume` (between `Resume` and `Start a new conversation`) to resume the session and immediately run normal conversation compaction (`/compact`) so subsequent turns carry the compacted summary instead of the full history.
 
+### Fixed
+
+- **All Markdown links and URLs in `attempt_completion` and assistant responses are now clickable OSC 8 terminal hyperlinks across macOS, Linux, and Windows.** `Text` (`src/ui/primitives.tsx`) now supports an `href` prop backed by OpenTUI's native OSC 8 hyperlink attributes, and `renderMarkdown` (`src/ui/markdown.tsx`) attaches `href` links to `[label](url)` links (both the label and URL, including URLs with balanced parentheses), `<https://...>` autolinks, bare `http://` / `https://` URLs in prose, lists, quotes, bold/italic spans, inline code spans, fenced code blocks, and Markdown table cells (including long URLs that wrap across lines inside narrow table columns or inside `attempt_completion`'s bordered box). In addition to native terminal OSC 8 handling (`Cmd+Click` / `Ctrl+Click` / `Shift+Cmd+Click`), `App.tsx` resolves the rendered cell's link URL (`getLinkUrlAt`) on direct clicks when terminal mouse reporting forwards mouse events to the TUI, opening the link in the default browser while preserving drag-to-select clipboard copying. Interactive startup (`src/index.tsx`) also defaults `COLORTERM=truecolor` when unset so OpenTUI's renderer enables OSC 8 output even in terminals or multiplexers that do not export `COLORTERM`.
+
 ## [7.0.3] - 2026-10-13
 
 ### Fixed

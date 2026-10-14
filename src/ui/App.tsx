@@ -11,7 +11,7 @@ import {
   useSelectionHandler,
   useTerminalDimensions,
 } from "@opentui/react";
-import { Box, Text, useApp, useInput } from "./primitives.js";
+import { Box, Text, getLinkUrlAt, useApp, useInput } from "./primitives.js";
 import {
   useTheme,
   useThemeMode,
@@ -472,10 +472,16 @@ export function App({
     }, 2000);
   }, []);
 
+  const linkClickStartRef = useRef<{ x: number; y: number } | null>(null);
+  const linkHoveredRef = useRef(false);
+
   useSelectionHandler((selection) => {
     try {
       const text = selection.getSelectedText();
-      if (!text || text.trim().length === 0) return;
+      if (!text || text.trim().length === 0) {
+        renderer.clearSelection();
+        return;
+      }
       // Only confirm when a clipboard mechanism actually succeeded.
       if (copyToClipboard(text, renderer)) {
         showToast(termCols < 40 ? "✓ Text copied" : "✓ Text copied to clipboard");
@@ -2562,6 +2568,34 @@ export function App({
       position="relative"
       backgroundColor={theme.background}
       shouldFill
+      onMouseDown={(event) => {
+        if (event.button === 0) {
+          linkClickStartRef.current = { x: event.x, y: event.y };
+        }
+      }}
+      onMouseUp={(event) => {
+        if (event.button !== 0 || event.defaultPrevented) {
+          linkClickStartRef.current = null;
+          return;
+        }
+        const start = linkClickStartRef.current;
+        linkClickStartRef.current = null;
+        const isPointClick =
+          (start !== null && start.x === event.x && start.y === event.y) ||
+          event.modifiers.ctrl;
+        if (!isPointClick) return;
+        const url = getLinkUrlAt(renderer, event.x, event.y);
+        if (!url) return;
+        renderer.clearSelection();
+        void open(url).catch(() => {});
+      }}
+      onMouseMove={(event) => {
+        const hasLink = Boolean(getLinkUrlAt(renderer, event.x, event.y));
+        if (hasLink !== linkHoveredRef.current) {
+          linkHoveredRef.current = hasLink;
+          renderer.setMousePointer(hasLink ? "pointer" : "default");
+        }
+      }}
       onMouseScroll={(event) => {
         if (view !== "chat" || !event.scroll) return;
         const direction = event.scroll.direction;

@@ -4,8 +4,9 @@ import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 
 import { act } from "react"
-import { Box, Text } from "../src/ui/primitives.js";
+import { Box, Text, getLinkUrlAt } from "../src/ui/primitives.js";
 import { markdownRowCount, renderMarkdown } from "../src/ui/markdown.js";
+import { RowView } from "../src/ui/components/rows.js";
 
 /** Render markdown into a fixed-width frame and return its lines, trailing blanks dropped. */
 async function render(markdown: string, width = 80, maxWidth = width) {
@@ -133,3 +134,106 @@ test("leaves surrounding markdown untouched", async () => {
   assert.equal(lines[9], "• done");
   assert.equal(lines.length, markdownRowCount(markdown, 80, 80));
 });
+
+test("attaches clickable OSC 8 link URLs to markdown links, autolinks, bare URLs, code, and tables", async () => {
+  const markdown = [
+    "Visit [Docs](https://matterai.so/docs) or [Wiki](https://en.wikipedia.org/wiki/Foo_(bar)).",
+    "Autolink: <https://orbcode.dev/auto> and bare https://orbcode.dev/bare, plus (see http://localhost:3000/test).",
+    "Inline code `https://orbcode.dev/inline` and **https://orbcode.dev/bold**",
+    "```bash",
+    "curl https://orbcode.dev/code-block",
+    "```",
+    "| Name | Link |",
+    "|---|---|",
+    "| Portal | https://orbcode.dev/very/long/table/url/path/that/wraps |",
+  ].join("\n");
+
+  const screen = await testRender(
+    <Box flexDirection="column" width={44} height={30}>
+      <Text>{renderMarkdown(markdown, 44)}</Text>
+    </Box>,
+    { width: 44, height: 30 },
+  );
+  try {
+    await screen.renderOnce();
+    const boxRenderable = screen.renderer.root.getChildren()[0] as any;
+    const textRenderable = boxRenderable.getChildren()[0] as any;
+    const linkedChunks = textRenderable.textNode
+      .toChunks()
+      .filter((chunk: any) => chunk.link?.url)
+      .map((chunk: any) => ({ text: chunk.text, url: chunk.link.url }));
+
+    const urls = new Set(linkedChunks.map((c: { text: string; url: string }) => c.url));
+    assert.ok(urls.has("https://matterai.so/docs"));
+    assert.ok(urls.has("https://en.wikipedia.org/wiki/Foo_(bar)"));
+    assert.ok(urls.has("https://orbcode.dev/auto"));
+    assert.ok(urls.has("https://orbcode.dev/bare"));
+    assert.ok(urls.has("http://localhost:3000/test"));
+    assert.ok(urls.has("https://orbcode.dev/inline"));
+    assert.ok(urls.has("https://orbcode.dev/bold"));
+    assert.ok(urls.has("https://orbcode.dev/code-block"));
+    assert.ok(
+      urls.has("https://orbcode.dev/very/long/table/url/path/that/wraps"),
+      "wrapped URL inside a narrow table cell should retain the full target href",
+    );
+  } finally {
+    act(() => screen.renderer.destroy());
+  }
+});
+
+test("renders clickable links inside attempt_completion bordered row", async () => {
+  const completionText =
+    "Deployed preview at https://preview.matterai.so/deployments/1234567890/inspect and [PR #42](https://github.com/MatterAIOrg/OrbCode/pull/42).";
+  const screen = await testRender(
+    <Box flexDirection="column" width={50} height={20}>
+      <RowView
+        row={{ id: "c1", kind: "completion", text: completionText }}
+        width={50}
+      />
+    </Box>,
+    { width: 50, height: 20 },
+  );
+  try {
+    await screen.renderOnce();
+    const outerBox = screen.renderer.root.getChildren()[0] as any;
+    const completionBox = outerBox.getChildren()[0] as any;
+    const bodyText = completionBox.getChildren()[1] as any;
+    const linkedChunks = bodyText.textNode
+      .toChunks()
+      .filter((chunk: any) => chunk.link?.url)
+      .map((chunk: any) => ({ text: chunk.text, url: chunk.link.url }));
+
+    assert.deepEqual(linkedChunks, [
+      {
+        text: "https://preview.matterai.so/deployments/1234567890/inspect",
+        url: "https://preview.matterai.so/deployments/1234567890/inspect",
+      },
+      {
+        text: "PR #42",
+        url: "https://github.com/MatterAIOrg/OrbCode/pull/42",
+      },
+      {
+        text: "https://github.com/MatterAIOrg/OrbCode/pull/42",
+        url: "https://github.com/MatterAIOrg/OrbCode/pull/42",
+      },
+    ]);
+
+    const resolvedCellUrls = new Set<string>();
+    for (let y = 0; y < 20; y++) {
+      for (let x = 0; x < 50; x++) {
+        const url = getLinkUrlAt(screen.renderer, x, y);
+        if (url) resolvedCellUrls.add(url);
+      }
+    }
+    assert.deepEqual(
+      resolvedCellUrls,
+      new Set([
+        "https://preview.matterai.so/deployments/1234567890/inspect",
+        "https://github.com/MatterAIOrg/OrbCode/pull/42",
+      ]),
+    );
+  } finally {
+    act(() => screen.renderer.destroy());
+  }
+});
+

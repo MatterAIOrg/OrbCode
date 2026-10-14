@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react"
-import { createTextAttributes, type KeyEvent, type PasteMetadata } from "@opentui/core"
+import { createTextAttributes, getLinkId, type CliRenderer, type KeyEvent, type PasteMetadata } from "@opentui/core"
 import {
 	useKeyboard,
 	usePaste,
@@ -70,6 +70,7 @@ export interface TextProps extends Omit<NativeTextProps, "fg" | "bg" | "attribut
 	dimColor?: boolean
 	strikethrough?: boolean
 	wrap?: "wrap" | "truncate" | "truncate-start"
+	href?: string
 }
 
 const TextNestingContext = createContext(false)
@@ -84,6 +85,7 @@ export function Text({
 	dimColor,
 	strikethrough,
 	wrap,
+	href,
 	...props
 }: TextProps) {
 	const nested = useContext(TextNestingContext)
@@ -97,10 +99,11 @@ export function Text({
 		dim: dimColor,
 		strikethrough,
 	})
+	const link = href ? { url: href } : undefined
 
 	if (nested) {
 		return (
-			<span fg={fg} bg={bg} attributes={attributes}>
+			<span fg={fg} bg={bg} attributes={attributes} link={link}>
 				{children}
 			</span>
 		)
@@ -116,7 +119,13 @@ export function Text({
 				wrapMode={wrap === "truncate" || wrap === "truncate-start" ? "none" : "word"}
 				truncate={wrap === "truncate" || wrap === "truncate-start"}
 			>
-				{children}
+				{link ? (
+					<span fg={fg ?? theme.primary} bg={bg} attributes={attributes} link={link}>
+						{children}
+					</span>
+				) : (
+					children
+				)}
 			</text>
 		</TextNestingContext.Provider>
 	)
@@ -194,3 +203,25 @@ export function useApp() {
 	const renderer = useRenderer()
 	return { exit: () => renderer.destroy() }
 }
+
+/**
+ * Look up the OSC 8 hyperlink URL rendered at terminal cell `(x, y)` in the
+ * current frame buffer, if any. Used to open links when terminal mouse
+ * reporting forwards clicks to the TUI instead of the terminal window.
+ */
+export function getLinkUrlAt(renderer: CliRenderer, x: number, y: number): string | null {
+	try {
+		const buf = renderer.currentRenderBuffer
+		if (!buf || x < 0 || y < 0 || x >= buf.width || y >= buf.height) return null
+		const attrs = buf.buffers.attributes[y * buf.width + x]
+		if (!attrs) return null
+		const linkId = getLinkId(attrs)
+		if (!linkId) return null
+		const linkLib = buf.lib as { linkGetUrl?: (id: number, maxLen?: number) => string }
+		const url = linkLib.linkGetUrl?.(linkId, 2048)
+		return url && /^https?:\/\//i.test(url) ? url : null
+	} catch {
+		return null
+	}
+}
+

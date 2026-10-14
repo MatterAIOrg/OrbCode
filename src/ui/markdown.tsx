@@ -4,8 +4,141 @@ import stringWidth from "string-width"
 import { COLORS } from "../branding.js"
 import { Text } from "./primitives.js"
 
-/** Inline markdown: code spans, bold, italics and links. */
-const INLINE_MARKDOWN = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<![\w*])\*[^*\n]+\*(?![\w*])|\[[^\]]+\]\([^)]+\))/g
+/** Inline markdown: code spans, bold, italics, markdown links, and autolinks. */
+const INLINE_MARKDOWN =
+	/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<![\w*])\*[^*\n]+\*(?![\w*])|\[[^\]]+\]\((?:[^()\s]+|\([^()\s]*\))+\)|<https?:\/\/[^\s<>]+>)/g
+
+const BARE_URL = /https?:\/\/[^\s<>`"']+/g
+
+interface InlineStyle {
+	color?: string
+	bold?: boolean
+	italic?: boolean
+	underline?: boolean
+}
+
+function splitTrailingUrlPunctuation(raw: string): { url: string; trailing: string } {
+	let end = raw.length
+	while (end > 0) {
+		const ch = raw[end - 1]
+		if (/[.,;:!?'"]/.test(ch)) {
+			end--
+			continue
+		}
+		if (ch === ")") {
+			const candidate = raw.slice(0, end)
+			const opens = (candidate.match(/\(/g) ?? []).length
+			const closes = (candidate.match(/\)/g) ?? []).length
+			if (closes > opens) {
+				end--
+				continue
+			}
+		}
+		if (ch === "]") {
+			const candidate = raw.slice(0, end)
+			const opens = (candidate.match(/\[/g) ?? []).length
+			const closes = (candidate.match(/\]/g) ?? []).length
+			if (closes > opens) {
+				end--
+				continue
+			}
+		}
+		break
+	}
+	return { url: raw.slice(0, end), trailing: raw.slice(end) }
+}
+
+function extractUrls(text: string): string[] {
+	const urls: string[] = []
+	let match: RegExpExecArray | null
+	BARE_URL.lastIndex = 0
+	while ((match = BARE_URL.exec(text))) {
+		const { url } = splitTrailingUrlPunctuation(match[0])
+		if (url) urls.push(url)
+	}
+	return urls
+}
+
+function renderStyledSegment(text: string, key: string, style?: InlineStyle): React.ReactNode {
+	if (!style || (!style.color && !style.bold && !style.italic && !style.underline)) return text
+	return (
+		<Text key={key} color={style.color} bold={style.bold} italic={style.italic} underline={style.underline}>
+			{text}
+		</Text>
+	)
+}
+
+function renderTextWithUrls(text: string, keyPrefix: string, style?: InlineStyle, fallbackUrls?: string[]): React.ReactNode[] {
+	const nodes: React.ReactNode[] = []
+	let cursor = 0
+	let match: RegExpExecArray | null
+	BARE_URL.lastIndex = 0
+	let index = 0
+
+	while ((match = BARE_URL.exec(text))) {
+		const { url, trailing } = splitTrailingUrlPunctuation(match[0])
+		if (!url) continue
+		if (match.index > cursor) {
+			nodes.push(renderStyledSegment(text.slice(cursor, match.index), `${keyPrefix}-t${index}`, style))
+		}
+		nodes.push(
+			<Text
+				key={`${keyPrefix}-u${index}`}
+				color={style?.color}
+				bold={style?.bold}
+				italic={style?.italic}
+				underline
+				href={url}
+			>
+				{url}
+			</Text>,
+		)
+		if (trailing) {
+			nodes.push(renderStyledSegment(trailing, `${keyPrefix}-p${index}`, style))
+		}
+		cursor = match.index + match[0].length
+		index++
+	}
+
+	if (index > 0) {
+		if (cursor < text.length) {
+			nodes.push(renderStyledSegment(text.slice(cursor), `${keyPrefix}-tail`, style))
+		}
+		return nodes
+	}
+
+	// If a narrow table cell wrapped a long URL across multiple lines, match the
+	// wrapped fragment back to its full URL from the cell.
+	if (fallbackUrls && fallbackUrls.length > 0) {
+		const trimmed = text.trim()
+		if (trimmed.length > 0) {
+			const matchedUrl = fallbackUrls.find((candidate) => candidate.includes(trimmed))
+			if (matchedUrl) {
+				const start = text.indexOf(trimmed)
+				const leading = text.slice(0, start)
+				const trailing = text.slice(start + trimmed.length)
+				const result: React.ReactNode[] = []
+				if (leading) result.push(renderStyledSegment(leading, `${keyPrefix}-lead`, style))
+				result.push(
+					<Text
+						key={`${keyPrefix}-frag`}
+						color={style?.color}
+						bold={style?.bold}
+						italic={style?.italic}
+						underline
+						href={matchedUrl}
+					>
+						{trimmed}
+					</Text>,
+				)
+				if (trailing) result.push(renderStyledSegment(trailing, `${keyPrefix}-trail`, style))
+				return result
+			}
+		}
+	}
+
+	return [renderStyledSegment(text, keyPrefix, style)]
+}
 
 /** A table separator row holds nothing but pipes, dashes and alignment colons. */
 const DELIMITER_ROW = /^[\s|:-]+$/
@@ -34,6 +167,8 @@ interface GridLine {
 	edge: EdgeKind
 	/** Cell text padded to its column; empty on border lines. */
 	cells: string[]
+	/** Full URLs present in each cell of the source row so wrapped fragments stay linked. */
+	cellUrls?: string[][]
 	bold: boolean
 }
 
@@ -104,8 +239,9 @@ function splitCells(line: string): string[] {
 /** Cell text as it will appear: inline markers render away, links keep their URL. */
 function cellText(cell: string): string {
 	return cell.replace(INLINE_MARKDOWN, (token) => {
-		const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token)
+		const link = /^\[([^\]]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)$/.exec(token)
 		if (link) return `${link[1]} ${link[2]}`
+		if (token.startsWith("<") && token.endsWith(">")) return token.slice(1, -1)
 		if (token.startsWith("**") || token.startsWith("__")) return token.slice(2, -2)
 		return token.slice(1, -1)
 	})
@@ -193,10 +329,12 @@ function layoutTable(lines: string[], maxWidth: number): TableLayout {
 	)
 
 	const contentLines = (row: string[], bold: boolean): GridLine[] => {
+		const urlsPerColumn = row.map((cell) => extractUrls(cell))
 		const wrapped = row.map((cell, column) => wrapCell(cell, widths[column]))
 		return Array.from({ length: Math.max(...wrapped.map((cell) => cell.length)) }, (_, line) => ({
 			edge: "content",
 			cells: wrapped.map((cell, column) => padCell(cell[line] ?? "", widths[column], aligns[column])),
+			cellUrls: urlsPerColumn,
 			bold,
 		}))
 	}
@@ -247,7 +385,12 @@ function gridRow(line: GridLine, widths: number[], key: string): React.ReactNode
 					</Text>
 				) : (
 					<Text key={`${key}-c${column}`} bold={line.bold}>
-						{` ${line.cells[column]} `}
+						{renderTextWithUrls(
+							` ${line.cells[column]} `,
+							`${key}-c${column}-u`,
+							line.bold ? { bold: true } : undefined,
+							line.cellUrls?.[column],
+						)}
 					</Text>
 				),
 			)
@@ -274,7 +417,7 @@ function textRows(block: Block, blockIndex: number, maxWidth: number): React.Rea
 		return [
 			<React.Fragment key={key}>
 				<Text color={COLORS.dim}>│ </Text>
-				<Text color={COLORS.accent}>{line}</Text>
+				<Text color={COLORS.accent}>{renderTextWithUrls(line, `${key}-code`, { color: COLORS.accent })}</Text>
 			</React.Fragment>,
 		]
 	if (block.kind === "fenceClose") return [<Text key={key} color={COLORS.dim}>╰─</Text>]
@@ -345,21 +488,47 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
 	let index = 0
 
 	while ((match = INLINE_MARKDOWN.exec(text))) {
-		if (match.index > cursor) nodes.push(text.slice(cursor, match.index))
+		if (match.index > cursor) {
+			nodes.push(...renderTextWithUrls(text.slice(cursor, match.index), `${keyPrefix}-t${index}`))
+		}
 		const token = match[0]
 		const key = `${keyPrefix}-${index++}`
 		if (token.startsWith("`")) {
-			nodes.push(<Text key={key} color={COLORS.accent}>{token.slice(1, -1)}</Text>)
+			nodes.push(
+				<Text key={key} color={COLORS.accent}>
+					{renderTextWithUrls(token.slice(1, -1), `${key}-code`, { color: COLORS.accent })}
+				</Text>,
+			)
 		} else if (token.startsWith("**") || token.startsWith("__")) {
-			nodes.push(<Text key={key} bold>{token.slice(2, -2)}</Text>)
+			nodes.push(
+				<Text key={key} bold>
+					{renderTextWithUrls(token.slice(2, -2), `${key}-b`, { bold: true })}
+				</Text>,
+			)
 		} else if (token.startsWith("*")) {
-			nodes.push(<Text key={key} italic>{token.slice(1, -1)}</Text>)
+			nodes.push(
+				<Text key={key} italic>
+					{renderTextWithUrls(token.slice(1, -1), `${key}-i`, { italic: true })}
+				</Text>,
+			)
+		} else if (token.startsWith("<") && token.endsWith(">")) {
+			const url = token.slice(1, -1)
+			nodes.push(
+				<Text key={key} color={COLORS.dim} underline href={url}>
+					{url}
+				</Text>,
+			)
 		} else {
-			const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token)
+			const link = /^\[([^\]]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)$/.exec(token)
 			if (link) {
 				nodes.push(
 					<React.Fragment key={key}>
-						{link[1]} <Text key={`${key}-url`} color={COLORS.dim} underline>{link[2]}</Text>
+						<Text key={`${key}-label`} href={link[2]}>
+							{link[1]}
+						</Text>{" "}
+						<Text key={`${key}-url`} color={COLORS.dim} underline href={link[2]}>
+							{link[2]}
+						</Text>
 					</React.Fragment>,
 				)
 			}
@@ -367,6 +536,8 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
 		cursor = match.index + token.length
 	}
 
-	if (cursor < text.length) nodes.push(text.slice(cursor))
+	if (cursor < text.length) {
+		nodes.push(...renderTextWithUrls(text.slice(cursor), `${keyPrefix}-end`))
+	}
 	return nodes
 }
