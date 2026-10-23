@@ -52,6 +52,24 @@ export function isGroupableTool(row: { name: string; summary: string; isError: b
 }
 
 /**
+ * Windows tools emit CRLF. OpenTUI renders a bare \r as its own line break, so
+ * unnormalized text draws taller than the \n-based height estimates and the
+ * transcript's live edge slides under the composer.
+ */
+export function normalizeLineEndings(text: string): string {
+	return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text
+}
+
+/** Normalize line endings in every string field of a row. */
+export function normalizeRow<T extends object>(row: T): T {
+	const out = { ...row } as Record<string, unknown>
+	for (const [key, value] of Object.entries(out)) {
+		if (typeof value === "string") out[key] = normalizeLineEndings(value)
+	}
+	return out as T
+}
+
+/**
  * Append a row to the transcript, folding a groupable tool call into the tool
  * group directly before it (or starting a new one). Any other row — assistant
  * text, an edit, an error — ends the group, so each group covers one
