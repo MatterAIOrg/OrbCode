@@ -1606,7 +1606,13 @@ export function App({
       }
       renderer.suspend();
       try {
-        spawnSync(`${editor} ${JSON.stringify(filePath)}`, { stdio: "inherit", shell: true });
+        // Single-quote the path for POSIX shells so `$`, backticks and the
+        // like in a directory name are taken literally, never expanded.
+        const quotedPath =
+          process.platform === "win32"
+            ? `"${filePath}"`
+            : `'${filePath.replace(/'/g, "'\\''")}'`;
+        spawnSync(`${editor} ${quotedPath}`, { stdio: "inherit", shell: true });
       } finally {
         renderer.resume();
       }
