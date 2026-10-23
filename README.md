@@ -38,7 +38,7 @@ activity rows, edit/command approvals, and todo tracking.
 - [Hooks](#hooks)
 - [MCP servers](#mcp-servers)
 - [Skills](#skills)
-- [AGENTS.md memory](#agentsmd-memory)
+- [Memory (AGENTS.md, CLAUDE.md, auto memory)](#memory-agentsmd-claudemd-auto-memory)
 - [Architecture](#architecture)
 - [Tools](#tools)
 - [Agent loop](#agent-loop)
@@ -129,20 +129,27 @@ orbcode                 start an interactive session in the current directory
 orbcode "<prompt>"      start an interactive session with an initial prompt
 orbcode login           sign in to MatterAI (browser device flow)
 orbcode usage           show plan usage windows and per-model usage
+orbcode update          install the latest version from npm (--force for non-global installs)
+orbcode mcp add|remove|list|migrate   manage MCP servers (see: orbcode mcp help)
+orbcode plugin install|list|uninstall manage marketplace plugins
 orbcode -p "<prompt>"   run a single prompt non-interactively, print only the final response
 orbcode -p "…" --yolo   non-interactive with edits/commands auto-approved
 orbcode --model <id>    use a specific model for this run (also -m)
-orbcode --resume <id>   resume a previous session by id (also -r)
+orbcode --resume        pick a previous session to resume (also -r)
+orbcode --resume <id>   resume a previous session by id
+orbcode -s "<prompt>"   replace the default system prompt entirely (also --system-prompt)
 orbcode --version       print version
 orbcode --help          show help
 ```
+
+See [Headless mode](#headless-mode) for the `-p`-only flags.
 
 The TUI always takes over the full terminal screen on launch (prior shell
 output stays in scrollback).
 
 The directory you launch from becomes the **workspace directory**: the default
-target for file operations and commands, and the file listing the model sees in
-its environment details.
+target for file operations and commands, and the Primary working directory
+the model sees in its environment details.
 
 ## Authentication
 
@@ -207,8 +214,11 @@ and is shown in the status bar.
 
 ### Other providers (Anthropic, OpenAI-compatible)
 
-The built-in models go through the MatterAI gateway as before. A `customModels`
-entry that sets a `provider` is instead served through the
+The built-in models go through the MatterAI gateway as before. Well-known Claude
+models (`claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-7`,
+`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`) are also built in,
+so `--model claude-…` works with just `ANTHROPIC_API_KEY` set and no settings
+entry. Any other `customModels` entry that sets a `provider` is served through the
 [Vercel AI SDK](https://sdk.vercel.ai), reusing the same agent loop, tools, and
 approvals — auth is the provider's own key (env var or `apiKey`), not the
 MatterAI login.
@@ -314,7 +324,8 @@ MatterAI gateway untouched.
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `/help`                       | list commands                                                                                         |
 | `/attach`                     | open the native file picker and add one or more attachments                                           |
-| `/model`                      | scrollable model picker (`/model pro` / `/model code` / full id selects directly)                     |
+| `/model`                      | scrollable model picker (`/model flash`, or a full id, selects directly)                              |
+| `/effort`                     | set the current model's effort: low, medium, high or max (opens a picker without an argument)         |
 | `/theme`                      | choose and persist OrbCode's dark or light theme (`/theme dark` and `/theme light` also work)         |
 | `/clear`                      | clear the screen only, like the terminal's `clear` — the conversation and context continue            |
 | `/new`                        | start a fresh conversation/session with a clean slate                                                 |
@@ -323,18 +334,23 @@ MatterAI gateway untouched.
 | `/analytics`                  | open the MatterAI analytics dashboard (app.matterai.so/orbital) in the browser                        |
 | `/compact`                    | summarize the conversation and replace history with the summary                                       |
 | `/tasks`                      | print the current task list                                                                           |
-| `/status`                     | version, model, account, gateway, context usage, cost, approval modes                                 |
+| `/status`                     | version, model, account, gateway, context usage, cost, auto memory, approval modes                    |
 | `/usage`                      | fetch plan usage                                                                                      |
 | `/weekly-reset`               | reset weekly usage (Pro and above, once per monthly billing cycle)                                    |
 | `/init`                       | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
+| `/memory`                     | edit user/project `AGENTS.md`, open the auto-memory (or Claude Code memory) folder, toggle auto memory |
 | `/create-skill <description>` | create or update a repository skill under `.orb/skills/<skill-name>/` from a plain-language prompt    |
 | `/task`                       | reference a previous session as context for the current task — opens a picker if no ID is given       |
 | `/link`                       | link other repos on your machine so changes here are checked against them (enter a folder path)       |
 | `/mcp`                        | manage MCP servers — enable, disable, reconnect, view status & tool counts                            |
+| `/migrate`                    | import MCP servers from Claude Code / Claude Desktop                                                  |
+| `/plugins`                    | browse and manage plugins from the official marketplace (also `/plugin`, `/skills`)                   |
+| `/commit`                     | check pending changes and create detailed commits                                                     |
+| `/code-review`                | expert review of pending changes: performance, security, bugs, tests                                  |
 | `/login`                      | start the browser sign-in flow                                                                        |
 | `/logout`                     | remove the saved token                                                                                |
 | `/version`                    | print the CLI version                                                                                 |
-| `/exit`                       | quit                                                                                                  |
+| `/exit`                       | quit (also `/quit`)                                                                                   |
 
 ## Keyboard shortcuts
 
@@ -342,8 +358,11 @@ MatterAI gateway untouched.
 | ------------------- | ---------------------------------------------------------------------- |
 | `Esc`               | interrupt the running turn (or cancel login polling / close a menu)    |
 | `Esc` `Esc`         | on an empty prompt, open `/rewind`                                     |
-| `Ctrl+C`            | quit                                                                   |
-| `Ctrl+O`            | toggle thinking display for the whole transcript (past turns included) |
+| `Ctrl+C`            | interrupt the running turn; when idle, press twice to quit             |
+| `Ctrl+D`            | press twice to quit                                                    |
+| `Ctrl+O`            | expand thinking and grouped tool rows for the whole transcript         |
+| `Ctrl+B`            | expand / collapse the background shells panel                          |
+| `Ctrl+S`            | send the next queued message now, without waiting for the turn         |
 | `Shift+Tab`         | cycle approval mode: ask → accept edits → auto-approve                 |
 | `↑` / `↓`           | input history, or navigate any open menu                               |
 | `Ctrl+A` / `Ctrl+E` | start / end of line                                                    |
@@ -357,6 +376,7 @@ tools prompt first:
 
 - **File edits** (`file_edit`, `multi_file_edit`, `file_write`) — prompt shows
   the target; `y` allow once, `n` deny, `a` allow for the rest of the session.
+  Writes inside OrbCode's own [auto-memory](#auto-memory) directory don't prompt.
 - **Commands** (`Bash`) — prompt shows the exact command line. The
   model classifies commands with an `isDangerous` flag; dangerous commands
   (deletes, force-pushes, system changes…) can **never** be auto-approved — no
@@ -374,9 +394,19 @@ orbcode -p "fix the lint errors" --yolo
 
 Prints **only the final content** to stdout (the completion result, or the last
 assistant message) — no tool activity, no intermediate text. Errors go to
-stderr. Without `--yolo`, edit/command approvals are auto-denied (read-only
-analysis). Followup questions are auto-answered with "proceed with best
-judgment".
+stderr. Without `--yolo`, edits and non-read-only commands are auto-denied
+(read-only analysis; the denial is noted on stderr). Followup questions are
+auto-answered with "proceed with your best judgment".
+
+| flag                     | effect                                                                      |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `--yolo`                 | auto-approve edits and commands                                             |
+| `--json`                 | print a JSON envelope (model, usage, result) instead of plain text          |
+| `--resume <id>`          | continue a prior session (multi-turn, keeps context)                        |
+| `--require-model`        | exit non-zero if the requested `--model` is not registered                  |
+| `--output-file <path>`   | read the final result from this file instead of the chat text (writes to it are allowed without `--yolo`) |
+| `--verbose`              | print tool-start / tool-end events to stderr                                |
+| `--baseUrl` / `--apiKey` | use an OpenAI-compatible endpoint and key for this run                      |
 
 ## Configuration
 
@@ -406,14 +436,18 @@ Two kinds of files under `~/.orbcode/`:
       "outputPrice": 0.000002
     }
   ],
-  "env": { "MY_VAR": "value" }
+  "env": { "MY_VAR": "value" },
+  "autoMemoryEnabled": true,
+  "autoMemoryDirectory": "~/notes/orbcode-memory"
 }
 ```
 
 All keys are optional. `customModels` entries appear in the `/model` picker
 alongside the built-in models; `baseUrl` points the chat client at any
 OpenAI-compatible gateway; `env` is applied to the process at startup; `hooks`
-configures lifecycle hooks (see [Hooks](#hooks)). Precedence: env vars > project
+configures lifecycle hooks (see [Hooks](#hooks)); `autoMemoryEnabled` /
+`autoMemoryDirectory` control [auto memory](#auto-memory) (`autoMemoryDirectory`
+is read from the user settings.json only). Precedence: env vars > project
 settings.json > user settings.json > config.json.
 
 Sessions are stored in `~/.orbcode/sessions/<id>.json` and power `/resume`
@@ -438,6 +472,9 @@ sessions saved before `/rewind` existed have none.
 | `MATTERAI_CONFIG_DIR`  | config directory (default `~/.orbcode`)                           |
 | `MATTERAI_BACKEND_URL` | device-auth backend (default `https://api.matterai.so`)           |
 | `MATTERAI_APP_URL`     | webapp for the authorize page (default `https://app.matterai.so`) |
+| `ORBCODE_DISABLE_AUTO_MEMORY` | `1` turns off auto memory (same as `"autoMemoryEnabled": false`) |
+| `ORBCODE_AUTO_MEMORY_DIR` | auto-memory directory override                                 |
+| `CLAUDE_CONFIG_DIR`    | where Claude Code's `CLAUDE.md` and memories are read from (default `~/.claude`) |
 
 `autoApproveEdits` / `autoApproveSafeCommands` set the session defaults for the
 approval prompts (dangerous commands still always prompt); shift+tab cycles
@@ -848,8 +885,8 @@ When writing Go in this project:
 
 ### How skills are used
 
-The skill catalog (names + descriptions + when-to-use) is injected into the
-system prompt. When a task matches a skill's `when_to_use` condition, the model
+The skill catalog (names + descriptions + when-to-use) is sent in the
+environment details at the start of the session. When a task matches a skill's `when_to_use` condition, the model
 calls the `use_skill` tool with the skill's name, which loads the full
 instructions into context. Project skills override user skills on name
 collisions (closer-to-cwd wins).
@@ -859,24 +896,31 @@ file. Paths may be absolute, relative to the current workspace, or start with
 `~/`, so a prompt or `AGENTS.md` can point to a shared skill stored outside the
 standard discovery directories.
 
-## AGENTS.md memory
+## Memory (AGENTS.md, CLAUDE.md, auto memory)
 
-AGENTS.md files provide project- and user-level instructions that are injected
-into every system prompt — build commands, code style, architecture notes,
+AGENTS.md files provide project- and user-level instructions that are loaded at
+the start of every session — build commands, code style, architecture notes,
 conventions. This is OrbCode's equivalent of Claude Code's `CLAUDE.md`, using
-the open `AGENTS.md` filename so it works across tools.
+the open `AGENTS.md` filename so it works across tools; Claude Code's own
+`CLAUDE.md` files are read too.
 
 ### Discovery
 
 Files are loaded in this order (lowest precedence first; higher-precedence files
 appear later and get more weight):
 
-1. **User memory**: `~/.orbcode/AGENTS.md` — personal global instructions.
-2. **Project memory**: `AGENTS.md` and `.orbcode/AGENTS.md` in the cwd and every
-   parent directory (closer-to-cwd wins). Checked into the repo, shared with the
-   team.
-3. **Local memory**: `AGENTS.local.md` in the cwd and parents — private
-   per-machine overrides (gitignore this).
+1. **User memory**: `~/.orbcode/AGENTS.md` and `~/.claude/CLAUDE.md` —
+   personal global instructions.
+2. **Project memory**: `AGENTS.md`, `.orb/AGENTS.md`, `CLAUDE.md` and
+   `.claude/CLAUDE.md` in the cwd and every parent directory (closer-to-cwd
+   wins). Checked into the repo, shared with the team.
+3. **Local memory**: `AGENTS.local.md` and `CLAUDE.local.md` in the cwd and
+   parents — private per-machine overrides (gitignore this).
+
+Claude Code's `CLAUDE.md` files are read as-is, so a repo already set up for
+Claude Code needs no changes. A file reached twice (a `CLAUDE.md` that
+`@AGENTS.md`-includes or symlinks to `AGENTS.md`) is loaded once.
+`CLAUDE_CONFIG_DIR` is honored for the user-level file.
 
 ### @include directives
 
@@ -894,6 +938,29 @@ are all supported. Includes are resolved recursively (up to 5 levels, with cycle
 detection). Use `/init` to have OrbCode generate a starter `AGENTS.md` by
 analyzing the codebase.
 
+### Auto memory
+
+Alongside the AGENTS.md files you write, OrbCode keeps its own notes — the same
+model as Claude Code's auto memory. Each project gets a memory directory at
+`~/.orbcode/projects/<project>/memory/` (keyed by the git repository root, so all
+worktrees of a repo share it). OrbCode saves one Markdown file per fact — who you
+are, feedback on how it should work, ongoing project context, pointers to
+external resources — and keeps a one-line-per-memory index in `MEMORY.md`.
+
+- The first 200 lines of `MEMORY.md` are loaded at the start of every session
+  (and again after compaction); individual memory files are read on demand.
+- Ask it to "remember …" or "forget …" and it updates the files right away.
+- Writes inside the memory directory never trigger an edit approval prompt.
+- Memories Claude Code saved for the same project
+  (`~/.claude/projects/<project>/memory/`) are loaded too, read-only, so what
+  either tool learned carries over. To share one read-write memory between the
+  two instead, point `autoMemoryDirectory` at Claude Code's folder.
+- `/memory` opens your user or project `AGENTS.md` in `$VISUAL`/`$EDITOR`, opens
+  the auto-memory folder, or toggles auto memory on/off.
+- Turn it off with `"autoMemoryEnabled": false` in `settings.json` or
+  `ORBCODE_DISABLE_AUTO_MEMORY=1`. Move it with `"autoMemoryDirectory"` (user
+  `~/.orbcode/settings.json` only) or `ORBCODE_AUTO_MEMORY_DIR`.
+
 ## Architecture
 
 Interactive sessions run on OpenTUI's native retained renderer with the React
@@ -908,17 +975,19 @@ src/
   index.tsx          entry: arg parsing, interactive vs -p (headless) mode
   branding.ts        product name, logo, colors; VERSION read from package.json
   headless.ts        non-interactive -p runner
-  config/settings.ts load/save ~/.orbcode/config.json
+  config/settings.ts load/save ~/.orbcode/config.json + layered settings.json
   auth/auth.ts       device flow (start/poll), JWT→backend-URL mapping,
                      profile/balance fetch, token verification
   api/
-    models.ts        the two Axon models (ported from the extension registry)
-    client.ts        OpenAI-compatible streaming client → api2.matterai.so/v1/web
+    models.ts        built-in gateway models + Claude models + customModels registry
+    client.ts        OpenAI-compatible streaming client → MatterAI gateway
+    aiSdkClient.ts   Vercel AI SDK client for third-party providers (Anthropic, OpenAI-compatible)
+    llmClient.ts     client interface + factory picking the transport per model
     stream.ts        chunk model: text / reasoning / native_tool_calls / usage
     headers.ts       X-AxonCode-Version, X-AxonCode-TaskId, X-AXON-REPO, …
-  prompts/system.ts  system prompt: agent roleDefinition + tool guide (ported
-                     verbatim from the extension) + CLI system-info section +
-                     AGENTS.md memory + skills catalog injection
+  prompts/system.ts  static system prompt (roleDefinition + tool guide ported
+                     from the extension + harness section), environment message,
+                     first-message reminders (AGENTS.md/CLAUDE.md, auto memory)
   tools/
     schemas/         native-tools JSON schemas, copied verbatim from the extension
     executors/       CLI implementations (fs, child_process, search, web, skills)
@@ -940,7 +1009,8 @@ src/
     manager.ts       official catalog fetch, pinned git install, inventory
   memory/
     types.ts         MemoryFile type
-    loader.ts        AGENTS.md discovery (user/project/local) + @include resolution
+    loader.ts        AGENTS.md + CLAUDE.md discovery (user/project/local) + @include resolution
+    autoMemory.ts    auto memory: per-project dir, MEMORY.md index, Claude Code memories
   ui/
     App.tsx          main OpenTUI React app: transcript, composer, overlays
     primitives.tsx   OpenTUI box/text/input primitives used by the UI
@@ -948,7 +1018,9 @@ src/
     LoginView.tsx    device-flow login screen with paste fallback
     components/      Header, InputBox, rows, ApprovalPrompt, FollowupPrompt,
                      HookTrustPrompt, McpApprovalPrompt, McpPicker, ModelPicker,
-                     SessionPicker, Spinner, StatusBar
+                     EffortPicker, ThemePicker, MemoryPicker, SessionPicker,
+                     RewindPicker, PluginManager, LinkManager, BackgroundShells,
+                     TranscriptViewport, Spinner, StatusBar
     markdown.tsx     markdown → native styled text nodes
 ```
 
@@ -961,10 +1033,13 @@ one-time approval; the TUI shows a checklist at startup and `/mcp` manages them
 at runtime. Connections are torn down on session end.
 
 **Skills & memory**: on agent construction, `loadMemoryFiles()` walks the
-AGENTS.md discovery chain (user → project → local, with `@include` resolution)
-and `loadSkills()` walks the skills directories. Both are injected into the
-system prompt so the model sees project instructions and the skill catalog on
-every turn. The `use_skill` tool loads a skill's full body on demand.
+AGENTS.md / CLAUDE.md discovery chain (user → project → local, with `@include`
+resolution) and `loadSkills()` walks the skills directories. The instructions
+and the auto-memory `MEMORY.md` index (plus any Claude Code memories for the
+project) open the first user message as `<system-reminder>` blocks, re-sent
+after compaction; the skill catalog goes in the environment message. The static
+system prompt stays byte-identical so the prompt cache keeps hitting. The
+`use_skill` tool loads a skill's full body on demand.
 
 **Streaming** faithfully ports the extension's handler quirks: cumulative
 content dedup (some backends re-send full content), `<think>` blocks routed to
@@ -997,7 +1072,9 @@ Active in the CLI (aligned with the extension's native tools, with CLI-specific 
 | `file_edit`                | single replacement; unique-match enforcement; `replace_all`; empty `old_string` = whole file |
 | `multi_file_edit`          | batched edits grouped per file, per-edit OK/FAILED results                                   |
 | `file_write`               | creates parent dirs, full-content writes                                                     |
-| `Bash`          | user's shell, 120s timeout, 30k output cap; also used for search/listing (`rg`, `find`, `ls`) — read-only commands skip approval |
+| `Bash`          | user's shell, 120s timeout, 30k output cap; also used for search/listing (`rg`, `find`, `ls`) — read-only commands skip approval; `background: true` runs it asynchronously |
+| `check_background` / `kill_background` | poll or stop a background `Bash` command                                      |
+| `figma_fetch`              | fetch a Figma file/node referenced by URL                                                    |
 | `web_search` / `web_fetch` | proxied through the MatterAI backend with your token                                         |
 | `update_todo_list`         | drives the TUI todo panel                                                                    |
 | `use_skill`                | loads standalone or namespaced plugin skill instructions                                     |
@@ -1005,7 +1082,8 @@ Active in the CLI (aligned with the extension's native tools, with CLI-specific 
 | `attempt_completion`       | ends the turn with a completion card                                                         |
 | `mcp__<server>__<tool>`    | any tool exposed by a connected MCP server (see [MCP servers](#mcp-servers))                 |
 
-Present in `tools/schemas/` but **inactive** (need IDE services): `codebase_search`,
+Present in `tools/schemas/` but **inactive** (need IDE services, or replaced by
+`Bash`): `codebase_search`, `search_files`, `list_files`,
 `lsp`, `list_code_definition_names`, `check_past_chat_memories`,
 `browser_action`, `generate_image`, `new_task`, `switch_mode`,
 `fetch_instructions`, `run_slash_command`.
@@ -1014,11 +1092,13 @@ Present in `tools/schemas/` but **inactive** (need IDE services): `codebase_sear
 
 Per user message (`core/agent.ts`):
 
-1. The first message is prefixed with `<environment_details>` (workspace file
-   listing, git branch/status, time); every user message is wrapped in
-   `<user_query>` tags, matching the extension's prompt contract.
-2. Stream a completion (system prompt + history + tool schemas, temperature
-   0.2). Text/reasoning deltas are forwarded to the UI as they arrive;
+1. The first message opens with `<system-reminder>` blocks (AGENTS.md /
+   CLAUDE.md instructions, auto memory, git status at session start) and is
+   followed by a system message with the environment details (cwd, platform,
+   shell, model, linked repos, skills catalog, date); every user message is
+   wrapped in `<user_query>` tags and ends with a `<total_tokens>` note.
+2. Stream a completion (system prompt + history + tool schemas; temperature
+   0.2 on the MatterAI gateway). Text/reasoning deltas are forwarded to the UI as they arrive;
    tool-call fragments are accumulated.
 3. If the model made tool calls: each one is summarized, approval is requested
    when required, the executor runs, and the result is appended as a
@@ -1027,7 +1107,7 @@ Per user message (`core/agent.ts`):
 4. Repeat (max 50 steps per turn) until a plain text response or completion.
 
 `Esc` aborts the in-flight request via `AbortController`; the interruption is
-recorded in the conversation as a `<system_reminder>` so the model knows.
+recorded in the conversation as a `<system-reminder>` so the model knows.
 
 ## Development
 
@@ -1052,9 +1132,13 @@ Backend/web pieces of the device-auth flow live in:
 ## Tests
 
 ```bash
+node --import tsx --test test/*.test.ts   # every node test suite
+npm run test:ui            # OpenTUI component tests (bun)
 npm run test:attachments   # attachment path detection and safe extraction limits
 npm run test:mcp           # MCP result bounding and tool dispatch
 npm run test:plugins       # marketplace plugin install/load flow
+npm run test:memory        # AGENTS.md / CLAUDE.md loading and auto memory
+npm run test:headless      # -p runner (plus test:headless-resume)
 npm run typecheck          # OpenTUI React and application types
 ```
 
@@ -1066,7 +1150,7 @@ npm run typecheck          # OpenTUI React and application types
   command runs `dist/`, and the version is read from `package.json` at runtime.
 - **Stale link after the rename** — `npm unlink -g orbitalcode && npm link`.
 - **Login times out** — the device code lives 10 minutes; press Enter to retry,
-  or paste a token manually. Against a local stack, set `MATTERAI_BACKEND_URL`
+  or set `MATTERAI_TOKEN` / `apiKey` to skip the browser flow. Against a local stack, set `MATTERAI_BACKEND_URL`
   and `MATTERAI_APP_URL`.
 - **401 on chat** — token expired: `/logout` then `/login`.
 - **Keyboard input does nothing** — OrbCode needs a real TTY (raw mode); it

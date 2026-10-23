@@ -2,21 +2,27 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
-import { getConfigDir } from "../config/settings.js"
+import { getClaudeConfigDir, getConfigDir } from "../config/settings.js"
 import type { MemoryFile } from "./types.js"
 
 /**
- * AGENTS.md memory loader.
+ * AGENTS.md / CLAUDE.md memory loader.
  *
- * OrbCode's memory system mirrors Claude Code's CLAUDE.md discovery, but uses
- * the open `AGENTS.md` filename (the cross-tool standard) instead of a
- * vendor-specific name. Files are loaded in this order (lowest precedence
- * first), with closer-to-cwd and higher-precedence types winning:
+ * OrbCode's memory system mirrors Claude Code's CLAUDE.md discovery, using the
+ * open `AGENTS.md` filename (the cross-tool standard) and also reading Claude
+ * Code's own CLAUDE.md files, so a repo set up for Claude Code works as-is.
+ * Files are loaded in this order (lowest precedence first), with closer-to-cwd
+ * and higher-precedence types winning:
  *
- *   1. User memory:   ~/.orbcode/AGENTS.md
+ *   1. User memory:   ~/.orbcode/AGENTS.md, ~/.claude/CLAUDE.md
  *   2. Project memory: AGENTS.md and .orb/AGENTS.md (and the legacy
- *      .orbcode/AGENTS.md) in cwd and every parent directory (closer-to-cwd wins)
- *   3. Local memory:   AGENTS.local.md in cwd and parents (highest precedence)
+ *      .orbcode/AGENTS.md), CLAUDE.md and .claude/CLAUDE.md in cwd and every
+ *      parent directory (closer-to-cwd wins)
+ *   3. Local memory:   AGENTS.local.md and CLAUDE.local.md in cwd and parents
+ *      (highest precedence)
+ *
+ * A file reached twice (a CLAUDE.md symlinked to AGENTS.md, or one that
+ * `@AGENTS.md`-includes it) is loaded only once.
  *
  * Memory files support `@path` include directives (relative, `~/`, or
  * absolute) to pull in other files. Includes are resolved recursively up to a
@@ -119,7 +125,7 @@ function ancestorDirs(cwd: string): string[] {
 }
 
 /**
- * Load all AGENTS.md memory files, in precedence order (lowest first). The
+ * Load all AGENTS.md / CLAUDE.md memory files, in precedence order (lowest first). The
  * caller concatenates them in order so higher-precedence files appear last
  * (and thus get more weight from the model).
  */
@@ -127,20 +133,25 @@ export function loadMemoryFiles(cwd = process.cwd()): MemoryFile[] {
 	const processed = new Set<string>()
 	const files: MemoryFile[] = []
 
-	// 1. User memory (~/.orbcode/AGENTS.md)
+	// 1. User memory (~/.orbcode/AGENTS.md, ~/.claude/CLAUDE.md)
 	files.push(...loadWithIncludes(path.join(getConfigDir(), "AGENTS.md"), "user", processed, 0))
+	files.push(...loadWithIncludes(path.join(getClaudeConfigDir(), "CLAUDE.md"), "user", processed, 0))
 
-	// 2. Project memory (AGENTS.md + .orb/AGENTS.md), root -> cwd. The legacy
-	//    .orbcode/AGENTS.md location is still read for backward compatibility.
+	// 2. Project memory (AGENTS.md + .orb/AGENTS.md, CLAUDE.md +
+	//    .claude/CLAUDE.md), root -> cwd. The legacy .orbcode/AGENTS.md
+	//    location is still read for backward compatibility.
 	for (const dir of ancestorDirs(cwd).reverse()) {
 		files.push(...loadWithIncludes(path.join(dir, "AGENTS.md"), "project", processed, 0))
 		files.push(...loadWithIncludes(path.join(dir, ".orb", "AGENTS.md"), "project", processed, 0))
 		files.push(...loadWithIncludes(path.join(dir, ".orbcode", "AGENTS.md"), "project", processed, 0))
+		files.push(...loadWithIncludes(path.join(dir, "CLAUDE.md"), "project", processed, 0))
+		files.push(...loadWithIncludes(path.join(dir, ".claude", "CLAUDE.md"), "project", processed, 0))
 	}
 
-	// 3. Local memory (AGENTS.local.md), root -> cwd — highest precedence
+	// 3. Local memory (AGENTS.local.md, CLAUDE.local.md), root -> cwd — highest precedence
 	for (const dir of ancestorDirs(cwd).reverse()) {
 		files.push(...loadWithIncludes(path.join(dir, "AGENTS.local.md"), "local", processed, 0))
+		files.push(...loadWithIncludes(path.join(dir, "CLAUDE.local.md"), "local", processed, 0))
 	}
 
 	return files
@@ -151,9 +162,9 @@ export function renderMemorySection(files: MemoryFile[]): string {
 	const valid = files.filter((f) => f.content.trim())
 	if (valid.length === 0) return ""
 	const parts: string[] = [
-		"# Project & User Instructions (AGENTS.md)",
+		"# Project & User Instructions (AGENTS.md / CLAUDE.md)",
 		"",
-		"Instructions from AGENTS.md files are shown below. Adhere to these instructions; they override default behavior. Treat them as authoritative guidance from the user about this codebase.",
+		"Instructions from AGENTS.md and CLAUDE.md files are shown below. Adhere to these instructions; they override default behavior. Treat them as authoritative guidance from the user about this codebase.",
 		"",
 	]
 	let total = 0

@@ -62,9 +62,9 @@ Bias towards not asking the user for help if you can find the answer yourself.
 
 Code chunks that you receive (via tool calls or from user) may include inline line numbers in the form LINE_NUMBER|LINE_CONTENT. Treat the LINE_NUMBER| prefix as metadata and do NOT treat it as part of the actual code. LINE_NUMBER is right-aligned number padded with spaces to 6 characters.
 
-# Project & User Instructions (AGENTS.md)
+# Project & User Instructions (AGENTS.md / CLAUDE.md)
 
-Your system prompt may include an "Project & User Instructions (AGENTS.md)" section. These are instructions from AGENTS.md files in the user's home directory, the project root, and parent directories. They contain project-specific guidance: build commands, code style, architecture notes, conventions. Treat them as authoritative instructions from the user about this codebase and follow them exactly. They override default behavior.
+Your first user message may open with a "Project & User Instructions (AGENTS.md / CLAUDE.md)" section. These are instructions from AGENTS.md and CLAUDE.md files in the user's home directory, the project root, and parent directories. They contain project-specific guidance: build commands, code style, architecture notes, conventions. Treat them as authoritative instructions from the user about this codebase and follow them exactly. They override default behavior.
 
 # Skills
 
@@ -239,7 +239,7 @@ const harnessSection = `# Harness
 
 The role definition and tool guide above describe context in generic terms; this is how OrbCode CLI actually delivers it:
 
-- Per-session context is sent as conversation messages, not in this system prompt. The first user message may open with <system-reminder> blocks holding the "Project & User Instructions (AGENTS.md)" section and the git status at session start. A system message right after it holds the Environment details: primary working directory (the Current Workspace Directory), platform, shell, model, linked repositories, the "Available Skills" catalog and today's date.
+- Per-session context is sent as conversation messages, not in this system prompt. The first user message may open with <system-reminder> blocks holding the "Project & User Instructions (AGENTS.md / CLAUDE.md)" section, your persistent "Memory" (its directory, how to use it, the current MEMORY.md index, and any read-only Claude Code memories for the project) and the git status at session start. A system message right after it holds the Environment details: primary working directory (the Current Workspace Directory), platform, shell, model, linked repositories, the "Available Skills" catalog and today's date.
 - <system-reminder> blocks, the Environment details and <total_tokens> notes come from the harness, not the user. Heed them, but don't mention them in your response to the user.
 - Each later user message and each round of tool results ends with <total_tokens>N tokens left</total_tokens>: the room left in your context window. When the conversation grows long, older context is summarized automatically, so you don't need to wrap up early or hand off mid-task.
 - Text you output outside of tool calls is shown to the user as GitHub-flavored markdown in a terminal.
@@ -300,8 +300,8 @@ export function systemReminder(text: string): string {
   return `<system-reminder>\n${text}\n</system-reminder>`;
 }
 
-/** Context prepended to the first user message: AGENTS.md instructions and the git snapshot. */
-export function buildContextReminders(memorySection: string, gitStatus: string): string {
+/** Context prepended to the first user message: AGENTS.md instructions, auto memory and the git snapshot. */
+export function buildContextReminders(memorySection: string, gitStatus: string, autoMemorySection = ""): string {
   const reminders: string[] = [];
   if (memorySection) {
     reminders.push(
@@ -310,6 +310,7 @@ export function buildContextReminders(memorySection: string, gitStatus: string):
       ),
     );
   }
+  if (autoMemorySection) reminders.push(systemReminder(autoMemorySection));
   if (gitStatus) {
     reminders.push(
       systemReminder(
