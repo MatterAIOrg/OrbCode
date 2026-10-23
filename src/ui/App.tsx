@@ -513,6 +513,16 @@ export function App({
   const [streamingText, setStreamingText] = useState("");
   const [inputBoxHeight, setInputBoxHeight] = useState(3);
   const [scrollOffset, setScrollOffset] = useState(0);
+  // Real Yoga heights reported by mounted rows, keyed by the (immutable) row
+  // object so a changed row is re-measured. Estimates only cover rows that
+  // have never been mounted at the current width.
+  const measuredRowHeightsRef = useRef(
+    new WeakMap<Row, { width: number; height: number }>(),
+  );
+  const [measureVersion, setMeasureVersion] = useState(0);
+  const [measuredDynamicHeight, setMeasuredDynamicHeight] = useState<
+    number | null
+  >(null);
   const smoothScrollPendingRef = useRef(0);
   const smoothScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -2393,13 +2403,28 @@ export function App({
   const rowLayout = useMemo(() => {
     let top = 0;
     const items = rows.map((row) => {
-      const height = Math.max(1, estimateRowLines(row, wrapWidth));
+      const measured = measuredRowHeightsRef.current.get(row);
+      const height =
+        measured?.width === wrapWidth
+          ? measured.height
+          : Math.max(1, estimateRowLines(row, wrapWidth));
       const item = { row, top, bottom: top + height };
       top += height;
       return item;
     });
     return { items, height: top };
-  }, [rows, wrapWidth]);
+    // measureVersion invalidates the layout when a row reports a new height.
+  }, [rows, wrapWidth, measureVersion]);
+  const reportRowHeight = useCallback(
+    (row: Row, width: number, height: number) => {
+      const map = measuredRowHeightsRef.current;
+      const previous = map.get(row);
+      if (previous?.width === width && previous.height === height) return;
+      map.set(row, { width, height });
+      setMeasureVersion((version) => version + 1);
+    },
+    [],
+  );
   const rowsHeight = rowLayout.height;
 
   let dynamicHeight = 0;
@@ -2477,6 +2502,9 @@ export function App({
     dynamicHeight += 2;
   }
 
+  // The live section is measured after layout; the estimate only bridges the
+  // first frame.
+  if (measuredDynamicHeight !== null) dynamicHeight = measuredDynamicHeight;
   const transcriptHeight = Math.max(1, rowsHeight + dynamicHeight);
   const maxScrollOffset = Math.max(0, transcriptHeight - contentHeight);
   const effectiveScrollOffset = Math.min(scrollOffset, maxScrollOffset);
@@ -2630,137 +2658,157 @@ export function App({
               marginTop={virtualTranscriptMarginTop}
             >
               {virtualRows.rows.map((row) => (
-                <RowView key={row.id} row={row} width={wrapWidth} />
+                <Box
+                  key={row.id}
+                  flexDirection="column"
+                  flexShrink={0}
+                  onSizeChange={function (this: { height: number }) {
+                    reportRowHeight(row, wrapWidth, this.height);
+                  }}
+                >
+                  <RowView row={row} width={wrapWidth} />
+                </Box>
               ))}
               {rowBottomSpacerHeight > 0 && (
                 <Box height={rowBottomSpacerHeight} flexShrink={0} />
               )}
-              {updateInfo?.stagedVersion && (
-                <Box
-                  marginTop={1}
-                  flexDirection="column"
-                  borderStyle="round"
-                  borderColor={COLORS.success}
-                  paddingX={2}
-                  alignSelf="flex-start"
-                >
-                  <Text color={COLORS.success} bold>
-                    ✓ Update installed: v{updateInfo.stagedVersion}
-                  </Text>
-                  <Text>
-                    Restart <Text color={COLORS.accent}>orbcode</Text> to apply.
-                  </Text>
-                </Box>
-              )}
-              {!updateInfo?.stagedVersion &&
-                updateInfo?.updateAvailable &&
-                updateInfo.latest && (
-                <Box
-                  marginTop={1}
-                  flexDirection="column"
-                  borderStyle="round"
-                  borderColor={COLORS.warning}
-                  paddingX={2}
-                  alignSelf="flex-start"
-                >
-                  <Text color={COLORS.warning} bold>
-                    ↑ Update available: v{updateInfo.current} → v
-                    {updateInfo.latest}
-                  </Text>
-                  <Text>
-                    Run <Text color={COLORS.accent}>orbcode update</Text> to
-                    install the latest version, then relaunch.
-                  </Text>
-                </Box>
-              )}
-              {streamingReasoning && (
-                <Box flexDirection="column" marginTop={1}>
-                  <Spinner
-                    label="Thinking"
-                    showTip
-                    startedAt={turnStartedAt}
-                    tokensRef={turnTokensRef}
-                  />
-                  <Box paddingLeft={2}>
-                    <Text color={COLORS.dim} italic>
-                      {streamingReasoningDisplay}
+              <Box
+                flexDirection="column"
+                flexShrink={0}
+                onSizeChange={function (this: { height: number }) {
+                  const height = this.height;
+                  setMeasuredDynamicHeight((current) =>
+                    current === height ? current : height,
+                  );
+                }}
+              >
+                {updateInfo?.stagedVersion && (
+                  <Box
+                    marginTop={1}
+                    flexDirection="column"
+                    borderStyle="round"
+                    borderColor={COLORS.success}
+                    paddingX={2}
+                    alignSelf="flex-start"
+                  >
+                    <Text color={COLORS.success} bold>
+                      ✓ Update installed: v{updateInfo.stagedVersion}
+                    </Text>
+                    <Text>
+                      Restart <Text color={COLORS.accent}>orbcode</Text> to apply.
                     </Text>
                   </Box>
-                </Box>
-              )}
-              {streamingTextDisplay && (
-                <Box marginTop={1}>
-                  <Text>
-                    <Text color={COLORS.primary}>● </Text>
-                    {streamingTextDisplay}
-                  </Text>
-                </Box>
-              )}
-              {taskLines.length > 0 && (
-                <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-                  <Text color={COLORS.dim} bold>
-                    Tasks
-                  </Text>
-                  {taskLines.slice(0, 10).map((line, i) => (
-                    <Text
-                      key={i}
-                      color={
-                        /^[-*]\s*\[x\]/i.test(line)
-                          ? COLORS.dim
-                          : COLORS.primary
-                      }
-                    >
-                      {line
-                        .replace(/^[-*]\s*\[x\]/i, "  ■")
-                        .replace(/^[-*]\s*\[-\]/, "  ◧")
-                        .replace(/^[-*]\s*\[ \]/, "  □")}
+                )}
+                {!updateInfo?.stagedVersion &&
+                  updateInfo?.updateAvailable &&
+                  updateInfo.latest && (
+                  <Box
+                    marginTop={1}
+                    flexDirection="column"
+                    borderStyle="round"
+                    borderColor={COLORS.warning}
+                    paddingX={2}
+                    alignSelf="flex-start"
+                  >
+                    <Text color={COLORS.warning} bold>
+                      ↑ Update available: v{updateInfo.current} → v
+                      {updateInfo.latest}
                     </Text>
-                  ))}
-                  {taskLines.length > 10 && (
-                    <Text color={COLORS.dim}>
-                      {" "}
-                      … {taskLines.length - 10} more
+                    <Text>
+                      Run <Text color={COLORS.accent}>orbcode update</Text> to
+                      install the latest version, then relaunch.
                     </Text>
-                  )}
-                </Box>
-              )}
-              {pendingApproval && (
-                <ApprovalPrompt
-                  request={pendingApproval.request}
-                  width={wrapWidth}
-                  maxDiffLines={approvalMaxDiffLines}
-                  onDecision={(decision) => {
-                    pendingApproval.resolve(decision);
-                    setPendingApproval(null);
-                  }}
-                />
-              )}
-              {pendingHookTrust && (
-                <HookTrustPrompt
-                  cwd={process.cwd()}
-                  commands={pendingHookTrust.commands}
-                  onDecision={resolveHookTrust}
-                />
-              )}
-              {pendingMcpApproval && (
-                <McpApprovalPrompt
-                  serverNames={pendingMcpApproval}
-                  onApprove={resolveMcpApproval}
-                />
-              )}
-              {spinnerVisible && (
-                <Box marginTop={1}>
-                  <Spinner
-                    key={busyLabel}
-                    label={busyLabel}
-                    startedAt={turnStartedAt}
-                    tokensRef={turnTokensRef}
-                    showTip={
-                      busyLabel === "Thinking" || busyLabel === "Working"
-                    }
+                  </Box>
+                )}
+                {streamingReasoning && (
+                  <Box flexDirection="column" marginTop={1}>
+                    <Spinner
+                      label="Thinking"
+                      showTip
+                      startedAt={turnStartedAt}
+                      tokensRef={turnTokensRef}
+                    />
+                    <Box paddingLeft={2}>
+                      <Text color={COLORS.dim} italic>
+                        {streamingReasoningDisplay}
+                      </Text>
+                    </Box>
+                  </Box>
+                )}
+                {streamingTextDisplay && (
+                  <Box marginTop={1}>
+                    <Text>
+                      <Text color={COLORS.primary}>● </Text>
+                      {streamingTextDisplay}
+                    </Text>
+                  </Box>
+                )}
+                {taskLines.length > 0 && (
+                  <Box flexDirection="column" marginTop={1} paddingLeft={1}>
+                    <Text color={COLORS.dim} bold>
+                      Tasks
+                    </Text>
+                    {taskLines.slice(0, 10).map((line, i) => (
+                      <Text
+                        key={i}
+                        color={
+                          /^[-*]\s*\[x\]/i.test(line)
+                            ? COLORS.dim
+                            : COLORS.primary
+                        }
+                      >
+                        {line
+                          .replace(/^[-*]\s*\[x\]/i, "  ■")
+                          .replace(/^[-*]\s*\[-\]/, "  ◧")
+                          .replace(/^[-*]\s*\[ \]/, "  □")}
+                      </Text>
+                    ))}
+                    {taskLines.length > 10 && (
+                      <Text color={COLORS.dim}>
+                        {" "}
+                        … {taskLines.length - 10} more
+                      </Text>
+                    )}
+                  </Box>
+                )}
+                {pendingApproval && (
+                  <ApprovalPrompt
+                    request={pendingApproval.request}
+                    width={wrapWidth}
+                    maxDiffLines={approvalMaxDiffLines}
+                    onDecision={(decision) => {
+                      pendingApproval.resolve(decision);
+                      setPendingApproval(null);
+                    }}
                   />
-                </Box>
-              )}
+                )}
+                {pendingHookTrust && (
+                  <HookTrustPrompt
+                    cwd={process.cwd()}
+                    commands={pendingHookTrust.commands}
+                    onDecision={resolveHookTrust}
+                  />
+                )}
+                {pendingMcpApproval && (
+                  <McpApprovalPrompt
+                    serverNames={pendingMcpApproval}
+                    onApprove={resolveMcpApproval}
+                  />
+                )}
+                {spinnerVisible && (
+                  <Box marginTop={1}>
+                    <Spinner
+                      key={busyLabel}
+                      label={busyLabel}
+                      startedAt={turnStartedAt}
+                      tokensRef={turnTokensRef}
+                      showTip={
+                        busyLabel === "Thinking" || busyLabel === "Working"
+                      }
+                    />
+                  </Box>
+                )}
+              </Box>
             </Box>
           </TranscriptViewport>
           <Box flexDirection="column" flexShrink={0}>
