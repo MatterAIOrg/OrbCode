@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.8] - 2026-10-23
+
+### Added
+
+- **Auto memory, matching Claude Code.** OrbCode keeps a persistent per-project memory at `~/.orbcode/projects/<project>/memory/` (keyed by the git root, shared across worktrees): one Markdown file per fact (`user` / `feedback` / `project` / `reference` frontmatter) plus a one-line-per-memory `MEMORY.md` index. The index (first 200 lines / 25KB) is loaded at session start and again after compaction, and writes inside the memory directory skip the edit approval prompt. Turn it off with `"autoMemoryEnabled": false` or `ORBCODE_DISABLE_AUTO_MEMORY=1`; relocate it with `autoMemoryDirectory` (user settings only) or `ORBCODE_AUTO_MEMORY_DIR` (`src/memory/autoMemory.ts`).
+- **`/memory` command.** Opens the user or project `AGENTS.md` in `$VISUAL`/`$EDITOR`, opens the memory folder(s), or toggles auto memory. `/status` shows whether auto memory is on.
+- **`CLAUDE.md` support.** `~/.claude/CLAUDE.md` (or `$CLAUDE_CONFIG_DIR`), `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` are loaded alongside the AGENTS.md files; a file reached twice (symlink or `@AGENTS.md` include) loads once (`src/memory/loader.ts`).
+- **Claude Code memories.** Memories Claude Code saved for the same project (`~/.claude/projects/<project>/memory/`) are loaded read-only, so what either tool learned carries over.
+
 ## [7.0.7] - 2026-10-23
 
 ### Fixed
