@@ -63,6 +63,8 @@ export interface OrbCodeSettings {
 	disabledMcpServers?: string[]
 	/** false turns off background updates (same as ORBCODE_DISABLE_AUTOUPDATE=1). */
 	autoUpdates?: boolean
+	/** false turns off auto memory (same as ORBCODE_DISABLE_AUTO_MEMORY=1). */
+	autoMemoryEnabled?: boolean
 }
 
 const DEFAULTS: OrbCodeSettings = {
@@ -84,10 +86,16 @@ const SETTINGS_KEYS = [
 	"enabledMcpServers",
 	"disabledMcpServers",
 	"autoUpdates",
+	"autoMemoryEnabled",
 ] as const
 
 export function getConfigDir(): string {
 	return process.env.MATTERAI_CONFIG_DIR || path.join(os.homedir(), ".orbcode")
+}
+
+/** Claude Code's config dir (~/.claude, or $CLAUDE_CONFIG_DIR), read for CLAUDE.md and its memories. */
+export function getClaudeConfigDir(): string {
+	return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
 }
 
 function getConfigPath(): string {
@@ -108,6 +116,32 @@ function mergeHooksInto(target: HooksConfig, raw: unknown): void {
 		if (!Array.isArray(matchers)) continue
 		;(target[event] ??= []).push(...(matchers as HookMatcher[]))
 	}
+}
+
+/**
+ * Auto-memory settings, read fresh so a /memory toggle applies to the next
+ * session without a restart. `autoMemoryEnabled` layers user → project like
+ * other keys; `autoMemoryDirectory` is honored only from the user settings so a
+ * cloned repo can't redirect memory writes somewhere else.
+ */
+export function loadAutoMemorySettings(cwd = process.cwd()): { enabled?: boolean; directory?: string } {
+	const userSettings = readJson(path.join(getConfigDir(), "settings.json"))
+	let enabled: boolean | undefined
+	for (const settingsPath of getSettingsPaths(cwd)) {
+		const value = readJson(settingsPath)?.autoMemoryEnabled
+		if (typeof value === "boolean") enabled = value
+	}
+	const directory = userSettings?.autoMemoryDirectory
+	return { enabled, directory: typeof directory === "string" && directory.trim() ? directory.trim() : undefined }
+}
+
+/** Persist the auto-memory toggle to the user settings.json. */
+export function saveAutoMemoryEnabled(enabled: boolean): void {
+	const settingsPath = path.join(getConfigDir(), "settings.json")
+	const current = readJson(settingsPath) ?? {}
+	current.autoMemoryEnabled = enabled
+	fs.mkdirSync(getConfigDir(), { recursive: true })
+	fs.writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n", { mode: 0o600 })
 }
 
 function readJson(filePath: string): Record<string, unknown> | undefined {

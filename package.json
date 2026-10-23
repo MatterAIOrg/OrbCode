@@ -47,6 +47,7 @@
     "test:autoupdate": "node --import tsx --test test/auto-update.test.ts",
     "test:warmup": "node --import tsx --test test/cache-warmup.test.ts",
     "test:resume": "node --import tsx --test test/resume-cost.test.ts",
+    "test:memory": "node --import tsx --test test/auto-memory.test.ts",
     "test:compaction": "node --import tsx --test test/compaction.test.ts test/agent-context.test.ts test/files.test.ts",
     "test:effort": "node --import tsx --test test/model-effort.test.ts test/model-persistence.test.ts",
     "test:ui": "bun test test/ui-viewport.test.tsx test/session-picker.test.tsx test/rewind-picker.test.tsx test/resume-confirm.test.tsx test/model-picker.test.tsx test/effort-picker.test.tsx test/tool-group.test.tsx test/markdown-table.test.tsx",

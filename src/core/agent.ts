@@ -36,6 +36,7 @@ import { previewFileChange } from "../tools/executors/files.js"
 import { extractFigmaUrls, figmaFetch } from "../tools/executors/figma.js"
 import { stripSearchPageMetadataForDisplay } from "../tools/executors/searchFiles/format.js"
 import { isReadOnlyCommand } from "../tools/readOnlyCommand.js"
+import { resolveWorkspacePath } from "../tools/types.js"
 import type { AgentCallbacks, AgentEvent, ApprovalDecision } from "./events.js"
 import {
 	getSessionFilePath,
@@ -55,6 +56,7 @@ import {
 } from "./checkpoints.js"
 import { HookRunner, type HooksConfig } from "./hooks.js"
 import { McpManager } from "../mcp/manager.js"
+import { isInMemoryDir, renderAutoMemorySection, resolveAutoMemory, type AutoMemoryConfig } from "../memory/autoMemory.js"
 import { loadMemoryFiles, renderMemorySection } from "../memory/loader.js"
 import { loadSkills, renderSkillCatalog } from "../skills/loader.js"
 import { renderLinkedReposSection } from "../config/links.js"
@@ -521,6 +523,8 @@ export class Agent {
 	/** AGENTS.md instructions and skills catalog, sent as conversation context
 	 *  (not in the system prompt) so the system prompt stays cacheable. */
 	private memorySection = ""
+	/** Auto memory for this project; undefined with a system-prompt override. */
+	private autoMemory: AutoMemoryConfig | undefined
 	private skillCatalog = ""
 	private messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
 	private transcript: SessionTranscriptEntry[] = []
@@ -630,6 +634,7 @@ export class Agent {
 		// override (from `orbcode -s <text>`) bypasses them and the default prompt.
 		if (!options.systemPromptOverride) {
 			this.memorySection = renderMemorySection(loadMemoryFiles(options.cwd))
+			this.autoMemory = resolveAutoMemory(options.cwd)
 			this.skillCatalog = renderSkillCatalog(loadSkills(options.cwd))
 		}
 		this.systemPrompt = options.systemPromptOverride ?? buildSystemPrompt()
@@ -960,9 +965,28 @@ export class Agent {
 		return this.sessionStarted || this.messages.length > 0
 	}
 
+	/** True when every file an edit tool touches is inside the auto-memory
+	 *  directory — those writes don't need approval, as in Claude Code. */
+	private isAutoMemoryEdit(args: Record<string, unknown>): boolean {
+		const memory = this.autoMemory
+		if (!memory?.enabled) return false
+		const paths = Array.isArray(args.edits)
+			? args.edits.map((edit: { file_path?: unknown }) => edit?.file_path)
+			: [args.file_path]
+		return (
+			paths.length > 0 &&
+			paths.every(
+				(p) => typeof p === "string" && p !== "" && isInMemoryDir(resolveWorkspacePath(this.options.cwd, p), memory.dir),
+			)
+		)
+	}
+
 	/** <system-reminder> blocks that open the first user message. */
 	private contextReminders(): string {
-		return buildContextReminders(this.memorySection, getGitSummary(this.options.cwd))
+		// MEMORY.md is re-read here so a post-compaction reminder carries the
+		// memories saved earlier in the session.
+		const autoMemory = this.autoMemory ? renderAutoMemorySection(this.autoMemory) : ""
+		return buildContextReminders(this.memorySection, getGitSummary(this.options.cwd), autoMemory)
 	}
 
 	/** System message that follows the first user message. */
@@ -1899,7 +1923,7 @@ export class Agent {
 		const diff = approvalKind === "edit" ? previewFileChange(toolCall.name, args, this.options.cwd) : undefined
 		const isDangerous = (toolCall.name === "Bash" || toolCall.name === "execute_command") && Boolean(args.isDangerous)
 		let needsApproval = false
-		if (approvalKind === "edit" && !this.sessionApproveEdits) needsApproval = true
+		if (approvalKind === "edit" && !this.sessionApproveEdits && !this.isAutoMemoryEdit(args)) needsApproval = true
 		if (approvalKind === "command") {
 			const readOnly = !isDangerous && isReadOnlyCommand(String(args.command ?? ""))
 			needsApproval = isDangerous || !(readOnly || this.sessionApproveCommands || this.options.autoApproveSafeCommands)

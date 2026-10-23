@@ -18,6 +18,8 @@ import {
   type OrbCodeThemeMode,
 } from "./theme.js";
 import open from "open";
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { type SubmittedPrompt, attachmentSummary } from "../attachments.js";
@@ -62,7 +64,9 @@ import {
 } from "../auth/auth.js";
 import {
   getAuthToken,
+  getConfigDir,
   getModelEffort,
+  saveAutoMemoryEnabled,
   loadModelEfforts,
   setSessionModelEffort,
   withSessionModelEfforts,
@@ -103,6 +107,12 @@ import {
 import { StatusBar, type ApprovalMode } from "./components/StatusBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { ThemePicker } from "./components/ThemePicker.js";
+import {
+  MemoryPicker,
+  type MemoryPickerAction,
+  type MemoryPickerOption,
+} from "./components/MemoryPicker.js";
+import { ensureMemoryDir, listMemoryFiles, resolveAutoMemory } from "../memory/autoMemory.js";
 import { EffortPicker } from "./components/EffortPicker.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { ResumeConfirm, type ResumeDecision } from "./components/ResumeConfirm.js";
@@ -157,6 +167,47 @@ import {
   type LinkedRepo,
 } from "../config/links.js";
 
+/** Entries for the /memory picker. */
+function buildMemoryOptions(cwd: string): MemoryPickerOption[] {
+  const home = process.env.HOME ?? "";
+  const tilde = (p: string) => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
+  const memory = resolveAutoMemory(cwd);
+  const saved = listMemoryFiles(memory.dir).length;
+  return [
+    {
+      action: "user",
+      label: "User memory",
+      description: `Saved in ${tilde(path.join(getConfigDir(), "AGENTS.md"))} · applies to all projects`,
+    },
+    {
+      action: "project",
+      label: "Project memory",
+      description: `Saved in ${tilde(path.join(resolveProjectDir(cwd), "AGENTS.md"))} · checked in for your team`,
+    },
+    {
+      action: "auto-folder",
+      label: "Open auto-memory folder",
+      description: `${tilde(memory.dir)} · ${saved} memor${saved === 1 ? "y" : "ies"} saved`,
+    },
+    ...(memory.claudeDir
+      ? [
+          {
+            action: "claude-folder" as const,
+            label: "Open Claude Code memory folder",
+            description: `${tilde(memory.claudeDir)} · read-only for OrbCode`,
+          },
+        ]
+      : []),
+    {
+      action: "auto-toggle",
+      label: `Auto memory: ${memory.enabled ? "on" : "off"}`,
+      description: memory.enabled
+        ? "OrbCode saves what it learns about you and this project · enter to turn off"
+        : "Turned off · enter to let OrbCode remember across conversations",
+    },
+  ];
+}
+
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", description: "show available commands" },
   { name: "/attach", description: "choose files to attach" },
@@ -197,6 +248,10 @@ const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/init",
     description: "analyze this codebase and create an AGENTS.md",
+  },
+  {
+    name: "/memory",
+    description: "edit AGENTS.md memory files or manage auto memory",
   },
   {
     name: "/create-skill",
@@ -547,6 +602,8 @@ export function App({
   const [, setBgTick] = useState(0);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  // Set while the /memory picker is open.
+  const [memoryOptions, setMemoryOptions] = useState<MemoryPickerOption[] | null>(null);
   const [effortPickerOpen, setEffortPickerOpen] = useState(false);
   // Set while the /rewind picker is open: the user turns that can be rewound to.
   const [rewindPoints, setRewindPoints] = useState<RewindPoint[] | null>(null);
@@ -1537,6 +1594,77 @@ export function App({
     [exit],
   );
 
+  // Open a file in $VISUAL / $EDITOR (suspending the TUI while a terminal
+  // editor owns the screen), or the system default app when neither is set.
+  const openInEditor = useCallback(
+    (filePath: string) => {
+      const editor = process.env.VISUAL || process.env.EDITOR;
+      if (!editor) {
+        void open(filePath).catch(() => {});
+        pushRow({ kind: "info", text: `Opened ${filePath}\n> To use a different editor, set the $EDITOR or $VISUAL environment variable.` });
+        return;
+      }
+      renderer.suspend();
+      try {
+        spawnSync(`${editor} ${JSON.stringify(filePath)}`, { stdio: "inherit", shell: true });
+      } finally {
+        renderer.resume();
+      }
+      pushRow({ kind: "info", text: `Opened ${filePath} in ${editor}` });
+    },
+    [pushRow, renderer],
+  );
+
+  const handleMemoryAction = useCallback(
+    (action: MemoryPickerAction) => {
+      const cwd = process.cwd();
+      const memory = resolveAutoMemory(cwd);
+      switch (action) {
+        case "user":
+        case "project": {
+          const filePath =
+            action === "user"
+              ? path.join(getConfigDir(), "AGENTS.md")
+              : path.join(resolveProjectDir(cwd), "AGENTS.md");
+          try {
+            fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, "");
+          } catch (error) {
+            pushRow({ kind: "error", text: `Couldn't create ${filePath}: ${(error as Error).message}` });
+            return;
+          }
+          openInEditor(filePath);
+          break;
+        }
+        case "auto-folder":
+          ensureMemoryDir(memory.dir);
+          void open(memory.dir).catch(() => {});
+          pushRow({ kind: "info", text: `Opened auto-memory folder ${memory.dir}` });
+          break;
+        case "claude-folder":
+          if (memory.claudeDir) {
+            void open(memory.claudeDir).catch(() => {});
+            pushRow({ kind: "info", text: `Opened Claude Code memory folder ${memory.claudeDir}` });
+          }
+          break;
+        case "auto-toggle": {
+          const enabled = !memory.enabled;
+          saveAutoMemoryEnabled(enabled);
+          const effective = resolveAutoMemory(cwd).enabled;
+          pushRow({
+            kind: effective === enabled ? "info" : "error",
+            text:
+              effective === enabled
+                ? `Auto memory ${enabled ? "enabled" : "disabled"}. Applies from the next conversation (/new).`
+                : `Auto memory is still ${effective ? "on" : "off"}: ORBCODE_DISABLE_AUTO_MEMORY or the project's .orbcode/settings.json overrides the user setting.`,
+          });
+          break;
+        }
+      }
+    },
+    [openInEditor, pushRow],
+  );
+
   const handleCommand = useCallback(
     (command: string) => {
       const [name, ...rest] = command.split(/\s+/);
@@ -1718,6 +1846,7 @@ export function App({
               `Gateway     ${settings.baseUrl ?? "MatterAI (default)"}`,
               `Context     ${contextTokens.toLocaleString()} / ${model.contextWindow.toLocaleString()} tokens (${contextPct}%)`,
               `Cost        $${totalCost.toFixed(4)} this session`,
+              `Memory      auto memory ${resolveAutoMemory(process.cwd()).enabled ? "on" : "off"}`,
               `Approvals   edits ${settings.autoApproveEdits ? "auto" : "ask"} · safe commands ${settings.autoApproveSafeCommands ? "auto" : "ask"}`,
               ...(sessionTitle ? [`Task        ${sessionTitle}`] : []),
             ].join("\n"),
@@ -1734,6 +1863,9 @@ export function App({
           }
           break;
         }
+        case "/memory":
+          setMemoryOptions(buildMemoryOptions(process.cwd()));
+          break;
         case "/init": {
           if (!getAuthToken(settings)) {
             setView("login");
@@ -2342,6 +2474,7 @@ export function App({
     !pendingMcpApproval &&
     !modelPickerOpen &&
     !themePickerOpen &&
+    !memoryOptions &&
     !effortPickerOpen &&
     !mcpPickerOpen &&
     !mcpMigrationEntries &&
@@ -2356,6 +2489,7 @@ export function App({
     !!pendingFollowup ||
     modelPickerOpen ||
     themePickerOpen ||
+    !!memoryOptions ||
     effortPickerOpen ||
     mcpPickerOpen ||
     !!mcpMigrationEntries ||
@@ -2951,6 +3085,16 @@ export function App({
                   });
                 }}
                 onCancel={() => setEffortPickerOpen(false)}
+              />
+            )}
+            {memoryOptions && (
+              <MemoryPicker
+                options={memoryOptions}
+                onSelect={(action) => {
+                  setMemoryOptions(null);
+                  handleMemoryAction(action);
+                }}
+                onCancel={() => setMemoryOptions(null)}
               />
             )}
             {themePickerOpen && (

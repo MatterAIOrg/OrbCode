@@ -1,4 +1,4 @@
-/** A loaded memory (AGENTS.md) file with its origin metadata. */
+/** A loaded memory (AGENTS.md / CLAUDE.md) file with its origin metadata. */
 export interface MemoryFile {
 	/** Absolute path to the file on disk. */
 	path: string

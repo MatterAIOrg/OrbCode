@@ -327,6 +327,7 @@ MatterAI gateway untouched.
 | `/usage`                      | fetch plan usage                                                                                      |
 | `/weekly-reset`               | reset weekly usage (Pro and above, once per monthly billing cycle)                                    |
 | `/init`                       | analyze the codebase and create/improve `AGENTS.md` in the repo's `.orb/` directory                   |
+| `/memory`                     | edit user/project `AGENTS.md`, open the auto-memory folder, or toggle auto memory                     |
 | `/create-skill <description>` | create or update a repository skill under `.orb/skills/<skill-name>/` from a plain-language prompt    |
 | `/task`                       | reference a previous session as context for the current task — opens a picker if no ID is given       |
 | `/link`                       | link other repos on your machine so changes here are checked against them (enter a folder path)       |
@@ -871,12 +872,18 @@ the open `AGENTS.md` filename so it works across tools.
 Files are loaded in this order (lowest precedence first; higher-precedence files
 appear later and get more weight):
 
-1. **User memory**: `~/.orbcode/AGENTS.md` — personal global instructions.
-2. **Project memory**: `AGENTS.md` and `.orbcode/AGENTS.md` in the cwd and every
-   parent directory (closer-to-cwd wins). Checked into the repo, shared with the
-   team.
-3. **Local memory**: `AGENTS.local.md` in the cwd and parents — private
-   per-machine overrides (gitignore this).
+1. **User memory**: `~/.orbcode/AGENTS.md` and `~/.claude/CLAUDE.md` —
+   personal global instructions.
+2. **Project memory**: `AGENTS.md`, `.orb/AGENTS.md`, `CLAUDE.md` and
+   `.claude/CLAUDE.md` in the cwd and every parent directory (closer-to-cwd
+   wins). Checked into the repo, shared with the team.
+3. **Local memory**: `AGENTS.local.md` and `CLAUDE.local.md` in the cwd and
+   parents — private per-machine overrides (gitignore this).
+
+Claude Code's `CLAUDE.md` files are read as-is, so a repo already set up for
+Claude Code needs no changes. A file reached twice (a `CLAUDE.md` that
+`@AGENTS.md`-includes or symlinks to `AGENTS.md`) is loaded once.
+`CLAUDE_CONFIG_DIR` is honored for the user-level file.
 
 ### @include directives
 
@@ -893,6 +900,29 @@ And the global one: @~/orbcode-global.md
 are all supported. Includes are resolved recursively (up to 5 levels, with cycle
 detection). Use `/init` to have OrbCode generate a starter `AGENTS.md` by
 analyzing the codebase.
+
+### Auto memory
+
+Alongside the AGENTS.md files you write, OrbCode keeps its own notes — the same
+model as Claude Code's auto memory. Each project gets a memory directory at
+`~/.orbcode/projects/<project>/memory/` (keyed by the git repository root, so all
+worktrees of a repo share it). OrbCode saves one Markdown file per fact — who you
+are, feedback on how it should work, ongoing project context, pointers to
+external resources — and keeps a one-line-per-memory index in `MEMORY.md`.
+
+- The first 200 lines of `MEMORY.md` are loaded at the start of every session
+  (and again after compaction); individual memory files are read on demand.
+- Ask it to "remember …" or "forget …" and it updates the files right away.
+- Writes inside the memory directory never trigger an edit approval prompt.
+- Memories Claude Code saved for the same project
+  (`~/.claude/projects/<project>/memory/`) are loaded too, read-only, so what
+  either tool learned carries over. To share one read-write memory between the
+  two instead, point `autoMemoryDirectory` at Claude Code's folder.
+- `/memory` opens your user or project `AGENTS.md` in `$VISUAL`/`$EDITOR`, opens
+  the auto-memory folder, or toggles auto memory on/off.
+- Turn it off with `"autoMemoryEnabled": false` in `settings.json` or
+  `ORBCODE_DISABLE_AUTO_MEMORY=1`. Move it with `"autoMemoryDirectory"` (user
+  `~/.orbcode/settings.json` only) or `ORBCODE_AUTO_MEMORY_DIR`.
 
 ## Architecture
 
