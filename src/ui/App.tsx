@@ -117,6 +117,8 @@ import {
 } from "../core/resumeCost.js";
 import {
   appendRow,
+  normalizeLineEndings,
+  normalizeRow,
   diffViewHeight,
   formatToolName,
   formatUserBlock,
@@ -793,7 +795,11 @@ export function App({
 
   const pushRow = useCallback((row: DistributiveOmit<Row, "id">) => {
     setRows((prev) =>
-      appendRow(prev, { ...row, id: rowId() } as Row, expandToolsRef.current),
+      appendRow(
+        prev,
+        { ...normalizeRow(row), id: rowId() } as Row,
+        expandToolsRef.current,
+      ),
     );
   }, []);
 
@@ -819,7 +825,7 @@ export function App({
         case "reasoning-delta":
           countStreamedChars(event.text.length);
           reasoningBufferRef.current += event.text;
-          setStreamingReasoning(reasoningBufferRef.current);
+          setStreamingReasoning(normalizeLineEndings(reasoningBufferRef.current));
           setBusyLabel("Thinking");
           break;
         case "reasoning-done":
@@ -832,7 +838,7 @@ export function App({
         case "text-delta":
           countStreamedChars(event.text.length);
           textBufferRef.current += event.text;
-          setStreamingText(textBufferRef.current);
+          setStreamingText(normalizeLineEndings(textBufferRef.current));
           setBusyLabel("Working");
           break;
         case "text-done":
@@ -986,7 +992,10 @@ export function App({
             isStale()
               ? Promise.resolve<ApprovalDecision>("no")
               : new Promise<ApprovalDecision>((resolve) =>
-                  setPendingApproval({ request, resolve }),
+                  setPendingApproval({
+                    request: normalizeRow(request),
+                    resolve,
+                  }),
                 ),
           requestFollowup: (question, suggestions) =>
             isStale()
